@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+import "buf/validate/validate.proto";
+import "restaurant/v1/common.proto";
+
+// ---------------------------------------------------------------------------
+// AuthService — login, session, shared-device enrolment, manager override.
+//
+// Sessions are opaque tokens stored in Postgres. Web: httpOnly cookie on the
+// same origin (client sends credentials: "include"). Mobile: bearer token.
+// Owner/manager log in with username + password; all staff may log in by PIN
+// on an *enrolled shared device*.
+// ---------------------------------------------------------------------------
+
+message User {
+  string id = 1;
+  string name = 2;
+  Role role = 3;
+  Language language = 4;
+}
+
+message Device {
+  bool shared = 1;  // enrolled for staff PIN login
+  string label = 2; // e.g. "Counter PC", "Kitchen tablet"
+}
+
+// Current session. user is unset when nobody is logged in — GetSession never errors.
+message Session {
+  optional User user = 1;
+  Device device = 2;
+}
+
+message GetSessionRequest {}
+
+message PasswordLoginRequest {
+  string username = 1 [(buf.validate.field).string.min_len = 1];
+  string password = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message ListPinUsersRequest {}
+message ListPinUsersResponse {
+  repeated User users = 1;
+}
+
+message PinLoginRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  // PIN is 4–6 digits (design §7). Server hashes with argon2id; lockout after N
+  // wrong tries. NOTE for web: the PIN pad must support a variable 4–6 length
+  // (a confirm button), not a fixed 4-digit auto-submit.
+  string pin = 2 [(buf.validate.field).string = {pattern: "^[0-9]{4,6}$"}];
+}
+
+message LogoutRequest {}
+message LogoutResponse {}
+
+message SetLanguageRequest {
+  Language language = 1 [(buf.validate.field).enum = {defined_only: true, not_in: [0]}];
+}
+
+message EnrollDeviceRequest {
+  string label = 1 [(buf.validate.field).string = {min_len: 1, max_len: 40}];
+}
+
+// Pre-flight check so the UI can validate a manager PIN before it submits a
+// privileged command and risks losing the composed action. The command itself
+// still carries ManagerApproval and is re-validated server-side.
+message CheckManagerPinRequest {
+  ManagerApproval approval = 1;
+}
+message CheckManagerPinResponse {
+  bool ok = 1;
+  string manager_user_id = 2;
+  string manager_name = 3;
+}
+
+service AuthService {
+  rpc GetSession(GetSessionRequest) returns (Session);
+  rpc PasswordLogin(PasswordLoginRequest) returns (User);
+  rpc ListPinUsers(ListPinUsersRequest) returns (ListPinUsersResponse); // DEVICE_NOT_SHARED if device not enrolled
+  rpc PinLogin(PinLoginRequest) returns (User);                         // INVALID_CREDENTIALS / PIN_LOCKED
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+  rpc SetLanguage(SetLanguageRequest) returns (User);
+  rpc EnrollDevice(EnrollDeviceRequest) returns (Device);              // OWNER/MANAGER only
+  rpc CheckManagerPin(CheckManagerPinRequest) returns (CheckManagerPinResponse);
+}
+
+// ---------------------------------------------------------------------------
+// StaffService — user administration (OWNER/MANAGER only).
+// ---------------------------------------------------------------------------
+
+message StaffMember {
+  string id = 1;
+  string name = 2;
+  Role role = 3;
+  bool active = 4;
+  optional string username = 5; // set only for OWNER/MANAGER
+  bool pin_locked = 6;
+}
+
+message StaffInput {
+  optional string id = 1;       // unset = create
+  string name = 2 [(buf.validate.field).string.min_len = 1];
+  Role role = 3 [(buf.validate.field).enum = {defined_only: true, not_in: [0]}];
+  bool active = 4;
+  optional string username = 5; // required for OWNER/MANAGER (3–30, [a-z0-9._-])
+  optional string password = 6; // >= 8 chars when creating or changing (OWNER/MANAGER)
+  optional string pin = 7;      // 4–6 digits; required on create
+}
+
+message ListStaffRequest {}
+message ListStaffResponse {
+  repeated StaffMember staff = 1;
+}
+
+message SaveStaffRequest {
+  StaffInput input = 1;
+}
+
+message ResetPinRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  string pin = 2 [(buf.validate.field).string = {pattern: "^[0-9]{4,6}$"}];
+}
+message ResetPinResponse {}
+
+service StaffService {
+  rpc ListStaff(ListStaffRequest) returns (ListStaffResponse);
+  rpc SaveStaff(SaveStaffRequest) returns (StaffMember); // DUPLICATE(username) / INVALID(field) / NOT_ALLOWED
+  rpc ResetPin(ResetPinRequest) returns (ResetPinResponse); // also clears a PIN lock
+}

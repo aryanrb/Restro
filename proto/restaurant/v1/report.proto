@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+// ---------------------------------------------------------------------------
+// ReportService — live dashboard, daily sales, IRD-style sales book (BS dates),
+// cancelled-invoice report, and the audit-log browser. Owner/manager only.
+// Ranges are AD unix seconds. CSV export is built in; Excel/PDF are Phase 2.
+// ---------------------------------------------------------------------------
+
+message DashboardRequest {}
+message TopItem {
+  string name = 1;
+  int32 quantity = 2;
+  int64 amount_paisa = 3;
+}
+message DashboardResponse {
+  int64 today_sales_paisa = 1;
+  int32 today_invoice_count = 2;
+  int32 open_orders = 3;
+  int32 open_tables = 4;
+  int32 void_count = 5;
+  int32 discount_count = 6;
+  repeated TopItem top_items = 7;
+}
+
+message RangeRequest {
+  int64 from_unix = 1;
+  int64 to_unix = 2;
+}
+
+message SalesBookRow {
+  string fiscal_year = 1;
+  int32 number = 2;
+  string mode = 3;
+  string bs_date = 4;
+  string buyer_name = 5;
+  string buyer_pan = 6;
+  int64 subtotal_paisa = 7;
+  int64 discount_paisa = 8;
+  int64 taxable_paisa = 9;
+  int64 vat_paisa = 10;
+  int64 total_paisa = 11;
+  string status = 12;
+}
+message SalesBookResponse {
+  repeated SalesBookRow rows = 1;
+}
+
+message DailySalesRow {
+  string bs_date = 1;
+  int32 invoice_count = 2;
+  int64 total_paisa = 3;
+  int64 vat_paisa = 4;
+  int64 taxable_paisa = 5;
+}
+message DailySalesResponse {
+  repeated DailySalesRow rows = 1;
+}
+
+message CancelledInvoiceRow {
+  int32 number = 1;
+  string fiscal_year = 2;
+  string bs_date = 3;
+  int64 total_paisa = 4;
+  string reason = 5;
+  string cancelled_by_user_id = 6;
+  int64 cancelled_at_unix = 7;
+}
+message CancelledInvoicesResponse {
+  repeated CancelledInvoiceRow rows = 1;
+}
+
+message AuditLogRequest {
+  int64 from_unix = 1;
+  int64 to_unix = 2;
+  string action = 3; // "" = any
+  int32 limit = 4;   // 0 -> default 200
+}
+message AuditEntry {
+  int64 id = 1;
+  string actor_user_id = 2;
+  string action = 3;
+  string entity = 4;
+  string entity_id = 5;
+  string reason = 6;
+  string approver_user_id = 7;
+  int64 created_at_unix = 8;
+}
+message AuditLogResponse {
+  repeated AuditEntry entries = 1;
+}
+
+message CsvExport {
+  bytes data = 1;
+  string filename = 2;
+}
+
+service ReportService {
+  rpc Dashboard(DashboardRequest) returns (DashboardResponse);
+  rpc SalesBook(RangeRequest) returns (SalesBookResponse);
+  rpc ExportSalesBookCsv(RangeRequest) returns (CsvExport);
+  rpc DailySales(RangeRequest) returns (DailySalesResponse);
+  rpc CancelledInvoices(RangeRequest) returns (CancelledInvoicesResponse);
+  rpc AuditLog(AuditLogRequest) returns (AuditLogResponse);
+}

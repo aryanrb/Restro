@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: restro
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d restro"
+          --health-interval 2s --health-timeout 3s --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/restro?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: api/go.sum
+
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ github.token }}
+
+      - name: Install protoc plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install connectrpc.com/connect/cmd/protoc-gen-connect-go@latest
+
+      - name: Lint protos
+        run: buf lint proto
+
+      - name: Check codegen is up to date
+        run: |
+          buf generate proto
+          go -C api tool sqlc generate
+          git diff --exit-code -- api/gen api/internal/db/sqlc || { echo "::error::generated code is stale — run 'make gen' and commit"; exit 1; }
+
+      - name: Build & vet
+        working-directory: api
+        run: |
+          go vet ./...
+          go build ./...
+
+      - name: Test (unit + DB integration)
+        working-directory: api
+        run: go test -p 1 ./...

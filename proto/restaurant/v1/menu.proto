@@ -1,0 +1,160 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+import "buf/validate/validate.proto";
+import "restaurant/v1/common.proto";
+
+// ---------------------------------------------------------------------------
+// MenuService — categories, items (+variants, colors, photos), modifier groups,
+// and 86 (out-of-stock) toggling. OWNER/MANAGER write; everyone reads.
+// Editing the menu never changes old orders or bills (the server snapshots
+// name/variant/modifiers/price onto each order item at add time).
+// ---------------------------------------------------------------------------
+
+message Category {
+  string id = 1;
+  LocalText name = 2;
+  int32 sort = 3;
+  bool active = 4;
+}
+
+message Variant {
+  string id = 1;
+  LocalText name = 2;
+  int64 price_paisa = 3;
+}
+
+message Modifier {
+  string id = 1;
+  LocalText name = 2;
+  int64 price_delta_paisa = 3;
+}
+
+message ModifierGroup {
+  string id = 1;
+  int64 version = 2;
+  LocalText name = 3;
+  int32 min = 4;
+  int32 max = 5;
+  repeated Modifier modifiers = 6;
+}
+
+message MenuItem {
+  string id = 1;
+  int64 version = 2;
+  string category_id = 3;
+  LocalText name = 4;
+  int64 price_paisa = 5; // ignored when variants exist
+  string color = 6;      // hex from the fixed palette
+  optional string image_url = 7;
+  string station_id = 8;
+  bool active = 9;
+  bool is_86d = 10;
+  repeated Variant variants = 11;
+  repeated string modifier_group_ids = 12;
+  int32 sort = 13;
+}
+
+message Menu {
+  repeated Category categories = 1;
+  repeated MenuItem items = 2;
+  repeated ModifierGroup modifier_groups = 3;
+}
+
+// ---- inputs ----
+
+message VariantInput {
+  optional string id = 1;
+  LocalText name = 2;
+  int64 price_paisa = 3;
+}
+
+message MenuItemInput {
+  optional string id = 1;
+  string category_id = 2 [(buf.validate.field).string.min_len = 1];
+  LocalText name = 3;
+  int64 price_paisa = 4; // required > 0 only when variants is empty
+  string color = 5;
+  string station_id = 6 [(buf.validate.field).string.min_len = 1];
+  bool active = 7;
+  repeated VariantInput variants = 8;
+  repeated string modifier_group_ids = 9;
+}
+
+message ModifierInput {
+  optional string id = 1;
+  LocalText name = 2;
+  int64 price_delta_paisa = 3 [(buf.validate.field).int64.gte = 0];
+}
+
+message ModifierGroupInput {
+  optional string id = 1;
+  LocalText name = 2;
+  int32 min = 3 [(buf.validate.field).int32.gte = 0];
+  int32 max = 4 [(buf.validate.field).int32.gte = 1];
+  repeated ModifierInput modifiers = 5 [(buf.validate.field).repeated.min_items = 1];
+}
+
+// ---- requests ----
+
+message GetMenuRequest {}
+
+message SaveCategoryRequest {
+  optional string id = 1;
+  LocalText name = 2;
+  bool active = 3;
+}
+message DeleteCategoryRequest {
+  string id = 1;
+} // IN_USE if it has items
+message DeleteCategoryResponse {}
+message MoveCategoryRequest {
+  string id = 1;
+  Move move = 2;
+}
+message MoveCategoryResponse {}
+
+message SaveItemRequest {
+  MenuItemInput input = 1;
+  optional int64 version = 2; // required when input.id is set
+}
+message MoveItemRequest {
+  string id = 1;
+  Move move = 2;
+}
+message MoveItemResponse {}
+
+message SetItemImageRequest {
+  string id = 1;
+  bytes image = 2;        // <= 1 MB; empty clears the image
+  string content_type = 3; // image/jpeg | image/png | image/webp
+}
+
+message Set86Request {
+  repeated string ids = 1 [(buf.validate.field).repeated.min_items = 1];
+  bool is_86d = 2;
+}
+message Set86Response {}
+
+message SaveModifierGroupRequest {
+  ModifierGroupInput input = 1;
+  optional int64 version = 2;
+}
+message DeleteModifierGroupRequest {
+  string id = 1;
+} // IN_USE if any item links it
+message DeleteModifierGroupResponse {}
+
+service MenuService {
+  rpc GetMenu(GetMenuRequest) returns (Menu);
+  rpc SaveCategory(SaveCategoryRequest) returns (Category);
+  rpc DeleteCategory(DeleteCategoryRequest) returns (DeleteCategoryResponse);
+  rpc MoveCategory(MoveCategoryRequest) returns (MoveCategoryResponse);
+  rpc SaveItem(SaveItemRequest) returns (MenuItem);         // STALE_VERSION / INVALID(field)
+  rpc MoveItem(MoveItemRequest) returns (MoveItemResponse);
+  rpc SetItemImage(SetItemImageRequest) returns (MenuItem); // INVALID(image) if too big/wrong type
+  rpc Set86(Set86Request) returns (Set86Response);          // emits item.86d per id
+  rpc SaveModifierGroup(SaveModifierGroupRequest) returns (ModifierGroup);
+  rpc DeleteModifierGroup(DeleteModifierGroupRequest) returns (DeleteModifierGroupResponse);
+}

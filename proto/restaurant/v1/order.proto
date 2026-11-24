@@ -1,0 +1,197 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+import "buf/validate/validate.proto";
+import "restaurant/v1/common.proto";
+
+// ---------------------------------------------------------------------------
+// OrderService — dine-in and takeaway ordering.
+//
+// IDEMPOTENCY: every mutating RPC carries a client-generated command_id (UUID).
+// The server records it in processed_commands inside the write transaction, so a
+// retry returns the ORIGINAL result as a no-op. Offline queues drain in FIFO order.
+//
+// APPEND-ONLY: order items are never edited after sending. A change is a VOID of
+// the old line plus a new line. Each line snapshots name/variant/modifiers and the
+// server's unit price at add time, so later menu/price edits never alter it.
+//
+// OPTIMISTIC LOCK: Order.version. Destructive/structural commands (void, transfer,
+// merge) carry base_version and are rejected with STALE_VERSION on mismatch.
+// AddItems does NOT check base_version — adds commute (append-only).
+//
+// 86 PARTIAL ACCEPT: AddItems rejects only the 86'd lines (ITEM_86D) and applies
+// the rest. The server's current price always wins and is snapshotted.
+//
+// Order identity is the client-supplied order_client_id (stable across offline
+// creation); the server also exposes a server id. Either may be used on follow-up
+// commands — field comments say which.
+// ---------------------------------------------------------------------------
+
+enum OrderType {
+  ORDER_TYPE_UNSPECIFIED = 0;
+  ORDER_TYPE_DINE_IN = 1;
+  ORDER_TYPE_TAKEAWAY = 2;
+}
+
+enum OrderStatus {
+  ORDER_STATUS_UNSPECIFIED = 0;
+  ORDER_STATUS_OPEN = 1;
+  ORDER_STATUS_BILLED = 2;    // fully invoiced (set by the billing plan)
+  ORDER_STATUS_CLOSED = 3;    // billed and paid
+  ORDER_STATUS_CANCELLED = 4;
+}
+
+enum OrderItemStatus {
+  ORDER_ITEM_STATUS_UNSPECIFIED = 0;
+  ORDER_ITEM_STATUS_DRAFT = 1;     // in the cart, not sent; free to void
+  ORDER_ITEM_STATUS_SENT = 2;      // sent to its station
+  ORDER_ITEM_STATUS_PREPARING = 3; // KDS marked preparing  (void needs manager approval)
+  ORDER_ITEM_STATUS_READY = 4;     // KDS marked ready       (void needs manager approval)
+  ORDER_ITEM_STATUS_SERVED = 5;    // delivered to the table (void needs manager approval)
+  ORDER_ITEM_STATUS_VOIDED = 6;
+}
+
+// Snapshot of a chosen modifier at add time.
+message OrderItemModifier {
+  LocalText name = 1;
+  int64 price_delta_paisa = 2;
+}
+
+message OrderItem {
+  string id = 1;
+  string client_id = 2;     // client-generated UUID, unique per line
+  string menu_item_id = 3;
+
+  LocalText name = 4;                       // snapshot
+  optional LocalText variant_name = 5;      // snapshot (unset if no variant)
+  repeated OrderItemModifier modifiers = 6; // snapshot
+  int64 unit_price_paisa = 7;               // snapshot (server price at add time)
+
+  int32 quantity = 8;
+  string note = 9;
+  string station_id = 10;
+  OrderItemStatus status = 11;
+
+  // Void metadata, set when status == VOIDED.
+  string void_reason = 12;
+  string voided_by_user_id = 13;
+  string void_approved_by_user_id = 14; // manager approver, if one was required
+}
+
+message Order {
+  string id = 1;
+  string client_id = 2;
+  OrderType type = 3;
+  optional string table_id = 4; // unset for takeaway
+  string waiter_user_id = 5;
+  OrderStatus status = 6;
+  int32 guest_count = 7;
+  int64 version = 8;
+  repeated OrderItem items = 9; // includes voided lines (append-only history)
+}
+
+// ---- queries ----
+
+message ListOpenOrdersRequest {}
+message ListOpenOrdersResponse {
+  repeated Order orders = 1;
+}
+
+message GetOrderRequest {
+  // Exactly one of these identifies the order.
+  optional string id = 1;
+  optional string client_id = 2;
+}
+
+// ---- command results ----
+
+message RejectedLine {
+  string client_id = 1; // the NewItem.client_id that was rejected
+  ErrorReason reason = 2;
+  string message = 3;
+}
+
+message OrderResult {
+  Order order = 1;
+}
+
+// ---- commands ----
+
+message CreateOrderRequest {
+  string command_id = 1 [(buf.validate.field).string.min_len = 1];
+  string order_client_id = 2 [(buf.validate.field).string.min_len = 1]; // becomes Order.client_id
+  OrderType type = 3 [(buf.validate.field).enum = {defined_only: true, not_in: [0]}];
+  optional string table_id = 4; // required for DINE_IN, unset for TAKEAWAY
+  int32 guest_count = 5 [(buf.validate.field).int32.gte = 0];
+}
+
+message NewItem {
+  string client_id = 1 [(buf.validate.field).string.min_len = 1];
+  string menu_item_id = 2 [(buf.validate.field).string.min_len = 1];
+  optional string variant_id = 3;
+  repeated string modifier_ids = 4;
+  int32 quantity = 5 [(buf.validate.field).int32.gte = 1];
+  string note = 6;
+}
+
+message AddItemsRequest {
+  string command_id = 1 [(buf.validate.field).string.min_len = 1];
+  string order_client_id = 2 [(buf.validate.field).string.min_len = 1];
+  repeated NewItem items = 3 [(buf.validate.field).repeated.min_items = 1];
+}
+message AddItemsResult {
+  Order order = 1;
+  repeated RejectedLine rejected = 2; // 86'd lines; the rest were applied
+}
+
+message SendItemsRequest {
+  string command_id = 1 [(buf.validate.field).string.min_len = 1];
+  string order_client_id = 2 [(buf.validate.field).string.min_len = 1];
+  repeated string item_ids = 3; // DRAFT lines to send; empty = all DRAFT lines
+}
+
+message VoidItemRequest {
+  string command_id = 1 [(buf.validate.field).string.min_len = 1];
+  string order_client_id = 2 [(buf.validate.field).string.min_len = 1];
+  int64 base_version = 3;
+  string item_id = 4 [(buf.validate.field).string.min_len = 1];
+  string reason = 5; // required once the line is SENT or later
+  optional ManagerApproval approval = 6; // required once the line is PREPARING or later
+}
+
+message MarkServedRequest {
+  string command_id = 1 [(buf.validate.field).string.min_len = 1];
+  string order_client_id = 2 [(buf.validate.field).string.min_len = 1];
+  repeated string item_ids = 3 [(buf.validate.field).repeated.min_items = 1];
+}
+
+message TransferTableRequest {
+  string command_id = 1 [(buf.validate.field).string.min_len = 1];
+  string order_client_id = 2 [(buf.validate.field).string.min_len = 1];
+  int64 base_version = 3;
+  string new_table_id = 4 [(buf.validate.field).string.min_len = 1];
+}
+
+// Merge source into target: source's live items move to target (append-only),
+// then source is CLOSED. Both versions are checked.
+message MergeTablesRequest {
+  string command_id = 1 [(buf.validate.field).string.min_len = 1];
+  string source_order_client_id = 2 [(buf.validate.field).string.min_len = 1];
+  int64 source_base_version = 3;
+  string target_order_client_id = 4 [(buf.validate.field).string.min_len = 1];
+  int64 target_base_version = 5;
+}
+
+service OrderService {
+  rpc ListOpenOrders(ListOpenOrdersRequest) returns (ListOpenOrdersResponse);
+  rpc GetOrder(GetOrderRequest) returns (Order);
+
+  rpc CreateOrder(CreateOrderRequest) returns (OrderResult);
+  rpc AddItems(AddItemsRequest) returns (AddItemsResult);   // partial accept on 86
+  rpc SendItems(SendItemsRequest) returns (OrderResult);    // emits ticket.created
+  rpc VoidItem(VoidItemRequest) returns (OrderResult);      // STALE_VERSION / MANAGER_APPROVAL_*
+  rpc MarkServed(MarkServedRequest) returns (OrderResult);
+  rpc TransferTable(TransferTableRequest) returns (OrderResult);
+  rpc MergeTables(MergeTablesRequest) returns (OrderResult);
+}

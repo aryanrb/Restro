@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+// Shared enums and messages used across every service.
+//
+// MONEY: every monetary field is an int64 named *_paisa (Rs 1 = 100 paisa).
+// The server computes all totals, VAT and service charge; clients only display.
+//
+// RATES: percentages are basis points, int32 named *_bp (13% = 1300).
+
+// Role gates which screens and actions a user has. Mirrors the web `Role` union.
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_OWNER = 1;
+  ROLE_MANAGER = 2;
+  ROLE_CASHIER = 3;
+  ROLE_WAITER = 4;
+  ROLE_KITCHEN = 5;
+}
+
+// UI language. Maps to the web "en"/"ne" union in the Connect adapter.
+enum Language {
+  LANGUAGE_UNSPECIFIED = 0;
+  LANGUAGE_EN = 1;
+  LANGUAGE_NE = 2;
+}
+
+// Bilingual label. Nepali falls back to English when ne is blank (client-side).
+message LocalText {
+  string en = 1;
+  string ne = 2;
+}
+
+// Move direction for sort reordering (areas, tables, categories, items, stations).
+enum Move {
+  MOVE_UNSPECIFIED = 0;
+  MOVE_UP = 1;
+  MOVE_DOWN = 2;
+}
+
+// Machine-readable error reason. Sent as a Connect error *detail* (ErrorInfo)
+// alongside a Connect code, so clients branch on `reason`, not on message text.
+//
+// Connect code mapping (server convention):
+//   INVALID_CREDENTIALS, PIN_LOCKED, DEVICE_NOT_SHARED -> code: unauthenticated
+//     (except a wrong password/PIN, which carries a reason so the client does NOT
+//      treat it as "session expired" — see auth notes)
+//   STALE_VERSION, ITEM_86D, ORDER_CLOSED, DUPLICATE         -> code: failed_precondition / already_exists
+//   NOT_ALLOWED, MANAGER_APPROVAL_REQUIRED/INVALID           -> code: permission_denied
+//   IN_USE                                                   -> code: failed_precondition
+//   INVALID                                                  -> code: invalid_argument
+//   NOT_FOUND                                                -> code: not_found
+//   SHIFT_NOT_OPEN                                           -> code: failed_precondition
+enum ErrorReason {
+  ERROR_REASON_UNSPECIFIED = 0;
+  ERROR_REASON_INVALID_CREDENTIALS = 1;
+  ERROR_REASON_PIN_LOCKED = 2;
+  ERROR_REASON_DEVICE_NOT_SHARED = 3;
+  ERROR_REASON_STALE_VERSION = 4;
+  ERROR_REASON_NOT_ALLOWED = 5;
+  ERROR_REASON_IN_USE = 6;
+  ERROR_REASON_DUPLICATE = 7;
+  ERROR_REASON_INVALID = 8;
+  ERROR_REASON_ITEM_86D = 9;
+  ERROR_REASON_MANAGER_APPROVAL_REQUIRED = 10;
+  ERROR_REASON_MANAGER_APPROVAL_INVALID = 11;
+  ERROR_REASON_ORDER_CLOSED = 12;
+  ERROR_REASON_SHIFT_NOT_OPEN = 13;
+  ERROR_REASON_NOT_FOUND = 14;
+}
+
+// Carried as a google.rpc-style error detail on every non-OK response.
+// `field` names the offending input for DUPLICATE/INVALID (e.g. "username").
+message ErrorInfo {
+  ErrorReason reason = 1;
+  string field = 2;
+  string message = 3;
+}
+
+// Inline manager-PIN override, embedded in privileged commands (void after prepare,
+// discount beyond a role's limit, invoice cancellation). The server validates the
+// PIN belongs to an active OWNER/MANAGER and records that user as the approver in
+// the same transaction. Absent/blank when no override is attempted.
+message ManagerApproval {
+  string manager_user_id = 1;
+  string pin = 2;
+}

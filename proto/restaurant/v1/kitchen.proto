@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+import "buf/validate/validate.proto";
+import "restaurant/v1/common.proto";
+import "restaurant/v1/order.proto";
+
+// ---------------------------------------------------------------------------
+// KitchenService (KDS) — per-station ticket board and item status actions.
+// 86-ing from the KDS reuses MenuService.Set86. These actions are online-only
+// (no offline queue), so no command_id.
+// ---------------------------------------------------------------------------
+
+message TicketItem {
+  string id = 1;
+  LocalText name = 2;
+  optional LocalText variant_name = 3;
+  repeated LocalText modifiers = 4;
+  int32 quantity = 5;
+  string note = 6;
+  OrderItemStatus status = 7;
+}
+
+message Ticket {
+  string order_id = 1;
+  string order_client_id = 2;
+  OrderType type = 3;
+  string table_name = 4;        // "" for takeaway
+  int64 created_at_unix = 5;    // age anchor for the KDS timer
+  repeated TicketItem items = 6;
+}
+
+message ListStationTicketsRequest {
+  string station_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+message ListStationTicketsResponse {
+  repeated Ticket tickets = 1;
+}
+
+message StartItemsRequest {
+  repeated string item_ids = 1 [(buf.validate.field).repeated.min_items = 1];
+}
+message MarkItemsReadyRequest {
+  repeated string item_ids = 1 [(buf.validate.field).repeated.min_items = 1];
+}
+message BumpTicketRequest {
+  string order_id = 1 [(buf.validate.field).string.min_len = 1];
+  string station_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+message KitchenActionResponse {}
+
+service KitchenService {
+  rpc ListStationTickets(ListStationTicketsRequest) returns (ListStationTicketsResponse);
+  rpc StartItems(StartItemsRequest) returns (KitchenActionResponse);        // SENT -> PREPARING
+  rpc MarkItemsReady(MarkItemsReadyRequest) returns (KitchenActionResponse); // -> READY, notifies waiter
+  rpc BumpTicket(BumpTicketRequest) returns (KitchenActionResponse);        // clear a station's ticket
+}

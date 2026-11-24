@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+import "buf/validate/validate.proto";
+import "restaurant/v1/billing.proto";
+
+// ---------------------------------------------------------------------------
+// ShiftService — cash shifts. Several may be open at once (one per cashier).
+// Payments attach to the collector's open shift; closing reconciles counted vs
+// expected cash.
+// ---------------------------------------------------------------------------
+
+enum ShiftStatus {
+  SHIFT_STATUS_UNSPECIFIED = 0;
+  SHIFT_STATUS_OPEN = 1;
+  SHIFT_STATUS_CLOSED = 2;
+}
+
+message MethodTotal {
+  PaymentMethod method = 1;
+  int64 total_paisa = 2;
+}
+
+message Shift {
+  string id = 1;
+  string cashier_user_id = 2;
+  int64 opened_at_unix = 3;
+  int64 closed_at_unix = 4;
+  int64 opening_float_paisa = 5;
+  int64 counted_cash_paisa = 6;
+  string note = 7;
+  ShiftStatus status = 8;
+}
+
+message QrPaymentRow {
+  string payment_id = 1;
+  int32 invoice_number = 2;
+  int64 amount_paisa = 3;
+  string reference = 4;
+  int64 created_at_unix = 5;
+}
+
+// Close-out / report view of a shift.
+message ShiftReport {
+  Shift shift = 1;
+  repeated MethodTotal totals = 2;     // confirmed payments by method
+  int64 expected_cash_paisa = 3;       // opening float + cash payments
+  int64 difference_paisa = 4;          // counted - expected (0 unless closed)
+  repeated QrPaymentRow qr_payments = 5; // for reconciliation against the Fonepay statement
+}
+
+message OpenShiftRequest {
+  int64 opening_float_paisa = 1 [(buf.validate.field).int64.gte = 0];
+  string note = 2;
+}
+
+message GetMyOpenShiftRequest {}
+message MyOpenShiftResponse {
+  optional Shift shift = 1; // unset when the caller has no open shift
+}
+
+message ListOpenShiftsRequest {}
+message ListOpenShiftsResponse {
+  repeated Shift shifts = 1;
+}
+
+message CloseShiftRequest {
+  string shift_id = 1 [(buf.validate.field).string.min_len = 1];
+  int64 counted_cash_paisa = 2 [(buf.validate.field).int64.gte = 0];
+  string note = 3;
+}
+
+message GetShiftReportRequest {
+  string shift_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+service ShiftService {
+  rpc OpenShift(OpenShiftRequest) returns (Shift);
+  rpc GetMyOpenShift(GetMyOpenShiftRequest) returns (MyOpenShiftResponse);
+  rpc ListOpenShifts(ListOpenShiftsRequest) returns (ListOpenShiftsResponse);
+  rpc CloseShift(CloseShiftRequest) returns (ShiftReport);
+  rpc GetShiftReport(GetShiftReportRequest) returns (ShiftReport);
+}

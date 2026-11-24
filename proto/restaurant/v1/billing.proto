@@ -1,0 +1,156 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+import "buf/validate/validate.proto";
+import "restaurant/v1/common.proto";
+import "restaurant/v1/settings.proto";
+
+// ---------------------------------------------------------------------------
+// BillingService — bills, immutable invoices, payments, cancellation, printing.
+// Online-only (needs connectivity for numbering); commands still carry command_id
+// for safe retries. Split-equally = one invoice paid by N RecordPayment calls.
+// ---------------------------------------------------------------------------
+
+enum PaymentMethod {
+  PAYMENT_METHOD_UNSPECIFIED = 0;
+  PAYMENT_METHOD_CASH = 1;
+  PAYMENT_METHOD_CARD = 2;
+  PAYMENT_METHOD_QR_FONEPAY = 3;
+  PAYMENT_METHOD_QR_OTHER = 4;
+}
+
+enum DiscountType {
+  DISCOUNT_TYPE_UNSPECIFIED = 0;
+  DISCOUNT_TYPE_PERCENT = 1; // value is basis points
+  DISCOUNT_TYPE_AMOUNT = 2;  // value is paisa
+}
+
+enum InvoiceStatus {
+  INVOICE_STATUS_UNSPECIFIED = 0;
+  INVOICE_STATUS_ISSUED = 1;
+  INVOICE_STATUS_CANCELLED = 2;
+}
+
+message DiscountInput {
+  DiscountType type = 1;
+  int64 value = 2;            // bp if PERCENT, paisa if AMOUNT
+  string reason = 3;         // required when non-zero
+  optional ManagerApproval approval = 4; // required when over the role's limit
+}
+
+message InvoiceLine {
+  LocalText name = 1;
+  string variant_name = 2;
+  repeated LocalText modifiers = 3;
+  int32 quantity = 4;
+  int64 unit_price_paisa = 5;
+  int64 line_total_paisa = 6;
+}
+
+message Payment {
+  string id = 1;
+  PaymentMethod method = 2;
+  int64 amount_paisa = 3;
+  string reference = 4;
+  string confirmed_by_user_id = 5;
+  int64 created_at_unix = 6;
+}
+
+message Invoice {
+  string id = 1;
+  string fiscal_year = 2;
+  int32 number = 3;
+  BillingMode mode = 4;
+  string bs_date = 5;      // YYYY.MM.DD
+  int64 ad_datetime_unix = 6;
+  string order_id = 7;
+  string buyer_name = 8;
+  string buyer_pan = 9;
+  int64 subtotal_paisa = 10;
+  int64 discount_paisa = 11;
+  int64 service_charge_paisa = 12;
+  int64 taxable_paisa = 13;
+  int64 vat_paisa = 14;
+  int64 rounding_paisa = 15;
+  int64 total_paisa = 16;
+  InvoiceStatus status = 17;
+  int32 print_count = 18;
+  repeated InvoiceLine lines = 19;
+  repeated Payment payments = 20;
+}
+
+// Computed-but-not-persisted preview of a bill.
+message BillPreview {
+  int64 subtotal_paisa = 1;
+  int64 discount_paisa = 2;
+  int64 service_charge_paisa = 3;
+  int64 taxable_paisa = 4;
+  int64 vat_paisa = 5;
+  int64 rounding_paisa = 6;
+  int64 total_paisa = 7;
+}
+
+message PreviewBillRequest {
+  string order_client_id = 1 [(buf.validate.field).string.min_len = 1];
+  optional DiscountInput discount = 2;
+}
+
+message IssueFullBillRequest {
+  string command_id = 1 [(buf.validate.field).string.min_len = 1];
+  string order_client_id = 2 [(buf.validate.field).string.min_len = 1];
+  optional DiscountInput discount = 3;
+  string buyer_name = 4;
+  string buyer_pan = 5;
+}
+
+message LineGroup {
+  repeated string order_item_ids = 1 [(buf.validate.field).repeated.min_items = 1];
+}
+
+message SplitByItemRequest {
+  string command_id = 1 [(buf.validate.field).string.min_len = 1];
+  string order_client_id = 2 [(buf.validate.field).string.min_len = 1];
+  repeated LineGroup groups = 3 [(buf.validate.field).repeated.min_items = 1];
+}
+message SplitByItemResponse {
+  repeated Invoice invoices = 1;
+}
+
+message RecordPaymentRequest {
+  string command_id = 1 [(buf.validate.field).string.min_len = 1];
+  string invoice_id = 2 [(buf.validate.field).string.min_len = 1];
+  PaymentMethod method = 3 [(buf.validate.field).enum = {defined_only: true, not_in: [0]}];
+  int64 amount_paisa = 4 [(buf.validate.field).int64.gt = 0];
+  string reference = 5;
+}
+
+message CancelInvoiceRequest {
+  string command_id = 1 [(buf.validate.field).string.min_len = 1];
+  string invoice_id = 2 [(buf.validate.field).string.min_len = 1];
+  string reason = 3 [(buf.validate.field).string.min_len = 1];
+  ManagerApproval approval = 4;
+}
+
+message MarkPrintedRequest {
+  string invoice_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+message PrintInfo {
+  bool is_original = 1;   // first print
+  int32 copy_number = 2;  // "Copy of Original (n)" when not original
+  int32 print_count = 3;
+}
+
+message GetInvoiceRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+service BillingService {
+  rpc PreviewBill(PreviewBillRequest) returns (BillPreview);
+  rpc IssueFullBill(IssueFullBillRequest) returns (Invoice);
+  rpc SplitByItem(SplitByItemRequest) returns (SplitByItemResponse);
+  rpc RecordPayment(RecordPaymentRequest) returns (Payment);        // attaches to the collector's open shift
+  rpc CancelInvoice(CancelInvoiceRequest) returns (Invoice);        // reopens the order
+  rpc MarkPrinted(MarkPrintedRequest) returns (PrintInfo);
+  rpc GetInvoice(GetInvoiceRequest) returns (Invoice);
+}

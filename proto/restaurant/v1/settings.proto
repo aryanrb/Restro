@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+import "buf/validate/validate.proto";
+import "restaurant/v1/common.proto";
+
+// ---------------------------------------------------------------------------
+// SettingsService — the single restaurant settings row (no restaurant_id).
+// OWNER/MANAGER read+write; everyone may read.
+// ---------------------------------------------------------------------------
+
+enum BillingMode {
+  BILLING_MODE_UNSPECIFIED = 0;
+  BILLING_MODE_ESTIMATE = 1;    // pilot: prints "Estimate — not a tax invoice"
+  BILLING_MODE_TAX_INVOICE = 2; // certified: live tax invoices
+}
+
+enum ReceiptWidth {
+  RECEIPT_WIDTH_UNSPECIFIED = 0;
+  RECEIPT_WIDTH_58MM = 1;
+  RECEIPT_WIDTH_80MM = 2;
+}
+
+message Settings {
+  int64 version = 1;
+
+  LocalText name = 2;
+  string address = 3;
+  string phone = 4;
+  string pan_number = 5;  // PAN/VAT number; "" or exactly 9 digits
+
+  bool vat_registered = 6;
+  bool prices_include_vat = 7;     // default true (Nepal: menu prices VAT-inclusive)
+  int32 vat_rate_bp = 8;           // default 1300 (13%)
+  bool service_charge_enabled = 9; // default FALSE (SC struck down; off by default)
+  int32 service_charge_rate_bp = 10;
+
+  BillingMode billing_mode = 11;   // read-only via API; switched at deployment
+  ReceiptWidth receipt_width = 12;
+  bool round_total_to_rupee = 13;
+  Language default_language = 14;
+
+  int32 kds_yellow_minutes = 15;
+  int32 kds_red_minutes = 16;
+
+  // Set in the billing plan (image upload), carried here so the row is ready.
+  string logo_url = 17;
+}
+
+// Everything the API may change: Settings minus version and billing_mode.
+message SettingsInput {
+  LocalText name = 1;
+  string address = 2;
+  string phone = 3;
+  string pan_number = 4 [(buf.validate.field).string = {pattern: "^$|^[0-9]{9}$"}];
+  bool vat_registered = 5;
+  bool prices_include_vat = 6;
+  int32 vat_rate_bp = 7 [(buf.validate.field).int32 = {gte: 0, lte: 10000}];
+  bool service_charge_enabled = 8;
+  int32 service_charge_rate_bp = 9 [(buf.validate.field).int32 = {gte: 0, lte: 10000}];
+  ReceiptWidth receipt_width = 10;
+  bool round_total_to_rupee = 11;
+  Language default_language = 12;
+  int32 kds_yellow_minutes = 13 [(buf.validate.field).int32 = {gte: 1, lte: 120}];
+  int32 kds_red_minutes = 14 [(buf.validate.field).int32 = {gte: 1, lte: 240}];
+}
+
+message GetSettingsRequest {}
+
+message UpdateSettingsRequest {
+  SettingsInput input = 1;
+  int64 version = 2; // optimistic lock; STALE_VERSION on mismatch
+}
+
+service SettingsService {
+  rpc GetSettings(GetSettingsRequest) returns (Settings);
+  rpc UpdateSettings(UpdateSettingsRequest) returns (Settings);
+}

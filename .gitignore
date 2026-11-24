@@ -1,0 +1,15 @@
+# Go
+/api/bin/
+*.test
+*.out
+
+# env / secrets
+.env
+*.local
+
+# web (built by Bishal)
+web/node_modules/
+web/.next/
+web/out/
+
+# generated Go from proto is committed (consumers build without buf); keep api/gen/

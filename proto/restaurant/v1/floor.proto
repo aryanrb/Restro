@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+import "buf/validate/validate.proto";
+import "restaurant/v1/common.proto";
+
+// ---------------------------------------------------------------------------
+// FloorService + StationService — areas, tables, kitchen stations.
+// Zero tables is valid (counter-only restaurants). No hard deletes of anything
+// an order could reference; use the active flag. Only empty areas, empty
+// (table-free) and unused stations can be deleted.
+// ---------------------------------------------------------------------------
+
+message Area {
+  string id = 1;
+  LocalText name = 2;
+  int32 sort = 3;
+}
+
+message Table {
+  string id = 1;
+  string area_id = 2;
+  string name = 3;
+  int32 seats = 4;
+  int32 sort = 5;
+  bool active = 6;
+}
+
+message Floor {
+  repeated Area areas = 1;   // sorted by sort
+  repeated Table tables = 2; // sorted by sort
+}
+
+message Station {
+  string id = 1;
+  LocalText name = 2;
+  int32 sort = 3;
+}
+
+message GetFloorRequest {}
+
+message SaveAreaRequest {
+  optional string id = 1; // unset = create
+  LocalText name = 2;
+}
+message DeleteAreaRequest {
+  string id = 1;
+} // IN_USE if it has tables
+message DeleteAreaResponse {}
+message MoveAreaRequest {
+  string id = 1;
+  Move move = 2;
+}
+message MoveAreaResponse {}
+
+message SaveTableRequest {
+  optional string id = 1;
+  string area_id = 2 [(buf.validate.field).string.min_len = 1];
+  string name = 3 [(buf.validate.field).string = {min_len: 1, max_len: 20}];
+  int32 seats = 4 [(buf.validate.field).int32 = {gte: 1, lte: 50}];
+  bool active = 5;
+}
+message MoveTableRequest {
+  string id = 1;
+  Move move = 2;
+}
+message MoveTableResponse {}
+
+service FloorService {
+  rpc GetFloor(GetFloorRequest) returns (Floor);
+  rpc SaveArea(SaveAreaRequest) returns (Area);
+  rpc DeleteArea(DeleteAreaRequest) returns (DeleteAreaResponse);
+  rpc MoveArea(MoveAreaRequest) returns (MoveAreaResponse);
+  rpc SaveTable(SaveTableRequest) returns (Table);
+  rpc MoveTable(MoveTableRequest) returns (MoveTableResponse);
+}
+
+message ListStationsRequest {}
+message ListStationsResponse {
+  repeated Station stations = 1;
+}
+message SaveStationRequest {
+  optional string id = 1;
+  LocalText name = 2;
+}
+message DeleteStationRequest {
+  string id = 1;
+} // IN_USE if items use it or it is the last station
+message DeleteStationResponse {}
+
+service StationService {
+  rpc ListStations(ListStationsRequest) returns (ListStationsResponse);
+  rpc SaveStation(SaveStationRequest) returns (Station);
+  rpc DeleteStation(DeleteStationRequest) returns (DeleteStationResponse);
+}

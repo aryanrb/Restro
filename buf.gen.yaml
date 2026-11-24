@@ -1,0 +1,17 @@
+version: v2
+managed:
+  enabled: true
+  disable:
+    # Leave protovalidate's go_package alone so our code imports the real BSR
+    # Go types for buf/validate, not a non-existent local copy.
+    - module: buf.build/bufbuild/protovalidate
+  override:
+    - file_option: go_package_prefix
+      value: github.com/oneaccord/restro/api/gen
+plugins:
+  - local: protoc-gen-go
+    out: api/gen
+    opt: paths=source_relative
+  - local: protoc-gen-connect-go
+    out: api/gen
+    opt: paths=source_relative
