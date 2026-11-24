@@ -1,0 +1,38 @@
+# Full stack: Postgres + API. Migrations auto-apply on API boot and an owner is
+# seeded, so this is a one-command run:
+#   docker compose -f deploy/docker-compose.yaml up --build
+# Then: curl localhost:8080/api/healthz   ·   log in as owner / owner123
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: restro
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d restro"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ../api
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/restro?sslmode=disable
+      PORT: "8080"
+      RUNTIME_ENV: dev
+      SEED_OWNER_USERNAME: owner
+      SEED_OWNER_PASSWORD: owner123
+      SEED_OWNER_NAME: Owner
+      SEED_OWNER_PIN: "1111"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:

@@ -40,6 +40,7 @@ func main() {
 	if err := db.RunMigrations(ctx, pool); err != nil {
 		log.Fatal("migrate", zap.Error(err))
 	}
+	log.Info("migrations applied")
 
 	seedOwner(ctx, pool, log)
 
