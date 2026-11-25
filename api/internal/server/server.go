@@ -48,6 +48,14 @@ func New(d Deps) *echo.Echo {
 	e.HideBanner = true
 	e.HidePort = true
 	e.Use(middleware.Recover(), middleware.RequestID(), requestLogger(d.Log))
+	// CORS for the browser frontends. Auth rides on session cookies, so credentials
+	// are allowed and origins must be an explicit list (never "*"). AllowHeaders is
+	// left empty so Echo reflects the preflight's requested headers, which covers
+	// Connect's Connect-Protocol-Version / Connect-Timeout-Ms and Authorization.
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins:     d.Cfg.CORSOrigins,
+		AllowCredentials: true,
+	}))
 
 	e.GET("/api/healthz", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
