@@ -224,7 +224,7 @@ func pickItems(unbilled []sqlc.OrderItem, ids []string) ([]sqlc.OrderItem, error
 // issues + pays its invoice, in one idempotent transaction. Any rejected line
 // rejects the whole sale. The order stays BILLED until the kitchen marks it READY.
 //
-// The request's label is printed as the invoice's place (orders have no label column).
+// The request's label is stored as the order's label and printed as the invoice's place.
 func (s *Service) CounterSale(ctx context.Context, req *restaurantv1.CounterSaleRequest) (*restaurantv1.Invoice, error) {
 	actor, err := requireBillingRole(ctx)
 	if err != nil {
@@ -255,7 +255,7 @@ func (s *Service) CounterSale(ctx context.Context, req *restaurantv1.CounterSale
 		if e != nil {
 			return e
 		}
-		o, e := q.CreateOrder(ctx, sqlc.CreateOrderParams{ClientID: ocid, Type: "TAKEAWAY", WaiterUserID: actor.User.ID})
+		o, e := q.CreateOrder(ctx, sqlc.CreateOrderParams{ClientID: ocid, Type: "TAKEAWAY", WaiterUserID: actor.User.ID, Label: strings.TrimSpace(req.GetLabel())})
 		if errors.Is(e, pgx.ErrNoRows) {
 			return connecterr.Invalid("order_client_id", "an order with this id already exists")
 		}

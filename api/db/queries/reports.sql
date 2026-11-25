@@ -68,13 +68,23 @@ FROM payments p JOIN invoices i ON i.id = p.invoice_id
 WHERE i.ad_datetime BETWEEN @from_ts AND @to_ts AND i.status = 'ISSUED' AND p.status = 'CONFIRMED'
 GROUP BY 1, 2 ORDER BY 1, 2;
 
--- Sales book rows with the issuer's name. Tax invoices only unless include_estimates.
+-- Sales book rows with the issuer's name and the bill's last print (time + who;
+-- 0 / '' when never printed). Tax invoices only unless include_estimates.
 -- name: SalesBookDetail :many
 SELECT i.id, i.fiscal_year, i.number, i.mode, i.bs_date, i.ad_datetime, i.buyer_name, i.buyer_pan,
        i.subtotal_paisa, i.discount_paisa, i.taxable_paisa, i.vat_paisa, i.total_paisa, i.status, i.print_count,
-       COALESCE(u.name, '')::text AS entered_by_name
+       COALESCE(u.name, '')::text AS entered_by_name,
+       COALESCE(floor(extract(epoch FROM lp.printed_at)), 0)::bigint AS last_printed_at_unix,
+       COALESCE(lp.printed_by_name, '')::text AS last_printed_by_name
 FROM invoices i
 LEFT JOIN users u ON u.id = i.created_by_user_id
+LEFT JOIN LATERAL (
+    SELECT p.printed_at, pu.name AS printed_by_name
+    FROM invoice_prints p JOIN users pu ON pu.id = p.printed_by_user_id
+    WHERE p.invoice_id = i.id
+    ORDER BY p.printed_at DESC, p.id DESC
+    LIMIT 1
+) lp ON true
 WHERE i.ad_datetime BETWEEN @from_ts AND @to_ts
   AND (@include_estimates::boolean OR i.mode = 'TAX_INVOICE')
 ORDER BY i.fiscal_year, i.mode, i.number;

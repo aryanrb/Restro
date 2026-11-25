@@ -179,13 +179,13 @@ func (s *Service) ListShifts(ctx context.Context, limit int32) ([]*restaurantv1.
 
 // RecordCancelAdjustments counts a just-cancelled invoice back in the canceller's
 // open shift for every payment that was taken in a shift that had already closed.
-// Billing's CancelInvoice should call it with its transaction's queries, after
-// the status->CANCELLED update, so the adjustment commits with the cancel. It
-// returns SHIFT_NOT_OPEN when an adjustment is owed but the canceller has no shift
-// open (the cancel should then be refused). Idempotent.
+// Billing's CancelInvoice calls it with its transaction's queries, after the
+// status->CANCELLED update, so the adjustment commits with the cancel. It returns
+// SHIFT_NOT_OPEN when an adjustment is owed but the canceller has no shift open
+// (the cancel is then refused). Idempotent.
 //
-// Until billing calls it, the shift service records the same adjustments lazily
-// (on every report / list / close), from the invoices' cancel data.
+// The shift service also records the same adjustments lazily (on every report /
+// list / close) as a catch-up, from the invoices' cancel data.
 func RecordCancelAdjustments(ctx context.Context, q *sqlc.Queries, invoiceID uuid.UUID) error {
 	if _, err := q.RecordCancelAdjustments(ctx, dbx.UUID(invoiceID)); err != nil {
 		return connecterr.Internal(err)

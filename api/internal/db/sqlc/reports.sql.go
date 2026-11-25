@@ -377,9 +377,18 @@ func (q *Queries) QueryAuditLogDetail(ctx context.Context, arg QueryAuditLogDeta
 const salesBookDetail = `-- name: SalesBookDetail :many
 SELECT i.id, i.fiscal_year, i.number, i.mode, i.bs_date, i.ad_datetime, i.buyer_name, i.buyer_pan,
        i.subtotal_paisa, i.discount_paisa, i.taxable_paisa, i.vat_paisa, i.total_paisa, i.status, i.print_count,
-       COALESCE(u.name, '')::text AS entered_by_name
+       COALESCE(u.name, '')::text AS entered_by_name,
+       COALESCE(floor(extract(epoch FROM lp.printed_at)), 0)::bigint AS last_printed_at_unix,
+       COALESCE(lp.printed_by_name, '')::text AS last_printed_by_name
 FROM invoices i
 LEFT JOIN users u ON u.id = i.created_by_user_id
+LEFT JOIN LATERAL (
+    SELECT p.printed_at, pu.name AS printed_by_name
+    FROM invoice_prints p JOIN users pu ON pu.id = p.printed_by_user_id
+    WHERE p.invoice_id = i.id
+    ORDER BY p.printed_at DESC, p.id DESC
+    LIMIT 1
+) lp ON true
 WHERE i.ad_datetime BETWEEN $1 AND $2
   AND ($3::boolean OR i.mode = 'TAX_INVOICE')
 ORDER BY i.fiscal_year, i.mode, i.number
@@ -392,25 +401,28 @@ type SalesBookDetailParams struct {
 }
 
 type SalesBookDetailRow struct {
-	ID            uuid.UUID `json:"id"`
-	FiscalYear    string    `json:"fiscal_year"`
-	Number        int32     `json:"number"`
-	Mode          string    `json:"mode"`
-	BsDate        string    `json:"bs_date"`
-	AdDatetime    time.Time `json:"ad_datetime"`
-	BuyerName     string    `json:"buyer_name"`
-	BuyerPan      string    `json:"buyer_pan"`
-	SubtotalPaisa int64     `json:"subtotal_paisa"`
-	DiscountPaisa int64     `json:"discount_paisa"`
-	TaxablePaisa  int64     `json:"taxable_paisa"`
-	VatPaisa      int64     `json:"vat_paisa"`
-	TotalPaisa    int64     `json:"total_paisa"`
-	Status        string    `json:"status"`
-	PrintCount    int32     `json:"print_count"`
-	EnteredByName string    `json:"entered_by_name"`
+	ID                uuid.UUID `json:"id"`
+	FiscalYear        string    `json:"fiscal_year"`
+	Number            int32     `json:"number"`
+	Mode              string    `json:"mode"`
+	BsDate            string    `json:"bs_date"`
+	AdDatetime        time.Time `json:"ad_datetime"`
+	BuyerName         string    `json:"buyer_name"`
+	BuyerPan          string    `json:"buyer_pan"`
+	SubtotalPaisa     int64     `json:"subtotal_paisa"`
+	DiscountPaisa     int64     `json:"discount_paisa"`
+	TaxablePaisa      int64     `json:"taxable_paisa"`
+	VatPaisa          int64     `json:"vat_paisa"`
+	TotalPaisa        int64     `json:"total_paisa"`
+	Status            string    `json:"status"`
+	PrintCount        int32     `json:"print_count"`
+	EnteredByName     string    `json:"entered_by_name"`
+	LastPrintedAtUnix int64     `json:"last_printed_at_unix"`
+	LastPrintedByName string    `json:"last_printed_by_name"`
 }
 
-// Sales book rows with the issuer's name. Tax invoices only unless include_estimates.
+// Sales book rows with the issuer's name and the bill's last print (time + who;
+// 0 / ” when never printed). Tax invoices only unless include_estimates.
 func (q *Queries) SalesBookDetail(ctx context.Context, arg SalesBookDetailParams) ([]SalesBookDetailRow, error) {
 	rows, err := q.db.Query(ctx, salesBookDetail, arg.FromTs, arg.ToTs, arg.IncludeEstimates)
 	if err != nil {
@@ -437,6 +449,8 @@ func (q *Queries) SalesBookDetail(ctx context.Context, arg SalesBookDetailParams
 			&i.Status,
 			&i.PrintCount,
 			&i.EnteredByName,
+			&i.LastPrintedAtUnix,
+			&i.LastPrintedByName,
 		); err != nil {
 			return nil, err
 		}

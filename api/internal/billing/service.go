@@ -23,6 +23,7 @@ import (
 	"github.com/oneaccord/restro/api/internal/money"
 	"github.com/oneaccord/restro/api/internal/orders"
 	"github.com/oneaccord/restro/api/internal/realtime"
+	"github.com/oneaccord/restro/api/internal/shift"
 )
 
 func (s *Service) PreviewBill(ctx context.Context, req *restaurantv1.PreviewBillRequest) (*restaurantv1.BillPreview, error) {
@@ -307,6 +308,12 @@ func (s *Service) CancelInvoice(ctx context.Context, req *restaurantv1.CancelInv
 		}
 		if e != nil {
 			return connecterr.Internal(e)
+		}
+		// Count the bill back in the canceller's open shift when its payment was
+		// taken in a shift that has since closed; refuse the cancel (rolling it
+		// back) when that's owed but the canceller has no shift open.
+		if e := shift.RecordCancelAdjustments(ctx, q, invID); e != nil {
+			return e
 		}
 		orderIDs, e := q.UnlinkInvoiceItems(ctx, dbx.UUID(invID))
 		if e != nil {

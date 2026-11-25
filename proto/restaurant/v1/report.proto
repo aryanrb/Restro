@@ -56,6 +56,10 @@ message SalesBookRow {
   string entered_by_name = 15;  // who issued the bill
   int32 print_count = 16;
   int64 ad_datetime_unix = 17;
+  // The bill's most recent print (original or reprint), from the print log;
+  // 0 / "" when it was never printed.
+  int64 last_printed_at_unix = 18;
+  string last_printed_by_name = 19;
 }
 message SalesBookResponse {
   repeated SalesBookRow rows = 1;

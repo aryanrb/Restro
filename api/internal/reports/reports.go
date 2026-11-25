@@ -108,12 +108,12 @@ func (s *Service) ExportSalesBookCsv(ctx context.Context, req *restaurantv1.Rang
 	}
 	var buf bytes.Buffer
 	w := csv.NewWriter(&buf)
-	_ = w.Write([]string{"Fiscal Year", "Bill No", "Mode", "BS Date", "Buyer", "PAN", "Subtotal", "Discount", "Taxable", "VAT", "Total", "Status", "Entered By"})
+	_ = w.Write([]string{"Fiscal Year", "Bill No", "Mode", "BS Date", "Buyer", "PAN", "Subtotal", "Discount", "Taxable", "VAT", "Total", "Status", "Entered By", "Last Printed", "Printed By"})
 	for _, r := range rows {
 		_ = w.Write([]string{
 			r.FiscalYear, shift.DisplayNumber(r.Mode, r.FiscalYear, r.Number), r.Mode, r.BsDate, r.BuyerName, r.BuyerPan,
 			rupees(r.SubtotalPaisa), rupees(r.DiscountPaisa), rupees(r.TaxablePaisa), rupees(r.VatPaisa), rupees(r.TotalPaisa), r.Status,
-			r.EnteredByName,
+			r.EnteredByName, printedAt(r.LastPrintedAtUnix), r.LastPrintedByName,
 		})
 	}
 	w.Flush()
@@ -281,6 +281,7 @@ func toSalesBookRow(r sqlc.SalesBookDetailRow) *restaurantv1.SalesBookRow {
 		TaxablePaisa: r.TaxablePaisa, VatPaisa: r.VatPaisa, TotalPaisa: r.TotalPaisa, Status: r.Status,
 		DisplayNumber: shift.DisplayNumber(r.Mode, r.FiscalYear, r.Number), InvoiceId: r.ID.String(),
 		EnteredByName: r.EnteredByName, PrintCount: r.PrintCount, AdDatetimeUnix: r.AdDatetime.Unix(),
+		LastPrintedAtUnix: r.LastPrintedAtUnix, LastPrintedByName: r.LastPrintedByName,
 	}
 }
 
@@ -297,4 +298,12 @@ func paymentMethodEnum(s string) restaurantv1.PaymentMethod {
 	default:
 		return restaurantv1.PaymentMethod_PAYMENT_METHOD_UNSPECIFIED
 	}
+}
+
+// printedAt renders a print time (unix) in Nepal time for the CSV; "" = never.
+func printedAt(unix int64) string {
+	if unix == 0 {
+		return ""
+	}
+	return time.Unix(unix, 0).In(nepal).Format("2006-01-02 15:04")
 }

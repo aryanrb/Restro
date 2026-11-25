@@ -329,8 +329,12 @@ type SalesBookRow struct {
 	EnteredByName  string                 `protobuf:"bytes,15,opt,name=entered_by_name,json=enteredByName,proto3" json:"entered_by_name,omitempty"` // who issued the bill
 	PrintCount     int32                  `protobuf:"varint,16,opt,name=print_count,json=printCount,proto3" json:"print_count,omitempty"`
 	AdDatetimeUnix int64                  `protobuf:"varint,17,opt,name=ad_datetime_unix,json=adDatetimeUnix,proto3" json:"ad_datetime_unix,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The bill's most recent print (original or reprint), from the print log;
+	// 0 / "" when it was never printed.
+	LastPrintedAtUnix int64  `protobuf:"varint,18,opt,name=last_printed_at_unix,json=lastPrintedAtUnix,proto3" json:"last_printed_at_unix,omitempty"`
+	LastPrintedByName string `protobuf:"bytes,19,opt,name=last_printed_by_name,json=lastPrintedByName,proto3" json:"last_printed_by_name,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *SalesBookRow) Reset() {
@@ -480,6 +484,20 @@ func (x *SalesBookRow) GetAdDatetimeUnix() int64 {
 		return x.AdDatetimeUnix
 	}
 	return 0
+}
+
+func (x *SalesBookRow) GetLastPrintedAtUnix() int64 {
+	if x != nil {
+		return x.LastPrintedAtUnix
+	}
+	return 0
+}
+
+func (x *SalesBookRow) GetLastPrintedByName() string {
+	if x != nil {
+		return x.LastPrintedByName
+	}
+	return ""
 }
 
 type SalesBookResponse struct {
@@ -1220,7 +1238,7 @@ const file_restaurant_v1_report_proto_rawDesc = "" +
 	"\fRangeRequest\x12\x1b\n" +
 	"\tfrom_unix\x18\x01 \x01(\x03R\bfromUnix\x12\x17\n" +
 	"\ato_unix\x18\x02 \x01(\x03R\x06toUnix\x12+\n" +
-	"\x11include_estimates\x18\x03 \x01(\bR\x10includeEstimates\"\xb2\x04\n" +
+	"\x11include_estimates\x18\x03 \x01(\bR\x10includeEstimates\"\x94\x05\n" +
 	"\fSalesBookRow\x12\x1f\n" +
 	"\vfiscal_year\x18\x01 \x01(\tR\n" +
 	"fiscalYear\x12\x16\n" +
@@ -1244,7 +1262,9 @@ const file_restaurant_v1_report_proto_rawDesc = "" +
 	"\x0fentered_by_name\x18\x0f \x01(\tR\renteredByName\x12\x1f\n" +
 	"\vprint_count\x18\x10 \x01(\x05R\n" +
 	"printCount\x12(\n" +
-	"\x10ad_datetime_unix\x18\x11 \x01(\x03R\x0eadDatetimeUnix\"D\n" +
+	"\x10ad_datetime_unix\x18\x11 \x01(\x03R\x0eadDatetimeUnix\x12/\n" +
+	"\x14last_printed_at_unix\x18\x12 \x01(\x03R\x11lastPrintedAtUnix\x12/\n" +
+	"\x14last_printed_by_name\x18\x13 \x01(\tR\x11lastPrintedByName\"D\n" +
 	"\x11SalesBookResponse\x12/\n" +
 	"\x04rows\x18\x01 \x03(\v2\x1b.restaurant.v1.SalesBookRowR\x04rows\"\x84\x03\n" +
 	"\rDailySalesRow\x12\x17\n" +

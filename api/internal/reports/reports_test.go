@@ -352,3 +352,42 @@ func TestAuditLog(t *testing.T) {
 		t.Fatal("bad actor id accepted")
 	}
 }
+
+// The sales book carries each bill's last print: when and by whom.
+func TestSalesBookLastPrint(t *testing.T) {
+	f := newFixture(t)
+	now := time.Now()
+	sita := f.as(auth.RoleCashier, "Sita")
+	gita := f.as(auth.RoleCashier, "Gita")
+	printed := f.invoice(inv{mode: "TAX_INVOICE", number: 1, at: now, subtotal: 100, total: 100, by: f.id(sita)})
+	f.invoice(inv{mode: "TAX_INVOICE", number: 2, at: now, subtotal: 100, total: 100, by: f.id(sita)})
+	last := now.Add(-time.Minute).Truncate(time.Second)
+	f.exec(`INSERT INTO invoice_prints (invoice_id, printed_by_user_id, printed_at) VALUES ($1, $2, $3), ($1, $4, $5)`,
+		printed, f.id(sita), last.Add(-10*time.Minute), f.id(gita), last)
+	from, to := now.Add(-time.Hour).Unix(), now.Add(time.Hour).Unix()
+
+	r, err := f.svc.SalesBook(f.owner, &restaurantv1.RangeRequest{FromUnix: from, ToUnix: to})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.GetRows()) != 2 {
+		t.Fatalf("rows = %v", r.GetRows())
+	}
+	for _, row := range r.GetRows() {
+		if row.GetInvoiceId() == printed.String() {
+			if row.GetLastPrintedByName() != "Gita" || row.GetLastPrintedAtUnix() != last.Unix() {
+				t.Fatalf("printed row = %v", row)
+			}
+		} else if row.GetLastPrintedByName() != "" || row.GetLastPrintedAtUnix() != 0 {
+			t.Fatalf("unprinted row = %v", row)
+		}
+	}
+	csv, err := f.svc.ExportSalesBookCsv(f.owner, &restaurantv1.RangeRequest{FromUnix: from, ToUnix: to})
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, _, _ := strings.Cut(string(csv.GetData()), "\n")
+	if !strings.Contains(head, "Last Printed") || !strings.Contains(head, "Printed By") || !strings.Contains(string(csv.GetData()), ",Gita") {
+		t.Fatalf("csv = %s", csv.GetData())
+	}
+}

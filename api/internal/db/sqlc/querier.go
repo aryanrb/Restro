@@ -192,7 +192,8 @@ type Querier interface {
 	// lockout escalation.
 	ResetPinFailures(ctx context.Context, id uuid.UUID) error
 	RevokeSession(ctx context.Context, tokenHash string) error
-	// Sales book rows with the issuer's name. Tax invoices only unless include_estimates.
+	// Sales book rows with the issuer's name and the bill's last print (time + who;
+	// 0 / '' when never printed). Tax invoices only unless include_estimates.
 	SalesBookDetail(ctx context.Context, arg SalesBookDetailParams) ([]SalesBookDetailRow, error)
 	Set86(ctx context.Context, arg Set86Params) error
 	SetItemImage(ctx context.Context, arg SetItemImageParams) (MenuItem, error)

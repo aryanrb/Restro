@@ -143,7 +143,7 @@ func (s *Service) issueSession(ctx context.Context, userID uuid.UUID, deviceID p
 		return "", s.internal("reset pin failures", err)
 	}
 	if err := q.InsertAudit(ctx, sqlc.InsertAuditParams{
-		ActorUserID: puuid(userID), Action: "login", Entity: "user", EntityID: ptext(userID.String()),
+		ActorUserID: puuid(userID), Action: "login", Entity: "user", EntityID: ptext(userID.String()), DeviceLabel: ptextOpt(DeviceLabel(ctx)),
 	}); err != nil {
 		return "", s.internal("audit login", err)
 	}
@@ -297,7 +297,7 @@ func (s *Service) Logout(ctx context.Context, actor *Actor) error {
 		return s.internal("revoke session", err)
 	}
 	if err := q.InsertAudit(ctx, sqlc.InsertAuditParams{
-		ActorUserID: puuid(actor.User.ID), Action: "logout", Entity: "user", EntityID: ptext(actor.User.ID.String()),
+		ActorUserID: puuid(actor.User.ID), Action: "logout", Entity: "user", EntityID: ptext(actor.User.ID.String()), DeviceLabel: ptextOpt(DeviceLabel(ctx)),
 	}); err != nil {
 		return s.internal("audit logout", err)
 	}
@@ -458,7 +458,7 @@ func (s *Service) SaveStaff(ctx context.Context, actor *Actor, in StaffInput) (s
 	}
 	if err := q.InsertAudit(ctx, sqlc.InsertAuditParams{
 		ActorUserID: puuid(actor.User.ID), Action: action, Entity: "user", EntityID: ptext(saved.ID.String()),
-		Before: before, After: auditJSON(map[string]any{"name": saved.Name, "role": saved.Role, "active": saved.Active}),
+		Before: before, After: auditJSON(map[string]any{"name": saved.Name, "role": saved.Role, "active": saved.Active}), DeviceLabel: ptextOpt(DeviceLabel(ctx)),
 	}); err != nil {
 		return sqlc.User{}, s.internal("audit staff save", err)
 	}
@@ -504,7 +504,7 @@ func (s *Service) ResetPin(ctx context.Context, actor *Actor, userID uuid.UUID, 
 		return s.internal("set pin", err)
 	}
 	if err := q.InsertAudit(ctx, sqlc.InsertAuditParams{
-		ActorUserID: puuid(actor.User.ID), Action: "staff.reset_pin", Entity: "user", EntityID: ptext(userID.String()),
+		ActorUserID: puuid(actor.User.ID), Action: "staff.reset_pin", Entity: "user", EntityID: ptext(userID.String()), DeviceLabel: ptextOpt(DeviceLabel(ctx)),
 	}); err != nil {
 		return s.internal("audit reset pin", err)
 	}
