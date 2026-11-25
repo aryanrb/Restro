@@ -41,6 +41,19 @@ func (q *Queries) CheckBumpOrderVersion(ctx context.Context, arg CheckBumpOrderV
 	return version, err
 }
 
+const closeOrder = `-- name: CloseOrder :execrows
+UPDATE orders SET status = 'CLOSED', version = version + 1, updated_at = now()
+WHERE id = $1 AND status IN ('OPEN', 'BILLED')
+`
+
+func (q *Queries) CloseOrder(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, closeOrder, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createOrder = `-- name: CreateOrder :one
 
 INSERT INTO orders (client_id, type, table_id, waiter_user_id, guest_count)
@@ -87,7 +100,8 @@ const createOrderItem = `-- name: CreateOrderItem :one
 INSERT INTO order_items (
     order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne,
     has_variant, unit_price_paisa, quantity, note, station_id, status
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'DRAFT')
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+ON CONFLICT (client_id) DO NOTHING
 RETURNING id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id
 `
 
@@ -104,9 +118,12 @@ type CreateOrderItemParams struct {
 	Quantity       int32     `json:"quantity"`
 	Note           string    `json:"note"`
 	StationID      uuid.UUID `json:"station_id"`
+	Status         string    `json:"status"`
 }
 
 // Order items ---------------------------------------------------------------
+// Per-line idempotency: a line whose client_id already exists inserts nothing
+// (no row returned); the caller decides whether that is a replay or a clash.
 func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) (OrderItem, error) {
 	row := q.db.QueryRow(ctx, createOrderItem,
 		arg.OrderID,
@@ -121,6 +138,7 @@ func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams
 		arg.Quantity,
 		arg.Note,
 		arg.StationID,
+		arg.Status,
 	)
 	var i OrderItem
 	err := row.Scan(
@@ -213,12 +231,71 @@ func (q *Queries) GetOrderByID(ctx context.Context, id uuid.UUID) (Order, error)
 	return i, err
 }
 
+const getOrderCloseState = `-- name: GetOrderCloseState :one
+SELECT
+    count(i.id) FILTER (WHERE i.status <> 'VOIDED')::bigint AS live,
+    count(i.id) FILTER (
+        WHERE i.status <> 'VOIDED'
+          AND inv.status = 'ISSUED'
+          AND (i.status = 'SERVED' OR (o.type = 'TAKEAWAY' AND i.status = 'READY'))
+    )::bigint AS done
+FROM orders o
+LEFT JOIN order_items i ON i.order_id = o.id
+LEFT JOIN invoices inv ON inv.id = i.invoice_id
+WHERE o.id = $1
+`
+
+type GetOrderCloseStateRow struct {
+	Live int64 `json:"live"`
+	Done int64 `json:"done"`
+}
+
+// Close rule inputs: live (non-voided) lines, and how many of them are both on an
+// ISSUED invoice and handed over (SERVED, or READY for a takeaway).
+func (q *Queries) GetOrderCloseState(ctx context.Context, id uuid.UUID) (GetOrderCloseStateRow, error) {
+	row := q.db.QueryRow(ctx, getOrderCloseState, id)
+	var i GetOrderCloseStateRow
+	err := row.Scan(&i.Live, &i.Done)
+	return i, err
+}
+
 const getOrderItem = `-- name: GetOrderItem :one
 SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id FROM order_items WHERE id = $1
 `
 
 func (q *Queries) GetOrderItem(ctx context.Context, id uuid.UUID) (OrderItem, error) {
 	row := q.db.QueryRow(ctx, getOrderItem, id)
+	var i OrderItem
+	err := row.Scan(
+		&i.ID,
+		&i.OrderID,
+		&i.ClientID,
+		&i.MenuItemID,
+		&i.NameEn,
+		&i.NameNe,
+		&i.VariantNameEn,
+		&i.VariantNameNe,
+		&i.HasVariant,
+		&i.UnitPricePaisa,
+		&i.Quantity,
+		&i.Note,
+		&i.StationID,
+		&i.Status,
+		&i.VoidReason,
+		&i.VoidedByUserID,
+		&i.VoidApprovedByUserID,
+		&i.CreatedAt,
+		&i.InvoiceID,
+	)
+	return i, err
+}
+
+const getOrderItemByClientID = `-- name: GetOrderItemByClientID :one
+SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id FROM order_items WHERE client_id = $1
+`
+
+func (q *Queries) GetOrderItemByClientID(ctx context.Context, clientID uuid.UUID) (OrderItem, error) {
+	row := q.db.QueryRow(ctx, getOrderItemByClientID, clientID)
 	var i OrderItem
 	err := row.Scan(
 		&i.ID,
@@ -386,6 +463,30 @@ func (q *Queries) ListOrderItems(ctx context.Context, orderID uuid.UUID) ([]Orde
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockOrderForUpdate = `-- name: LockOrderForUpdate :one
+SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at FROM orders WHERE id = $1 FOR UPDATE
+`
+
+// Locks the order row so the close-rule evaluation that follows sees every
+// change committed by concurrent order/kitchen/billing transactions.
+func (q *Queries) LockOrderForUpdate(ctx context.Context, id uuid.UUID) (Order, error) {
+	row := q.db.QueryRow(ctx, lockOrderForUpdate, id)
+	var i Order
+	err := row.Scan(
+		&i.ID,
+		&i.ClientID,
+		&i.Type,
+		&i.TableID,
+		&i.WaiterUserID,
+		&i.Status,
+		&i.GuestCount,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const moveOrderItemsToOrder = `-- name: MoveOrderItemsToOrder :exec

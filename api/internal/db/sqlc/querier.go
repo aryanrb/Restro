@@ -20,6 +20,7 @@ type Querier interface {
 	CancelInvoice(ctx context.Context, arg CancelInvoiceParams) (Invoice, error)
 	CancelledInvoices(ctx context.Context, arg CancelledInvoicesParams) ([]Invoice, error)
 	CheckBumpOrderVersion(ctx context.Context, arg CheckBumpOrderVersionParams) (int64, error)
+	CloseOrder(ctx context.Context, id uuid.UUID) (int64, error)
 	CloseShift(ctx context.Context, arg CloseShiftParams) (Shift, error)
 	CountActiveOwners(ctx context.Context) (int64, error)
 	CountItemsInCategory(ctx context.Context, categoryID uuid.UUID) (int64, error)
@@ -44,6 +45,8 @@ type Querier interface {
 	// Orders --------------------------------------------------------------------
 	CreateOrder(ctx context.Context, arg CreateOrderParams) (Order, error)
 	// Order items ---------------------------------------------------------------
+	// Per-line idempotency: a line whose client_id already exists inserts nothing
+	// (no row returned); the caller decides whether that is a replay or a clash.
 	CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) (OrderItem, error)
 	CreateOrderItemModifier(ctx context.Context, arg CreateOrderItemModifierParams) error
 	CreatePayment(ctx context.Context, arg CreatePaymentParams) (Payment, error)
@@ -71,7 +74,11 @@ type Querier interface {
 	GetOpenShiftForUser(ctx context.Context, cashierUserID uuid.UUID) (Shift, error)
 	GetOrderByClientID(ctx context.Context, clientID uuid.UUID) (Order, error)
 	GetOrderByID(ctx context.Context, id uuid.UUID) (Order, error)
+	// Close rule inputs: live (non-voided) lines, and how many of them are both on an
+	// ISSUED invoice and handed over (SERVED, or READY for a takeaway).
+	GetOrderCloseState(ctx context.Context, id uuid.UUID) (GetOrderCloseStateRow, error)
 	GetOrderItem(ctx context.Context, id uuid.UUID) (OrderItem, error)
+	GetOrderItemByClientID(ctx context.Context, clientID uuid.UUID) (OrderItem, error)
 	// Idempotency ---------------------------------------------------------------
 	GetProcessedCommand(ctx context.Context, commandID uuid.UUID) ([]byte, error)
 	GetSettings(ctx context.Context) (Setting, error)
@@ -95,6 +102,7 @@ type Querier interface {
 	ListItems(ctx context.Context) ([]MenuItem, error)
 	// Modifier groups ----------------------------------------------------------
 	ListModifierGroups(ctx context.Context) ([]ModifierGroup, error)
+	ListModifierGroupsForItem(ctx context.Context, itemID uuid.UUID) ([]ModifierGroup, error)
 	ListModifiers(ctx context.Context) ([]Modifier, error)
 	ListModifiersByItemIDs(ctx context.Context, itemIds []uuid.UUID) ([]OrderItemModifier, error)
 	ListOpenOrders(ctx context.Context) ([]Order, error)
@@ -111,10 +119,14 @@ type Querier interface {
 	ListUnbilledOrderItems(ctx context.Context, orderID uuid.UUID) ([]OrderItem, error)
 	// Variants -----------------------------------------------------------------
 	ListVariants(ctx context.Context) ([]ItemVariant, error)
+	ListVariantsForItem(ctx context.Context, itemID uuid.UUID) ([]ItemVariant, error)
 	// Locks the order row for the billing transaction so concurrent bills (different
 	// command ids) of the same order serialize; the loser then sees the new status /
 	// unbilled set. Order mutations (version bumps) also wait on this lock.
 	LockOrderByClientIDForBilling(ctx context.Context, clientID uuid.UUID) (Order, error)
+	// Locks the order row so the close-rule evaluation that follows sees every
+	// change committed by concurrent order/kitchen/billing transactions.
+	LockOrderForUpdate(ctx context.Context, id uuid.UUID) (Order, error)
 	MoveOrderItemsToOrder(ctx context.Context, arg MoveOrderItemsToOrderParams) error
 	NextAreaSort(ctx context.Context) (int32, error)
 	NextCategorySort(ctx context.Context) (int32, error)
@@ -123,10 +135,17 @@ type Querier interface {
 	NextTableSort(ctx context.Context) (int32, error)
 	OpenShift(ctx context.Context, arg OpenShiftParams) (Shift, error)
 	QueryAuditLog(ctx context.Context, arg QueryAuditLogParams) ([]AuditLog, error)
-	// Atomically counts a PIN attempt before it is checked, only while the user is
-	// not locked (limit passed as $2). No row = locked. A correct PIN then resets the
-	// counter, so concurrent guesses can never exceed the limit.
+	// Atomically counts a PIN attempt before it is checked. Only allowed while the
+	// user is unlocked and under the limit, or once a lock has expired (which starts
+	// a fresh set of attempts). No row = locked. The attempt that reaches the limit
+	// (lock_after) also sets the lock in the same statement: pin_locked_until =
+	// now + lock_secs[pin_lockout_count+1] (last entry repeats) and bumps
+	// pin_lockout_count. A correct PIN then clears all of it (ResetPinFailures), so
+	// concurrent guesses can never exceed the limit. In the SET list, a non-NULL
+	// pin_locked_until can only be an expired lock (the WHERE excludes live ones).
 	ReservePinAttempt(ctx context.Context, arg ReservePinAttemptParams) (User, error)
+	// A correct PIN (or a full login) clears the failure counter, any lock and the
+	// lockout escalation.
 	ResetPinFailures(ctx context.Context, id uuid.UUID) error
 	RevokeSession(ctx context.Context, tokenHash string) error
 	SalesBook(ctx context.Context, arg SalesBookParams) ([]Invoice, error)
@@ -139,6 +158,7 @@ type Querier interface {
 	SetOrderStatus(ctx context.Context, arg SetOrderStatusParams) error
 	SetOrderTable(ctx context.Context, arg SetOrderTableParams) error
 	SetUserLanguage(ctx context.Context, arg SetUserLanguageParams) (User, error)
+	// An owner/manager PIN reset unlocks immediately and clears the escalation.
 	SetUserPin(ctx context.Context, arg SetUserPinParams) error
 	ShiftPaymentTotals(ctx context.Context, shiftID uuid.UUID) ([]ShiftPaymentTotalsRow, error)
 	TodaySalesTotal(ctx context.Context, adDatetime time.Time) (TodaySalesTotalRow, error)

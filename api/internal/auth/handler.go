@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -169,7 +170,7 @@ func toProtoUser(u sqlc.User) *restaurantv1.User {
 func toProtoStaff(u sqlc.User) *restaurantv1.StaffMember {
 	sm := &restaurantv1.StaffMember{
 		Id: u.ID.String(), Name: u.Name, Role: protoRole(u.Role), Active: u.Active,
-		PinLocked: u.FailedPinAttempts >= pinLockAfter,
+		PinLocked: pinLocked(u, time.Now()),
 	}
 	if u.Username.Valid {
 		v := u.Username.String

@@ -37,17 +37,47 @@ RETURNING version;
 -- name: SetOrderStatus :exec
 UPDATE orders SET status = $2, updated_at = now() WHERE id = $1;
 
+-- Locks the order row so the close-rule evaluation that follows sees every
+-- change committed by concurrent order/kitchen/billing transactions.
+-- name: LockOrderForUpdate :one
+SELECT * FROM orders WHERE id = $1 FOR UPDATE;
+
+-- Close rule inputs: live (non-voided) lines, and how many of them are both on an
+-- ISSUED invoice and handed over (SERVED, or READY for a takeaway).
+-- name: GetOrderCloseState :one
+SELECT
+    count(i.id) FILTER (WHERE i.status <> 'VOIDED')::bigint AS live,
+    count(i.id) FILTER (
+        WHERE i.status <> 'VOIDED'
+          AND inv.status = 'ISSUED'
+          AND (i.status = 'SERVED' OR (o.type = 'TAKEAWAY' AND i.status = 'READY'))
+    )::bigint AS done
+FROM orders o
+LEFT JOIN order_items i ON i.order_id = o.id
+LEFT JOIN invoices inv ON inv.id = i.invoice_id
+WHERE o.id = $1;
+
+-- name: CloseOrder :execrows
+UPDATE orders SET status = 'CLOSED', version = version + 1, updated_at = now()
+WHERE id = $1 AND status IN ('OPEN', 'BILLED');
+
 -- name: SetOrderTable :exec
 UPDATE orders SET table_id = $2, updated_at = now() WHERE id = $1;
 
 -- Order items ---------------------------------------------------------------
 
+-- Per-line idempotency: a line whose client_id already exists inserts nothing
+-- (no row returned); the caller decides whether that is a replay or a clash.
 -- name: CreateOrderItem :one
 INSERT INTO order_items (
     order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne,
     has_variant, unit_price_paisa, quantity, note, station_id, status
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'DRAFT')
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, @status)
+ON CONFLICT (client_id) DO NOTHING
 RETURNING *;
+
+-- name: GetOrderItemByClientID :one
+SELECT * FROM order_items WHERE client_id = $1;
 
 -- name: ListOrderItems :many
 SELECT * FROM order_items WHERE order_id = $1 ORDER BY created_at;

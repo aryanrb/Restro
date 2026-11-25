@@ -30,6 +30,8 @@ type fixture struct {
 	itemID  uuid.UUID
 	tableA  uuid.UUID
 	tableB  uuid.UUID
+
+	invoiceNo int32 // last number used by bill()
 }
 
 func newFixture(t *testing.T) *fixture {

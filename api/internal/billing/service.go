@@ -20,6 +20,7 @@ import (
 	"github.com/oneaccord/restro/api/internal/dbx"
 	"github.com/oneaccord/restro/api/internal/idem"
 	"github.com/oneaccord/restro/api/internal/money"
+	"github.com/oneaccord/restro/api/internal/orders"
 	"github.com/oneaccord/restro/api/internal/realtime"
 )
 
@@ -72,6 +73,7 @@ func (s *Service) IssueFullBill(ctx context.Context, req *restaurantv1.IssueFull
 		return nil, err
 	}
 
+	var freedTable string
 	out := &restaurantv1.Invoice{}
 	err = idem.Run(ctx, s.pool, s.q, cmdID, actor.User.ID, out, func(q *sqlc.Queries) error {
 		order, items, settings, e := s.loadForBilling(ctx, q, ocid)
@@ -96,6 +98,14 @@ func (s *Service) IssueFullBill(ctx context.Context, req *restaurantv1.IssueFull
 		if e := q.SetOrderStatus(ctx, sqlc.SetOrderStatusParams{ID: order.ID, Status: "BILLED"}); e != nil {
 			return connecterr.Internal(e)
 		}
+		// Everything is billed now; if it is also all handed over, the order is done.
+		closed, e := orders.CloseIfDone(ctx, q, order.ID)
+		if e != nil {
+			return e
+		}
+		if closed {
+			freedTable = tableIDStr(order)
+		}
 		full, e := s.loadInvoice(ctx, q, inv.ID)
 		if e != nil {
 			return e
@@ -107,6 +117,9 @@ func (s *Service) IssueFullBill(ctx context.Context, req *restaurantv1.IssueFull
 		return nil, err
 	}
 	s.emit(realtime.Event{Type: "order.updated", ID: out.OrderId})
+	if freedTable != "" {
+		s.emit(realtime.Event{Type: "table.updated", ID: freedTable})
+	}
 	return out, nil
 }
 
@@ -124,6 +137,7 @@ func (s *Service) SplitByItem(ctx context.Context, req *restaurantv1.SplitByItem
 		return nil, err
 	}
 
+	var freedTable string
 	out := &restaurantv1.SplitByItemResponse{}
 	err = idem.Run(ctx, s.pool, s.q, cmdID, actor.User.ID, out, func(q *sqlc.Queries) error {
 		order, items, settings, e := s.loadForBilling(ctx, q, ocid)
@@ -171,6 +185,13 @@ func (s *Service) SplitByItem(ctx context.Context, req *restaurantv1.SplitByItem
 			if e := q.SetOrderStatus(ctx, sqlc.SetOrderStatusParams{ID: order.ID, Status: "BILLED"}); e != nil {
 				return connecterr.Internal(e)
 			}
+			closed, e := orders.CloseIfDone(ctx, q, order.ID)
+			if e != nil {
+				return e
+			}
+			if closed {
+				freedTable = tableIDStr(order)
+			}
 		}
 		return nil
 	})
@@ -178,6 +199,9 @@ func (s *Service) SplitByItem(ctx context.Context, req *restaurantv1.SplitByItem
 		return nil, err
 	}
 	s.emit(realtime.Event{Type: "order.updated"})
+	if freedTable != "" {
+		s.emit(realtime.Event{Type: "table.updated", ID: freedTable})
+	}
 	return out, nil
 }
 
@@ -230,8 +254,12 @@ func (s *Service) RecordPayment(ctx context.Context, req *restaurantv1.RecordPay
 		if e != nil {
 			return connecterr.Internal(e)
 		}
-		if e := s.closeOrderIfPaid(ctx, q, inv); e != nil {
-			return e
+		// Payment is not part of the close rule (billed + handed over); re-evaluate
+		// anyway so an order whose state was settled elsewhere is not left open.
+		if inv.OrderID.Valid {
+			if _, e := orders.CloseIfDone(ctx, q, uuid.UUID(inv.OrderID.Bytes)); e != nil {
+				return e
+			}
 		}
 		if e := audit.Write(ctx, q, audit.Entry{ActorID: actor.User.ID, Action: "payment.record", Entity: "invoice", EntityID: invID.String(), After: audit.JSON(map[string]any{"method": method, "amount": req.GetAmountPaisa()})}); e != nil {
 			return e
@@ -408,12 +436,18 @@ func (s *Service) subtotalOf(ctx context.Context, q *sqlc.Queries, orderID uuid.
 	return subtotal, byItem, nil
 }
 
-func lineTotal(it sqlc.OrderItem, mods []sqlc.OrderItemModifier) int64 {
-	var delta int64
-	for _, m := range mods {
-		delta += m.PriceDeltaPaisa
+// lineTotal is unit price × quantity. The order line's unit_price_paisa already
+// includes its modifiers' price deltas (snapshotted that way by orders.AddItems),
+// so the modifier rows are display-only here and must not be added again.
+func lineTotal(it sqlc.OrderItem, _ []sqlc.OrderItemModifier) int64 {
+	return it.UnitPricePaisa * int64(it.Quantity)
+}
+
+func tableIDStr(o sqlc.Order) string {
+	if !o.TableID.Valid {
+		return ""
 	}
-	return (it.UnitPricePaisa + delta) * int64(it.Quantity)
+	return uuid.UUID(o.TableID.Bytes).String()
 }
 
 func (s *Service) compute(settings sqlc.Setting, subtotal, discount int64) money.Result {
@@ -502,36 +536,6 @@ func (s *Service) loadInvoice(ctx context.Context, q *sqlc.Queries, id uuid.UUID
 		return nil, connecterr.Internal(err)
 	}
 	return toInvoice(inv, lines, payments), nil
-}
-
-func (s *Service) closeOrderIfPaid(ctx context.Context, q *sqlc.Queries, inv sqlc.Invoice) error {
-	if !inv.OrderID.Valid {
-		return nil
-	}
-	payments, err := q.ListPaymentsForInvoice(ctx, inv.ID)
-	if err != nil {
-		return connecterr.Internal(err)
-	}
-	var paid int64
-	for _, p := range payments {
-		if p.Status == "CONFIRMED" {
-			paid += p.AmountPaisa
-		}
-	}
-	if paid < inv.TotalPaisa {
-		return nil
-	}
-	orderID := uuid.UUID(inv.OrderID.Bytes)
-	remaining, err := q.ListUnbilledOrderItems(ctx, orderID)
-	if err != nil {
-		return connecterr.Internal(err)
-	}
-	if len(remaining) == 0 {
-		if err := q.SetOrderStatus(ctx, sqlc.SetOrderStatusParams{ID: orderID, Status: "CLOSED"}); err != nil {
-			return connecterr.Internal(err)
-		}
-	}
-	return nil
 }
 
 // computeDiscount applies the role limit and returns the discount amount in paisa.

@@ -14,6 +14,7 @@ import (
 	"github.com/oneaccord/restro/api/internal/connecterr"
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
 	"github.com/oneaccord/restro/api/internal/dbx"
+	"github.com/oneaccord/restro/api/internal/orders"
 	"github.com/oneaccord/restro/api/internal/realtime"
 )
 
@@ -125,6 +126,10 @@ func (s *Service) transition(ctx context.Context, itemIDs []string, to string, f
 				if _, e := q.BumpOrderVersion(ctx, it.OrderID); e != nil {
 					return connecterr.Internal(e)
 				}
+				// READY is the hand-over for a takeaway: a billed takeaway closes here.
+				if _, e := orders.CloseIfDone(ctx, q, it.OrderID); e != nil {
+					return e
+				}
 				orderIDs = append(orderIDs, it.OrderID.String())
 			}
 		}
@@ -165,6 +170,10 @@ func (s *Service) BumpTicket(ctx context.Context, orderID, stationID string) err
 		readied = r
 		if _, e := q.BumpOrderVersion(ctx, oid); e != nil {
 			return connecterr.Internal(e)
+		}
+		// READY is the hand-over for a takeaway: a billed takeaway closes here.
+		if _, e := orders.CloseIfDone(ctx, q, oid); e != nil {
+			return e
 		}
 		return nil
 	})

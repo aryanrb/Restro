@@ -287,15 +287,17 @@ type Station struct {
 }
 
 type User struct {
-	ID                uuid.UUID   `json:"id"`
-	Name              string      `json:"name"`
-	Role              string      `json:"role"`
-	Username          pgtype.Text `json:"username"`
-	PasswordHash      pgtype.Text `json:"password_hash"`
-	PinHash           pgtype.Text `json:"pin_hash"`
-	Language          string      `json:"language"`
-	Active            bool        `json:"active"`
-	FailedPinAttempts int32       `json:"failed_pin_attempts"`
-	CreatedAt         time.Time   `json:"created_at"`
-	UpdatedAt         time.Time   `json:"updated_at"`
+	ID                uuid.UUID          `json:"id"`
+	Name              string             `json:"name"`
+	Role              string             `json:"role"`
+	Username          pgtype.Text        `json:"username"`
+	PasswordHash      pgtype.Text        `json:"password_hash"`
+	PinHash           pgtype.Text        `json:"pin_hash"`
+	Language          string             `json:"language"`
+	Active            bool               `json:"active"`
+	FailedPinAttempts int32              `json:"failed_pin_attempts"`
+	CreatedAt         time.Time          `json:"created_at"`
+	UpdatedAt         time.Time          `json:"updated_at"`
+	PinLockedUntil    pgtype.Timestamptz `json:"pin_locked_until"`
+	PinLockoutCount   int32              `json:"pin_lockout_count"`
 }

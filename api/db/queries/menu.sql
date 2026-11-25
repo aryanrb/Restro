@@ -64,6 +64,15 @@ SELECT * FROM item_variants WHERE id = $1;
 -- name: GetModifierByID :one
 SELECT * FROM modifiers WHERE id = $1;
 
+-- name: ListVariantsForItem :many
+SELECT * FROM item_variants WHERE item_id = $1 ORDER BY sort;
+
+-- name: ListModifierGroupsForItem :many
+SELECT g.* FROM modifier_groups g
+JOIN item_modifier_groups l ON l.group_id = g.id
+WHERE l.item_id = $1
+ORDER BY g.name_en;
+
 -- name: DeleteItemVariants :exec
 DELETE FROM item_variants WHERE item_id = $1;
 

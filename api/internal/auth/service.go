@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,16 +26,52 @@ const (
 	pinLockAfter = 5 // failed PIN attempts
 )
 
+// pinLockDurations is the progressive PIN lockout: the 1st lock lasts 2 min, the
+// 2nd 5 min, the 3rd and later 30 min. A correct PIN or an owner/manager reset
+// clears the escalation; an expired lock gives a fresh pinLockAfter attempts.
+var pinLockDurations = []time.Duration{2 * time.Minute, 5 * time.Minute, 30 * time.Minute}
+
+func pinLockSecs() []int32 {
+	out := make([]int32, len(pinLockDurations))
+	for i, d := range pinLockDurations {
+		out[i] = int32(d / time.Second)
+	}
+	return out
+}
+
+// pinLocked reports whether u's PIN is locked at now. A row at the attempt limit
+// with no expiry is treated as locked (fail closed).
+func pinLocked(u sqlc.User, now time.Time) bool {
+	if u.PinLockedUntil.Valid {
+		return u.PinLockedUntil.Time.After(now)
+	}
+	return u.FailedPinAttempts >= pinLockAfter
+}
+
+// pinLockedErr is PIN_LOCKED with the remaining wait (rounded up to a minute).
+func pinLockedErr(u sqlc.User, now time.Time) *connecterr.Error {
+	e := connecterr.PinLocked()
+	if u.PinLockedUntil.Valid {
+		mins := int((u.PinLockedUntil.Time.Sub(now) + time.Minute - 1) / time.Minute)
+		if mins < 1 {
+			mins = 1
+		}
+		e.Message = fmt.Sprintf("PIN locked, try again in %d min", mins)
+	}
+	return e
+}
+
 // Service holds the connection pool (for transactions) and a non-tx Queries for
 // reads.
 type Service struct {
 	pool *pgxpool.Pool
 	q    *sqlc.Queries
 	log  *zap.Logger
+	now  func() time.Time // PIN lockout clock; injectable for tests
 }
 
 func NewService(pool *pgxpool.Pool, log *zap.Logger) *Service {
-	return &Service{pool: pool, q: sqlc.New(pool), log: log}
+	return &Service{pool: pool, q: sqlc.New(pool), log: log, now: time.Now}
 }
 
 // ManagerApproval is an inline manager-PIN override carried by privileged commands.
@@ -154,8 +191,8 @@ func (s *Service) PinLogin(ctx context.Context, userID uuid.UUID, pin string, de
 	if err != nil {
 		return sqlc.User{}, "", s.internal("get user by id", err)
 	}
-	if u.FailedPinAttempts >= pinLockAfter {
-		return sqlc.User{}, "", connecterr.PinLocked()
+	if now := s.now(); pinLocked(u, now) {
+		return sqlc.User{}, "", pinLockedErr(u, now)
 	}
 	if !u.Active || !u.PinHash.Valid {
 		return sqlc.User{}, "", connecterr.InvalidCredentials()
@@ -172,14 +209,24 @@ func (s *Service) PinLogin(ctx context.Context, userID uuid.UUID, pin string, de
 
 // checkPin verifies pin against u's PIN hash under the shared lockout used by PIN
 // login and manager approval. The attempt is counted atomically BEFORE the
-// (slow) hash check, so parallel guesses can't each slip under the limit; a
-// correct PIN clears the counter. Returns nil on success, PinLocked once the
-// limit is reached, otherwise wrongPin. Runs on the pool (not a caller's tx) so
-// failures persist even if the surrounding command rolls back.
+// (slow) hash check, so parallel guesses can't each slip under the limit; the
+// attempt reaching the limit sets a progressive, auto-expiring lock in the same
+// statement, and a correct PIN clears the counter, lock and escalation. Returns
+// nil on success, PinLocked (with the remaining wait) once locked, otherwise
+// wrongPin. Runs on the pool (not a caller's tx) so failures persist even if the
+// surrounding command rolls back.
 func (s *Service) checkPin(ctx context.Context, u sqlc.User, pin string, wrongPin *connecterr.Error) *connecterr.Error {
-	reserved, err := s.q.ReservePinAttempt(ctx, sqlc.ReservePinAttemptParams{ID: u.ID, LockAfter: pinLockAfter})
+	now := s.now()
+	reserved, err := s.q.ReservePinAttempt(ctx, sqlc.ReservePinAttemptParams{
+		ID: u.ID, LockAfter: pinLockAfter, Now: now, LockSecs: pinLockSecs(),
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return connecterr.PinLocked()
+		// Locked by a concurrent attempt since u was read: report the live lock.
+		cur, gerr := s.q.GetUserByID(ctx, u.ID)
+		if gerr != nil {
+			return connecterr.PinLocked()
+		}
+		return pinLockedErr(cur, now)
 	}
 	if err != nil {
 		return s.internal("reserve pin attempt", err)
@@ -189,8 +236,8 @@ func (s *Service) checkPin(ctx context.Context, u sqlc.User, pin string, wrongPi
 		return s.internal("verify pin", err)
 	}
 	if !ok {
-		if reserved.FailedPinAttempts >= pinLockAfter {
-			return connecterr.PinLocked()
+		if pinLocked(reserved, now) {
+			return pinLockedErr(reserved, now)
 		}
 		return wrongPin
 	}
@@ -417,7 +464,8 @@ func (s *Service) SaveStaff(ctx context.Context, actor *Actor, in StaffInput) (s
 	return saved, nil
 }
 
-// ResetPin sets a new PIN and clears any lock (owner/manager only).
+// ResetPin sets a new PIN, unlocks immediately and clears the lockout escalation
+// (owner/manager only).
 func (s *Service) ResetPin(ctx context.Context, actor *Actor, userID uuid.UUID, pin string) error {
 	if !actor.LoggedIn() || !isPrivileged(actor.User.Role) {
 		return connecterr.NotAllowed("only owners and managers can reset PINs")
@@ -461,8 +509,8 @@ func (s *Service) ResetPin(ctx context.Context, actor *Actor, userID uuid.UUID, 
 
 // VerifyManagerApproval checks an inline manager override. Returns the approving
 // manager, ManagerApprovalInvalid, or PinLocked. Wrong PINs share the PIN-login
-// failure counter and lockout (pinLockAfter), so an approval PIN cannot be
-// brute-forced; a correct PIN clears the counter. The counter updates run on the
+// failure counter and progressive lockout (pinLockAfter, pinLockDurations), so an
+// approval PIN cannot be brute-forced; a correct PIN clears the counter. The counter updates run on the
 // pool, not the caller's transaction, so a rolled-back command still counts.
 func (s *Service) VerifyManagerApproval(ctx context.Context, a ManagerApproval) (sqlc.User, error) {
 	id, err := uuid.Parse(a.ManagerUserID)
@@ -479,8 +527,8 @@ func (s *Service) VerifyManagerApproval(ctx context.Context, a ManagerApproval) 
 	if !u.Active || !isPrivileged(u.Role) || !u.PinHash.Valid {
 		return sqlc.User{}, connecterr.ManagerApprovalInvalid()
 	}
-	if u.FailedPinAttempts >= pinLockAfter {
-		return sqlc.User{}, connecterr.PinLocked()
+	if now := s.now(); pinLocked(u, now) {
+		return sqlc.User{}, pinLockedErr(u, now)
 	}
 	if cerr := s.checkPin(ctx, u, a.Pin, connecterr.ManagerApprovalInvalid()); cerr != nil {
 		return sqlc.User{}, cerr

@@ -37,8 +37,9 @@ enum OrderType {
 enum OrderStatus {
   ORDER_STATUS_UNSPECIFIED = 0;
   ORDER_STATUS_OPEN = 1;
-  ORDER_STATUS_BILLED = 2;    // fully invoiced (set by the billing plan)
-  ORDER_STATUS_CLOSED = 3;    // billed and paid
+  ORDER_STATUS_BILLED = 2;    // every live line invoiced, not all handed over yet (still servable)
+  ORDER_STATUS_CLOSED = 3;    // every live line on an issued invoice AND handed over
+                              // (SERVED, or READY for takeaway); payment is not part of the rule
   ORDER_STATUS_CANCELLED = 4;
 }
 
@@ -66,7 +67,8 @@ message OrderItem {
   LocalText name = 4;                       // snapshot
   optional LocalText variant_name = 5;      // snapshot (unset if no variant)
   repeated OrderItemModifier modifiers = 6; // snapshot
-  int64 unit_price_paisa = 7;               // snapshot (server price at add time)
+  int64 unit_price_paisa = 7;               // snapshot (server price at add time): variant (or item)
+                                            // price + the chosen modifiers' price deltas
 
   int32 quantity = 8;
   string note = 9;
@@ -139,10 +141,19 @@ message AddItemsRequest {
   string command_id = 1 [(buf.validate.field).string.min_len = 1];
   string order_client_id = 2 [(buf.validate.field).string.min_len = 1];
   repeated NewItem items = 3 [(buf.validate.field).repeated.min_items = 1];
+  // When true the accepted lines are created already SENT (same effects as a
+  // SendItems of exactly those lines, in the same transaction), so one queued
+  // client command is one atomic call. Default false: lines are created DRAFT.
+  bool send = 4;
 }
 message AddItemsResult {
   Order order = 1;
-  repeated RejectedLine rejected = 2; // 86'd lines; the rest were applied
+  // Lines that were not applied (the rest were): ITEM_86D for an out-of-stock
+  // item; INVALID for an unknown/inactive item, a variant or modifier that does
+  // not belong to the item, a modifier-group min/max violation, or a line
+  // client_id already used on another order. A line whose client_id already
+  // exists on this order is a no-op (per-line idempotency), not a rejection.
+  repeated RejectedLine rejected = 2;
 }
 
 message SendItemsRequest {

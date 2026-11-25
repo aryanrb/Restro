@@ -147,6 +147,7 @@ func (s *Service) AddItems(ctx context.Context, req *restaurantv1.AddItemsReques
 		return nil, err
 	}
 
+	var sent bool // lines created SENT in this call (not set on an idempotent replay)
 	out := &restaurantv1.AddItemsResult{}
 	err = s.runIdempotent(ctx, cmdID, actor.User.ID, out, func(q *sqlc.Queries) error {
 		order, e := q.GetOrderByClientID(ctx, ocid)
@@ -160,42 +161,62 @@ func (s *Service) AddItems(ctx context.Context, req *restaurantv1.AddItemsReques
 			return e
 		}
 
+		status := "DRAFT"
+		if req.GetSend() {
+			status = "SENT" // one-step add+send: the same state SendItems would produce
+		}
 		applied := 0
 		for _, ni := range req.GetItems() {
-			item, ie := q.GetItem(ctx, mustUUID(ni.GetMenuItemId()))
-			if errors.Is(ie, pgx.ErrNoRows) {
-				out.Rejected = append(out.Rejected, rejected(ni.GetClientId(), restaurantv1.ErrorReason_ERROR_REASON_INVALID, "item not found"))
+			lineCID, perr := uuid.Parse(ni.GetClientId())
+			if perr != nil {
+				out.Rejected = append(out.Rejected, rejected(ni.GetClientId(), restaurantv1.ErrorReason_ERROR_REASON_INVALID, "line client_id is not a valid id"))
 				continue
 			}
-			if ie != nil {
-				return connecterr.Internal(ie)
-			}
-			if item.Is86d {
-				out.Rejected = append(out.Rejected, rejected(ni.GetClientId(), restaurantv1.ErrorReason_ERROR_REASON_ITEM_86D, "item is out of stock"))
-				continue
-			}
-
-			unitPrice := item.PricePaisa
-			varEn, varNe, hasVar := "", "", false
-			if ni.VariantId != nil {
-				if v, ve := q.GetVariant(ctx, mustUUID(ni.GetVariantId())); ve == nil {
-					unitPrice, varEn, varNe, hasVar = v.PricePaisa, v.NameEn, v.NameNe, true
+			// Per-line idempotency: a line already on this order (a re-sent queue entry
+			// under a new command id) is a no-op, checked before validation so a later
+			// 86 or menu edit cannot turn a replay into a rejection.
+			if existing, ge := q.GetOrderItemByClientID(ctx, lineCID); ge == nil {
+				if existing.OrderID != order.ID {
+					out.Rejected = append(out.Rejected, rejected(ni.GetClientId(), restaurantv1.ErrorReason_ERROR_REASON_INVALID, "line client_id is already used on another order"))
 				}
+				continue
+			} else if !errors.Is(ge, pgx.ErrNoRows) {
+				return connecterr.Internal(ge)
 			}
 
+			pl, rej, ve := priceLine(ctx, q, ni)
+			if ve != nil {
+				return ve
+			}
+			if rej != nil {
+				out.Rejected = append(out.Rejected, rejected(ni.GetClientId(), rej.reason, rej.msg))
+				continue
+			}
+			varEn, varNe, hasVar := "", "", false
+			if pl.variant != nil {
+				varEn, varNe, hasVar = pl.variant.NameEn, pl.variant.NameNe, true
+			}
 			oi, ce := q.CreateOrderItem(ctx, sqlc.CreateOrderItemParams{
-				OrderID: order.ID, ClientID: mustUUID(ni.GetClientId()), MenuItemID: item.ID,
-				NameEn: item.NameEn, NameNe: item.NameNe, VariantNameEn: varEn, VariantNameNe: varNe, HasVariant: hasVar,
-				UnitPricePaisa: unitPrice, Quantity: ni.GetQuantity(), Note: ni.GetNote(), StationID: item.StationID,
+				OrderID: order.ID, ClientID: lineCID, MenuItemID: pl.item.ID,
+				NameEn: pl.item.NameEn, NameNe: pl.item.NameNe, VariantNameEn: varEn, VariantNameNe: varNe, HasVariant: hasVar,
+				UnitPricePaisa: pl.unitPrice, Quantity: ni.GetQuantity(), Note: ni.GetNote(), StationID: pl.item.StationID,
+				Status: status,
 			})
+			if errors.Is(ce, pgx.ErrNoRows) {
+				// Inserted concurrently (or earlier in this same request): same rule as above.
+				existing, ge := q.GetOrderItemByClientID(ctx, lineCID)
+				if ge != nil {
+					return connecterr.Internal(ge)
+				}
+				if existing.OrderID != order.ID {
+					out.Rejected = append(out.Rejected, rejected(ni.GetClientId(), restaurantv1.ErrorReason_ERROR_REASON_INVALID, "line client_id is already used on another order"))
+				}
+				continue
+			}
 			if ce != nil {
 				return connecterr.Internal(ce)
 			}
-			for _, mid := range ni.GetModifierIds() {
-				m, me := q.GetModifierByID(ctx, mustUUID(mid))
-				if me != nil {
-					continue
-				}
+			for _, m := range pl.modifiers {
 				if e := q.CreateOrderItemModifier(ctx, sqlc.CreateOrderItemModifierParams{
 					OrderItemID: oi.ID, NameEn: m.NameEn, NameNe: m.NameNe, PriceDeltaPaisa: m.PriceDeltaPaisa,
 				}); e != nil {
@@ -204,6 +225,7 @@ func (s *Service) AddItems(ctx context.Context, req *restaurantv1.AddItemsReques
 			}
 			applied++
 		}
+		sent = req.GetSend() && applied > 0
 		if applied > 0 {
 			if _, e := q.BumpOrderVersion(ctx, order.ID); e != nil {
 				return connecterr.Internal(e)
@@ -218,6 +240,9 @@ func (s *Service) AddItems(ctx context.Context, req *restaurantv1.AddItemsReques
 	})
 	if err != nil {
 		return nil, err
+	}
+	if sent {
+		s.emit(realtime.Event{Type: "ticket.created", ID: out.Order.Id})
 	}
 	s.emit(realtime.Event{Type: "order.updated", ID: out.Order.Id, Version: out.Order.Version})
 	return out, nil
@@ -309,6 +334,8 @@ func (s *Service) VoidItem(ctx context.Context, req *restaurantv1.VoidItemReques
 		return nil, err
 	}
 
+	var closed bool
+	var freedTable string
 	out := &restaurantv1.OrderResult{}
 	err = s.runIdempotent(ctx, cmdID, actor.User.ID, out, func(q *sqlc.Queries) error {
 		order, e := q.GetOrderByClientID(ctx, ocid)
@@ -376,6 +403,11 @@ func (s *Service) VoidItem(ctx context.Context, req *restaurantv1.VoidItemReques
 		}); e != nil {
 			return e
 		}
+		// Voiding the last line still in the way (unbilled or not handed over) completes the order.
+		if closed, e = CloseIfDone(ctx, q, order.ID); e != nil {
+			return e
+		}
+		freedTable = pgUUIDStr(order.TableID)
 		ord, e := s.assembleOrder(ctx, q, order.ID)
 		if e != nil {
 			return e
@@ -387,6 +419,9 @@ func (s *Service) VoidItem(ctx context.Context, req *restaurantv1.VoidItemReques
 		return nil, err
 	}
 	s.emit(realtime.Event{Type: "order.updated", ID: out.Order.Id, Version: out.Order.Version})
+	if closed && freedTable != "" {
+		s.emit(realtime.Event{Type: "table.updated", ID: freedTable})
+	}
 	return out, nil
 }
 
@@ -412,6 +447,8 @@ func (s *Service) MarkServed(ctx context.Context, req *restaurantv1.MarkServedRe
 		ids = append(ids, u)
 	}
 
+	var closed bool
+	var freedTable string
 	out := &restaurantv1.OrderResult{}
 	err = s.runIdempotent(ctx, cmdID, actor.User.ID, out, func(q *sqlc.Queries) error {
 		order, e := q.GetOrderByClientID(ctx, ocid)
@@ -432,6 +469,10 @@ func (s *Service) MarkServed(ctx context.Context, req *restaurantv1.MarkServedRe
 		if _, e := q.BumpOrderVersion(ctx, order.ID); e != nil {
 			return connecterr.Internal(e)
 		}
+		if closed, e = CloseIfDone(ctx, q, order.ID); e != nil {
+			return e
+		}
+		freedTable = pgUUIDStr(order.TableID)
 		ord, e := s.assembleOrder(ctx, q, order.ID)
 		if e != nil {
 			return e
@@ -443,6 +484,9 @@ func (s *Service) MarkServed(ctx context.Context, req *restaurantv1.MarkServedRe
 		return nil, err
 	}
 	s.emit(realtime.Event{Type: "order.updated", ID: out.Order.Id, Version: out.Order.Version})
+	if closed && freedTable != "" {
+		s.emit(realtime.Event{Type: "table.updated", ID: freedTable})
+	}
 	return out, nil
 }
 

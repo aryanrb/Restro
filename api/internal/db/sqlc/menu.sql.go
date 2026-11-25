@@ -473,6 +473,40 @@ func (q *Queries) ListModifierGroups(ctx context.Context) ([]ModifierGroup, erro
 	return items, nil
 }
 
+const listModifierGroupsForItem = `-- name: ListModifierGroupsForItem :many
+SELECT g.id, g.version, g.name_en, g.name_ne, g.min_select, g.max_select FROM modifier_groups g
+JOIN item_modifier_groups l ON l.group_id = g.id
+WHERE l.item_id = $1
+ORDER BY g.name_en
+`
+
+func (q *Queries) ListModifierGroupsForItem(ctx context.Context, itemID uuid.UUID) ([]ModifierGroup, error) {
+	rows, err := q.db.Query(ctx, listModifierGroupsForItem, itemID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ModifierGroup{}
+	for rows.Next() {
+		var i ModifierGroup
+		if err := rows.Scan(
+			&i.ID,
+			&i.Version,
+			&i.NameEn,
+			&i.NameNe,
+			&i.MinSelect,
+			&i.MaxSelect,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listModifiers = `-- name: ListModifiers :many
 SELECT id, group_id, name_en, name_ne, price_delta_paisa, sort FROM modifiers ORDER BY group_id, sort
 `
@@ -512,6 +546,37 @@ SELECT id, item_id, name_en, name_ne, price_paisa, sort FROM item_variants ORDER
 // Variants -----------------------------------------------------------------
 func (q *Queries) ListVariants(ctx context.Context) ([]ItemVariant, error) {
 	rows, err := q.db.Query(ctx, listVariants)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ItemVariant{}
+	for rows.Next() {
+		var i ItemVariant
+		if err := rows.Scan(
+			&i.ID,
+			&i.ItemID,
+			&i.NameEn,
+			&i.NameNe,
+			&i.PricePaisa,
+			&i.Sort,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVariantsForItem = `-- name: ListVariantsForItem :many
+SELECT id, item_id, name_en, name_ne, price_paisa, sort FROM item_variants WHERE item_id = $1 ORDER BY sort
+`
+
+func (q *Queries) ListVariantsForItem(ctx context.Context, itemID uuid.UUID) ([]ItemVariant, error) {
+	rows, err := q.db.Query(ctx, listVariantsForItem, itemID)
 	if err != nil {
 		return nil, err
 	}

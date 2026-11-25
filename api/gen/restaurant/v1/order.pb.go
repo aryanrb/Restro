@@ -76,9 +76,10 @@ type OrderStatus int32
 const (
 	OrderStatus_ORDER_STATUS_UNSPECIFIED OrderStatus = 0
 	OrderStatus_ORDER_STATUS_OPEN        OrderStatus = 1
-	OrderStatus_ORDER_STATUS_BILLED      OrderStatus = 2 // fully invoiced (set by the billing plan)
-	OrderStatus_ORDER_STATUS_CLOSED      OrderStatus = 3 // billed and paid
-	OrderStatus_ORDER_STATUS_CANCELLED   OrderStatus = 4
+	OrderStatus_ORDER_STATUS_BILLED      OrderStatus = 2 // every live line invoiced, not all handed over yet (still servable)
+	OrderStatus_ORDER_STATUS_CLOSED      OrderStatus = 3 // every live line on an issued invoice AND handed over
+	// (SERVED, or READY for takeaway); payment is not part of the rule
+	OrderStatus_ORDER_STATUS_CANCELLED OrderStatus = 4
 )
 
 // Enum value maps for OrderStatus.
@@ -248,7 +249,7 @@ type OrderItem struct {
 	Name           *LocalText             `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`                                              // snapshot
 	VariantName    *LocalText             `protobuf:"bytes,5,opt,name=variant_name,json=variantName,proto3,oneof" json:"variant_name,omitempty"`       // snapshot (unset if no variant)
 	Modifiers      []*OrderItemModifier   `protobuf:"bytes,6,rep,name=modifiers,proto3" json:"modifiers,omitempty"`                                    // snapshot
-	UnitPricePaisa int64                  `protobuf:"varint,7,opt,name=unit_price_paisa,json=unitPricePaisa,proto3" json:"unit_price_paisa,omitempty"` // snapshot (server price at add time)
+	UnitPricePaisa int64                  `protobuf:"varint,7,opt,name=unit_price_paisa,json=unitPricePaisa,proto3" json:"unit_price_paisa,omitempty"` // snapshot (server price at add time): variant (or item)
 	Quantity       int32                  `protobuf:"varint,8,opt,name=quantity,proto3" json:"quantity,omitempty"`
 	Note           string                 `protobuf:"bytes,9,opt,name=note,proto3" json:"note,omitempty"`
 	StationId      string                 `protobuf:"bytes,10,opt,name=station_id,json=stationId,proto3" json:"station_id,omitempty"`
@@ -899,6 +900,10 @@ type AddItemsRequest struct {
 	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	OrderClientId string                 `protobuf:"bytes,2,opt,name=order_client_id,json=orderClientId,proto3" json:"order_client_id,omitempty"`
 	Items         []*NewItem             `protobuf:"bytes,3,rep,name=items,proto3" json:"items,omitempty"`
+	// When true the accepted lines are created already SENT (same effects as a
+	// SendItems of exactly those lines, in the same transaction), so one queued
+	// client command is one atomic call. Default false: lines are created DRAFT.
+	Send          bool `protobuf:"varint,4,opt,name=send,proto3" json:"send,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -954,10 +959,22 @@ func (x *AddItemsRequest) GetItems() []*NewItem {
 	return nil
 }
 
+func (x *AddItemsRequest) GetSend() bool {
+	if x != nil {
+		return x.Send
+	}
+	return false
+}
+
 type AddItemsResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Order         *Order                 `protobuf:"bytes,1,opt,name=order,proto3" json:"order,omitempty"`
-	Rejected      []*RejectedLine        `protobuf:"bytes,2,rep,name=rejected,proto3" json:"rejected,omitempty"` // 86'd lines; the rest were applied
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Order *Order                 `protobuf:"bytes,1,opt,name=order,proto3" json:"order,omitempty"`
+	// Lines that were not applied (the rest were): ITEM_86D for an out-of-stock
+	// item; INVALID for an unknown/inactive item, a variant or modifier that does
+	// not belong to the item, a modifier-group min/max violation, or a line
+	// client_id already used on another order. A line whose client_id already
+	// exists on this order is a no-op (per-line idempotency), not a rejection.
+	Rejected      []*RejectedLine `protobuf:"bytes,2,rep,name=rejected,proto3" json:"rejected,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1430,12 +1447,13 @@ const file_restaurant_v1_order_proto_rawDesc = "" +
 	"\fmodifier_ids\x18\x04 \x03(\tR\vmodifierIds\x12#\n" +
 	"\bquantity\x18\x05 \x01(\x05B\a\xbaH\x04\x1a\x02(\x01R\bquantity\x12\x12\n" +
 	"\x04note\x18\x06 \x01(\tR\x04noteB\r\n" +
-	"\v_variant_id\"\xa2\x01\n" +
+	"\v_variant_id\"\xb6\x01\n" +
 	"\x0fAddItemsRequest\x12&\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tcommandId\x12/\n" +
 	"\x0forder_client_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\rorderClientId\x126\n" +
-	"\x05items\x18\x03 \x03(\v2\x16.restaurant.v1.NewItemB\b\xbaH\x05\x92\x01\x02\b\x01R\x05items\"u\n" +
+	"\x05items\x18\x03 \x03(\v2\x16.restaurant.v1.NewItemB\b\xbaH\x05\x92\x01\x02\b\x01R\x05items\x12\x12\n" +
+	"\x04send\x18\x04 \x01(\bR\x04send\"u\n" +
 	"\x0eAddItemsResult\x12*\n" +
 	"\x05order\x18\x01 \x01(\v2\x14.restaurant.v1.OrderR\x05order\x127\n" +
 	"\brejected\x18\x02 \x03(\v2\x1b.restaurant.v1.RejectedLineR\brejected\"\x86\x01\n" +
