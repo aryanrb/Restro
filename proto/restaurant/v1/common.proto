@@ -68,6 +68,16 @@ enum ErrorReason {
   ERROR_REASON_ORDER_CLOSED = 12;
   ERROR_REASON_SHIFT_NOT_OPEN = 13;
   ERROR_REASON_NOT_FOUND = 14;
+  // Credit customers (credit.proto / on-account billing) -> code: failed_precondition
+  ERROR_REASON_CREDIT_LIMIT_EXCEEDED = 15; // over available credit without a manager approval
+  ERROR_REASON_CUSTOMER_INACTIVE = 16;     // no new credit on a deactivated account
+  ERROR_REASON_REPAYMENT_TOO_HIGH = 17;    // repayment more than the balance owed
+  // Inventory: UNIT_LOCKED -> failed_precondition
+  // (an item with movements can't change unit), ITEM_UNTRACKED -> failed_precondition
+  // (waste/count on an untracked or inactive item), COUNT_ALREADY_POSTED -> failed_precondition.
+  ERROR_REASON_UNIT_LOCKED = 18;
+  ERROR_REASON_ITEM_UNTRACKED = 19;
+  ERROR_REASON_COUNT_ALREADY_POSTED = 20;
 }
 
 // Carried as a google.rpc-style error detail on every non-OK response.

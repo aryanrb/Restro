@@ -29,6 +29,11 @@ message DashboardResponse {
   int64 void_value_paisa = 10;         // value of items voided today
   int32 cancelled_count = 11;          // bills cancelled today
   int64 cancelled_value_paisa = 12;
+  // Credit (udharo): on-account amounts on today's issued bills, repayments taken
+  // today (not voided), and everything owed now (sum of positive balances).
+  int64 credit_given_today_paisa = 13;
+  int64 repayments_today_paisa = 14;
+  int64 credit_owed_paisa = 15;
 }
 
 message RangeRequest {
@@ -132,6 +137,23 @@ message CsvExport {
   string filename = 2;
 }
 
+// Every credit account whose balance is not zero, oldest unpaid bill first
+// (accounts with none last), then by name.
+message CreditReportRequest {}
+message CreditReportRow {
+  string customer_id = 1;
+  string name = 2;
+  string phone = 3;
+  bool active = 4;
+  int64 balance_paisa = 5;
+  int64 credit_limit_paisa = 6;
+  int64 oldest_unpaid_at_unix = 7;  // issue time of the oldest bill not yet paid off; 0 = none
+  int64 last_repayment_at_unix = 8; // 0 = none
+}
+message CreditReportResponse {
+  repeated CreditReportRow rows = 1;
+}
+
 service ReportService {
   rpc Dashboard(DashboardRequest) returns (DashboardResponse);
   rpc SalesBook(RangeRequest) returns (SalesBookResponse);
@@ -139,4 +161,5 @@ service ReportService {
   rpc DailySales(RangeRequest) returns (DailySalesResponse);
   rpc CancelledInvoices(RangeRequest) returns (CancelledInvoicesResponse);
   rpc AuditLog(AuditLogRequest) returns (AuditLogResponse);
+  rpc CreditReport(CreditReportRequest) returns (CreditReportResponse);
 }

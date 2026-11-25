@@ -15,6 +15,7 @@ import (
 	"github.com/oneaccord/restro/api/internal/connecterr"
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
 	"github.com/oneaccord/restro/api/internal/dbx"
+	"github.com/oneaccord/restro/api/internal/inventory"
 	"github.com/oneaccord/restro/api/internal/realtime"
 )
 
@@ -255,6 +256,10 @@ func (s *Service) SendItems(ctx context.Context, req *restaurantv1.SendItemsRequ
 			if _, e := q.BumpOrderVersion(ctx, order.ID); e != nil {
 				return connecterr.Internal(e)
 			}
+			// Stock: each line now SENT deducts its recipe at its sent_at.
+			if e := deductSent(ctx, q, order.ID, sendIDs, actor.User.ID); e != nil {
+				return e
+			}
 		}
 		ord, e := s.assembleOrder(ctx, q, order.ID)
 		if e != nil {
@@ -345,6 +350,13 @@ func (s *Service) VoidItem(ctx context.Context, req *restaurantv1.VoidItemReques
 			approvedBy = mgr.ID
 		}
 
+		// Stock: a void before the kitchen started puts the ingredients back; after
+		// cooking they stay used (shown as "voided after cooking").
+		if item.Status == "SENT" {
+			if e := inventory.ReverseSale(ctx, q, itemID, actor.User.ID); e != nil {
+				return e
+			}
+		}
 		if e := q.VoidOrderItem(ctx, sqlc.VoidOrderItemParams{
 			ID: itemID, VoidReason: req.GetReason(), VoidedByUserID: dbx.UUID(actor.User.ID), VoidApprovedByUserID: dbx.UUIDOpt(approvedBy),
 		}); e != nil {

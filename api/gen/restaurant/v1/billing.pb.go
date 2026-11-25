@@ -30,6 +30,9 @@ const (
 	PaymentMethod_PAYMENT_METHOD_CARD        PaymentMethod = 2
 	PaymentMethod_PAYMENT_METHOD_QR_FONEPAY  PaymentMethod = 3
 	PaymentMethod_PAYMENT_METHOD_QR_OTHER    PaymentMethod = 4
+	// On a customer's credit account (see credit.proto): not money, never in a
+	// shift's takings. Only in IssueBill / CounterSale payments, with customer_id.
+	PaymentMethod_PAYMENT_METHOD_ON_ACCOUNT PaymentMethod = 5
 )
 
 // Enum value maps for PaymentMethod.
@@ -40,6 +43,7 @@ var (
 		2: "PAYMENT_METHOD_CARD",
 		3: "PAYMENT_METHOD_QR_FONEPAY",
 		4: "PAYMENT_METHOD_QR_OTHER",
+		5: "PAYMENT_METHOD_ON_ACCOUNT",
 	}
 	PaymentMethod_value = map[string]int32{
 		"PAYMENT_METHOD_UNSPECIFIED": 0,
@@ -47,6 +51,7 @@ var (
 		"PAYMENT_METHOD_CARD":        2,
 		"PAYMENT_METHOD_QR_FONEPAY":  3,
 		"PAYMENT_METHOD_QR_OTHER":    4,
+		"PAYMENT_METHOD_ON_ACCOUNT":  5,
 	}
 )
 
@@ -360,6 +365,10 @@ type Payment struct {
 	ConfirmedByUserId string                 `protobuf:"bytes,5,opt,name=confirmed_by_user_id,json=confirmedByUserId,proto3" json:"confirmed_by_user_id,omitempty"`
 	CreatedAtUnix     int64                  `protobuf:"varint,6,opt,name=created_at_unix,json=createdAtUnix,proto3" json:"created_at_unix,omitempty"`
 	ShiftId           string                 `protobuf:"bytes,7,opt,name=shift_id,json=shiftId,proto3" json:"shift_id,omitempty"` // the collector's shift the payment was taken in
+	// --- ON_ACCOUNT only (receipt snapshot, captured at issue) ---
+	CustomerId        string `protobuf:"bytes,8,opt,name=customer_id,json=customerId,proto3" json:"customer_id,omitempty"`
+	CustomerName      string `protobuf:"bytes,9,opt,name=customer_name,json=customerName,proto3" json:"customer_name,omitempty"`
+	BalanceAfterPaisa int64  `protobuf:"varint,10,opt,name=balance_after_paisa,json=balanceAfterPaisa,proto3" json:"balance_after_paisa,omitempty"` // the customer's balance right after this bill
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -441,6 +450,27 @@ func (x *Payment) GetShiftId() string {
 		return x.ShiftId
 	}
 	return ""
+}
+
+func (x *Payment) GetCustomerId() string {
+	if x != nil {
+		return x.CustomerId
+	}
+	return ""
+}
+
+func (x *Payment) GetCustomerName() string {
+	if x != nil {
+		return x.CustomerName
+	}
+	return ""
+}
+
+func (x *Payment) GetBalanceAfterPaisa() int64 {
+	if x != nil {
+		return x.BalanceAfterPaisa
+	}
+	return 0
 }
 
 // The seller's details captured when the invoice was issued; reprints show these,
@@ -1550,10 +1580,17 @@ func (x *GetInvoiceRequest) GetId() string {
 // One tender of a bill paid at issue time. Validated by the service (not
 // protovalidate) so every payment problem is reported as INVALID field "payments".
 type PaymentInput struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Method        PaymentMethod          `protobuf:"varint,1,opt,name=method,proto3,enum=restaurant.v1.PaymentMethod" json:"method,omitempty"`
-	AmountPaisa   int64                  `protobuf:"varint,2,opt,name=amount_paisa,json=amountPaisa,proto3" json:"amount_paisa,omitempty"`
-	Reference     string                 `protobuf:"bytes,3,opt,name=reference,proto3" json:"reference,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Method      PaymentMethod          `protobuf:"varint,1,opt,name=method,proto3,enum=restaurant.v1.PaymentMethod" json:"method,omitempty"`
+	AmountPaisa int64                  `protobuf:"varint,2,opt,name=amount_paisa,json=amountPaisa,proto3" json:"amount_paisa,omitempty"`
+	Reference   string                 `protobuf:"bytes,3,opt,name=reference,proto3" json:"reference,omitempty"`
+	// Required for PAYMENT_METHOD_ON_ACCOUNT (INVALID "customer_id" otherwise). The
+	// customer must be active (CUSTOMER_INACTIVE) and the amount within their
+	// available credit (limit - balance), else CREDIT_LIMIT_EXCEEDED unless the bill
+	// carries credit_approval (or an owner/manager is billing). Checked in the same
+	// transaction as the bill is issued. A business account (with a PAN) fills a
+	// blank buyer name and PAN.
+	CustomerId    string `protobuf:"bytes,4,opt,name=customer_id,json=customerId,proto3" json:"customer_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1609,6 +1646,13 @@ func (x *PaymentInput) GetReference() string {
 	return ""
 }
 
+func (x *PaymentInput) GetCustomerId() string {
+	if x != nil {
+		return x.CustomerId
+	}
+	return ""
+}
+
 // Issue + pay in one transaction. item_ids empty = every unbilled, non-voided item
 // of the order; otherwise a subset (a split bill), which still takes a discount and
 // buyer details. payments must be non-empty, each > 0, and sum to the invoice total.
@@ -1622,8 +1666,12 @@ type IssueBillRequest struct {
 	BuyerName     string                 `protobuf:"bytes,5,opt,name=buyer_name,json=buyerName,proto3" json:"buyer_name,omitempty"`
 	BuyerPan      string                 `protobuf:"bytes,6,opt,name=buyer_pan,json=buyerPan,proto3" json:"buyer_pan,omitempty"`
 	Payments      []*PaymentInput        `protobuf:"bytes,7,rep,name=payments,proto3" json:"payments,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Manager/owner PIN approving on-account credit over the customer's limit for
+	// this bill (separate from the discount approval). A bad PIN is reported with
+	// field "credit_approval".
+	CreditApproval *ManagerApproval `protobuf:"bytes,8,opt,name=credit_approval,json=creditApproval,proto3,oneof" json:"credit_approval,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *IssueBillRequest) Reset() {
@@ -1705,21 +1753,29 @@ func (x *IssueBillRequest) GetPayments() []*PaymentInput {
 	return nil
 }
 
+func (x *IssueBillRequest) GetCreditApproval() *ManagerApproval {
+	if x != nil {
+		return x.CreditApproval
+	}
+	return nil
+}
+
 // Counter (pay first): creates a TAKEAWAY order, its lines already SENT, and the
 // paid invoice in one transaction. Any rejected line rejects the whole sale
 // (INVALID field "lines"). order_client_id is optional (generated when blank).
 type CounterSaleRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
-	OrderClientId string                 `protobuf:"bytes,2,opt,name=order_client_id,json=orderClientId,proto3" json:"order_client_id,omitempty"`
-	Label         string                 `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"` // printed as the invoice's place (blank = "Takeaway")
-	Lines         []*NewItem             `protobuf:"bytes,4,rep,name=lines,proto3" json:"lines,omitempty"`
-	Discount      *DiscountInput         `protobuf:"bytes,5,opt,name=discount,proto3,oneof" json:"discount,omitempty"`
-	BuyerName     string                 `protobuf:"bytes,6,opt,name=buyer_name,json=buyerName,proto3" json:"buyer_name,omitempty"`
-	BuyerPan      string                 `protobuf:"bytes,7,opt,name=buyer_pan,json=buyerPan,proto3" json:"buyer_pan,omitempty"`
-	Payments      []*PaymentInput        `protobuf:"bytes,8,rep,name=payments,proto3" json:"payments,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	CommandId      string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	OrderClientId  string                 `protobuf:"bytes,2,opt,name=order_client_id,json=orderClientId,proto3" json:"order_client_id,omitempty"`
+	Label          string                 `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"` // printed as the invoice's place (blank = "Takeaway")
+	Lines          []*NewItem             `protobuf:"bytes,4,rep,name=lines,proto3" json:"lines,omitempty"`
+	Discount       *DiscountInput         `protobuf:"bytes,5,opt,name=discount,proto3,oneof" json:"discount,omitempty"`
+	BuyerName      string                 `protobuf:"bytes,6,opt,name=buyer_name,json=buyerName,proto3" json:"buyer_name,omitempty"`
+	BuyerPan       string                 `protobuf:"bytes,7,opt,name=buyer_pan,json=buyerPan,proto3" json:"buyer_pan,omitempty"`
+	Payments       []*PaymentInput        `protobuf:"bytes,8,rep,name=payments,proto3" json:"payments,omitempty"`
+	CreditApproval *ManagerApproval       `protobuf:"bytes,9,opt,name=credit_approval,json=creditApproval,proto3,oneof" json:"credit_approval,omitempty"` // as IssueBillRequest.credit_approval
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *CounterSaleRequest) Reset() {
@@ -1804,6 +1860,13 @@ func (x *CounterSaleRequest) GetBuyerPan() string {
 func (x *CounterSaleRequest) GetPayments() []*PaymentInput {
 	if x != nil {
 		return x.Payments
+	}
+	return nil
+}
+
+func (x *CounterSaleRequest) GetCreditApproval() *ManagerApproval {
+	if x != nil {
+		return x.CreditApproval
 	}
 	return nil
 }
@@ -2024,7 +2087,7 @@ const file_restaurant_v1_billing_proto_rawDesc = "" +
 	"\x10line_total_paisa\x18\x06 \x01(\x03R\x0elineTotalPaisa\x12\"\n" +
 	"\rorder_item_id\x18\a \x01(\tR\vorderItemId\x12/\n" +
 	"\x14order_item_client_id\x18\b \x01(\tR\x11orderItemClientId\x122\n" +
-	"\avariant\x18\t \x01(\v2\x18.restaurant.v1.LocalTextR\avariant\"\x84\x02\n" +
+	"\avariant\x18\t \x01(\v2\x18.restaurant.v1.LocalTextR\avariant\"\xfa\x02\n" +
 	"\aPayment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x124\n" +
 	"\x06method\x18\x02 \x01(\x0e2\x1c.restaurant.v1.PaymentMethodR\x06method\x12!\n" +
@@ -2032,7 +2095,12 @@ const file_restaurant_v1_billing_proto_rawDesc = "" +
 	"\treference\x18\x04 \x01(\tR\treference\x12/\n" +
 	"\x14confirmed_by_user_id\x18\x05 \x01(\tR\x11confirmedByUserId\x12&\n" +
 	"\x0fcreated_at_unix\x18\x06 \x01(\x03R\rcreatedAtUnix\x12\x19\n" +
-	"\bshift_id\x18\a \x01(\tR\ashiftId\"\xd8\x01\n" +
+	"\bshift_id\x18\a \x01(\tR\ashiftId\x12\x1f\n" +
+	"\vcustomer_id\x18\b \x01(\tR\n" +
+	"customerId\x12#\n" +
+	"\rcustomer_name\x18\t \x01(\tR\fcustomerName\x12.\n" +
+	"\x13balance_after_paisa\x18\n" +
+	" \x01(\x03R\x11balanceAfterPaisa\"\xd8\x01\n" +
 	"\rInvoiceSeller\x12,\n" +
 	"\x04name\x18\x01 \x01(\v2\x18.restaurant.v1.LocalTextR\x04name\x12\x18\n" +
 	"\aaddress\x18\x02 \x01(\tR\aaddress\x12\x1d\n" +
@@ -2142,11 +2210,13 @@ const file_restaurant_v1_billing_proto_rawDesc = "" +
 	"\vprint_count\x18\x03 \x01(\x05R\n" +
 	"printCount\",\n" +
 	"\x11GetInvoiceRequest\x12\x17\n" +
-	"\x02id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x02id\"\x85\x01\n" +
+	"\x02id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x02id\"\xa6\x01\n" +
 	"\fPaymentInput\x124\n" +
 	"\x06method\x18\x01 \x01(\x0e2\x1c.restaurant.v1.PaymentMethodR\x06method\x12!\n" +
 	"\famount_paisa\x18\x02 \x01(\x03R\vamountPaisa\x12\x1c\n" +
-	"\treference\x18\x03 \x01(\tR\treference\"\xc7\x02\n" +
+	"\treference\x18\x03 \x01(\tR\treference\x12\x1f\n" +
+	"\vcustomer_id\x18\x04 \x01(\tR\n" +
+	"customerId\"\xa9\x03\n" +
 	"\x10IssueBillRequest\x12&\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tcommandId\x12/\n" +
@@ -2156,8 +2226,10 @@ const file_restaurant_v1_billing_proto_rawDesc = "" +
 	"\n" +
 	"buyer_name\x18\x05 \x01(\tR\tbuyerName\x12\x1b\n" +
 	"\tbuyer_pan\x18\x06 \x01(\tR\bbuyerPan\x127\n" +
-	"\bpayments\x18\a \x03(\v2\x1b.restaurant.v1.PaymentInputR\bpaymentsB\v\n" +
-	"\t_discount\"\xe9\x02\n" +
+	"\bpayments\x18\a \x03(\v2\x1b.restaurant.v1.PaymentInputR\bpayments\x12L\n" +
+	"\x0fcredit_approval\x18\b \x01(\v2\x1e.restaurant.v1.ManagerApprovalH\x01R\x0ecreditApproval\x88\x01\x01B\v\n" +
+	"\t_discountB\x12\n" +
+	"\x10_credit_approval\"\xcb\x03\n" +
 	"\x12CounterSaleRequest\x12&\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tcommandId\x12&\n" +
@@ -2168,8 +2240,10 @@ const file_restaurant_v1_billing_proto_rawDesc = "" +
 	"\n" +
 	"buyer_name\x18\x06 \x01(\tR\tbuyerName\x12\x1b\n" +
 	"\tbuyer_pan\x18\a \x01(\tR\bbuyerPan\x127\n" +
-	"\bpayments\x18\b \x03(\v2\x1b.restaurant.v1.PaymentInputR\bpaymentsB\v\n" +
-	"\t_discount\"G\n" +
+	"\bpayments\x18\b \x03(\v2\x1b.restaurant.v1.PaymentInputR\bpayments\x12L\n" +
+	"\x0fcredit_approval\x18\t \x01(\v2\x1e.restaurant.v1.ManagerApprovalH\x01R\x0ecreditApproval\x88\x01\x01B\v\n" +
+	"\t_discountB\x12\n" +
+	"\x10_credit_approval\"G\n" +
 	"\x0fInvoiceDayRange\x12\x1b\n" +
 	"\tfrom_unix\x18\x01 \x01(\x03R\bfromUnix\x12\x17\n" +
 	"\ato_unix\x18\x02 \x01(\x03R\x06toUnix\"\xa8\x01\n" +
@@ -2179,13 +2253,14 @@ const file_restaurant_v1_billing_proto_rawDesc = "" +
 	"\bad_range\x18\x03 \x01(\v2\x1e.restaurant.v1.InvoiceDayRangeH\x00R\aadRangeB\x0f\n" +
 	"\x06filter\x12\x05\xbaH\x02\b\x01\"J\n" +
 	"\x14ListInvoicesResponse\x122\n" +
-	"\binvoices\x18\x01 \x03(\v2\x16.restaurant.v1.InvoiceR\binvoices*\x9d\x01\n" +
+	"\binvoices\x18\x01 \x03(\v2\x16.restaurant.v1.InvoiceR\binvoices*\xbc\x01\n" +
 	"\rPaymentMethod\x12\x1e\n" +
 	"\x1aPAYMENT_METHOD_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13PAYMENT_METHOD_CASH\x10\x01\x12\x17\n" +
 	"\x13PAYMENT_METHOD_CARD\x10\x02\x12\x1d\n" +
 	"\x19PAYMENT_METHOD_QR_FONEPAY\x10\x03\x12\x1b\n" +
-	"\x17PAYMENT_METHOD_QR_OTHER\x10\x04*b\n" +
+	"\x17PAYMENT_METHOD_QR_OTHER\x10\x04\x12\x1d\n" +
+	"\x19PAYMENT_METHOD_ON_ACCOUNT\x10\x05*b\n" +
 	"\fDiscountType\x12\x1d\n" +
 	"\x19DISCOUNT_TYPE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15DISCOUNT_TYPE_PERCENT\x10\x01\x12\x18\n" +
@@ -2277,36 +2352,38 @@ var file_restaurant_v1_billing_proto_depIdxs = []int32{
 	0,  // 19: restaurant.v1.PaymentInput.method:type_name -> restaurant.v1.PaymentMethod
 	3,  // 20: restaurant.v1.IssueBillRequest.discount:type_name -> restaurant.v1.DiscountInput
 	20, // 21: restaurant.v1.IssueBillRequest.payments:type_name -> restaurant.v1.PaymentInput
-	29, // 22: restaurant.v1.CounterSaleRequest.lines:type_name -> restaurant.v1.NewItem
-	3,  // 23: restaurant.v1.CounterSaleRequest.discount:type_name -> restaurant.v1.DiscountInput
-	20, // 24: restaurant.v1.CounterSaleRequest.payments:type_name -> restaurant.v1.PaymentInput
-	23, // 25: restaurant.v1.ListInvoicesRequest.ad_range:type_name -> restaurant.v1.InvoiceDayRange
-	8,  // 26: restaurant.v1.ListInvoicesResponse.invoices:type_name -> restaurant.v1.Invoice
-	10, // 27: restaurant.v1.BillingService.PreviewBill:input_type -> restaurant.v1.PreviewBillRequest
-	11, // 28: restaurant.v1.BillingService.IssueFullBill:input_type -> restaurant.v1.IssueFullBillRequest
-	13, // 29: restaurant.v1.BillingService.SplitByItem:input_type -> restaurant.v1.SplitByItemRequest
-	15, // 30: restaurant.v1.BillingService.RecordPayment:input_type -> restaurant.v1.RecordPaymentRequest
-	16, // 31: restaurant.v1.BillingService.CancelInvoice:input_type -> restaurant.v1.CancelInvoiceRequest
-	17, // 32: restaurant.v1.BillingService.MarkPrinted:input_type -> restaurant.v1.MarkPrintedRequest
-	19, // 33: restaurant.v1.BillingService.GetInvoice:input_type -> restaurant.v1.GetInvoiceRequest
-	21, // 34: restaurant.v1.BillingService.IssueBill:input_type -> restaurant.v1.IssueBillRequest
-	22, // 35: restaurant.v1.BillingService.CounterSale:input_type -> restaurant.v1.CounterSaleRequest
-	24, // 36: restaurant.v1.BillingService.ListInvoices:input_type -> restaurant.v1.ListInvoicesRequest
-	9,  // 37: restaurant.v1.BillingService.PreviewBill:output_type -> restaurant.v1.BillPreview
-	8,  // 38: restaurant.v1.BillingService.IssueFullBill:output_type -> restaurant.v1.Invoice
-	14, // 39: restaurant.v1.BillingService.SplitByItem:output_type -> restaurant.v1.SplitByItemResponse
-	5,  // 40: restaurant.v1.BillingService.RecordPayment:output_type -> restaurant.v1.Payment
-	8,  // 41: restaurant.v1.BillingService.CancelInvoice:output_type -> restaurant.v1.Invoice
-	18, // 42: restaurant.v1.BillingService.MarkPrinted:output_type -> restaurant.v1.PrintInfo
-	8,  // 43: restaurant.v1.BillingService.GetInvoice:output_type -> restaurant.v1.Invoice
-	8,  // 44: restaurant.v1.BillingService.IssueBill:output_type -> restaurant.v1.Invoice
-	8,  // 45: restaurant.v1.BillingService.CounterSale:output_type -> restaurant.v1.Invoice
-	25, // 46: restaurant.v1.BillingService.ListInvoices:output_type -> restaurant.v1.ListInvoicesResponse
-	37, // [37:47] is the sub-list for method output_type
-	27, // [27:37] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	26, // 22: restaurant.v1.IssueBillRequest.credit_approval:type_name -> restaurant.v1.ManagerApproval
+	29, // 23: restaurant.v1.CounterSaleRequest.lines:type_name -> restaurant.v1.NewItem
+	3,  // 24: restaurant.v1.CounterSaleRequest.discount:type_name -> restaurant.v1.DiscountInput
+	20, // 25: restaurant.v1.CounterSaleRequest.payments:type_name -> restaurant.v1.PaymentInput
+	26, // 26: restaurant.v1.CounterSaleRequest.credit_approval:type_name -> restaurant.v1.ManagerApproval
+	23, // 27: restaurant.v1.ListInvoicesRequest.ad_range:type_name -> restaurant.v1.InvoiceDayRange
+	8,  // 28: restaurant.v1.ListInvoicesResponse.invoices:type_name -> restaurant.v1.Invoice
+	10, // 29: restaurant.v1.BillingService.PreviewBill:input_type -> restaurant.v1.PreviewBillRequest
+	11, // 30: restaurant.v1.BillingService.IssueFullBill:input_type -> restaurant.v1.IssueFullBillRequest
+	13, // 31: restaurant.v1.BillingService.SplitByItem:input_type -> restaurant.v1.SplitByItemRequest
+	15, // 32: restaurant.v1.BillingService.RecordPayment:input_type -> restaurant.v1.RecordPaymentRequest
+	16, // 33: restaurant.v1.BillingService.CancelInvoice:input_type -> restaurant.v1.CancelInvoiceRequest
+	17, // 34: restaurant.v1.BillingService.MarkPrinted:input_type -> restaurant.v1.MarkPrintedRequest
+	19, // 35: restaurant.v1.BillingService.GetInvoice:input_type -> restaurant.v1.GetInvoiceRequest
+	21, // 36: restaurant.v1.BillingService.IssueBill:input_type -> restaurant.v1.IssueBillRequest
+	22, // 37: restaurant.v1.BillingService.CounterSale:input_type -> restaurant.v1.CounterSaleRequest
+	24, // 38: restaurant.v1.BillingService.ListInvoices:input_type -> restaurant.v1.ListInvoicesRequest
+	9,  // 39: restaurant.v1.BillingService.PreviewBill:output_type -> restaurant.v1.BillPreview
+	8,  // 40: restaurant.v1.BillingService.IssueFullBill:output_type -> restaurant.v1.Invoice
+	14, // 41: restaurant.v1.BillingService.SplitByItem:output_type -> restaurant.v1.SplitByItemResponse
+	5,  // 42: restaurant.v1.BillingService.RecordPayment:output_type -> restaurant.v1.Payment
+	8,  // 43: restaurant.v1.BillingService.CancelInvoice:output_type -> restaurant.v1.Invoice
+	18, // 44: restaurant.v1.BillingService.MarkPrinted:output_type -> restaurant.v1.PrintInfo
+	8,  // 45: restaurant.v1.BillingService.GetInvoice:output_type -> restaurant.v1.Invoice
+	8,  // 46: restaurant.v1.BillingService.IssueBill:output_type -> restaurant.v1.Invoice
+	8,  // 47: restaurant.v1.BillingService.CounterSale:output_type -> restaurant.v1.Invoice
+	25, // 48: restaurant.v1.BillingService.ListInvoices:output_type -> restaurant.v1.ListInvoicesResponse
+	39, // [39:49] is the sub-list for method output_type
+	29, // [29:39] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_restaurant_v1_billing_proto_init() }

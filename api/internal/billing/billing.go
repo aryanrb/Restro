@@ -150,7 +150,8 @@ func toPayment(p sqlc.Payment) *restaurantv1.Payment {
 	return &restaurantv1.Payment{
 		Id: p.ID.String(), Method: paymentMethodEnum(p.Method), AmountPaisa: p.AmountPaisa,
 		Reference: p.Reference, ConfirmedByUserId: p.ConfirmedByUserID.String(), CreatedAtUnix: p.CreatedAt.Unix(),
-		ShiftId: p.ShiftID.String(),
+		ShiftId:    p.ShiftID.String(),
+		CustomerId: uuidStr(p.CustomerID), CustomerName: p.CustomerName, BalanceAfterPaisa: p.BalanceAfterPaisa,
 	}
 }
 
@@ -180,6 +181,8 @@ func paymentMethodEnum(s string) restaurantv1.PaymentMethod {
 		return restaurantv1.PaymentMethod_PAYMENT_METHOD_QR_FONEPAY
 	case "QR_OTHER":
 		return restaurantv1.PaymentMethod_PAYMENT_METHOD_QR_OTHER
+	case "ON_ACCOUNT":
+		return restaurantv1.PaymentMethod_PAYMENT_METHOD_ON_ACCOUNT
 	default:
 		return restaurantv1.PaymentMethod_PAYMENT_METHOD_UNSPECIFIED
 	}
@@ -195,6 +198,8 @@ func paymentMethodStr(m restaurantv1.PaymentMethod) string {
 		return "QR_FONEPAY"
 	case restaurantv1.PaymentMethod_PAYMENT_METHOD_QR_OTHER:
 		return "QR_OTHER"
+	case restaurantv1.PaymentMethod_PAYMENT_METHOD_ON_ACCOUNT:
+		return "ON_ACCOUNT"
 	default:
 		return ""
 	}

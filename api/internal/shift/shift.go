@@ -258,17 +258,28 @@ func (s *Service) buildReport(ctx context.Context, sh sqlc.Shift, names map[uuid
 	}
 	for _, a := range adjustments {
 		add(a.Method, -a.AmountPaisa)
-		report.Adjustments = append(report.Adjustments, &restaurantv1.ShiftAdjustment{
-			Id: a.ID.String(), InvoiceId: a.InvoiceID.String(), InvoiceNumber: a.InvoiceNumber,
-			DisplayNumber: DisplayNumber(a.Mode, a.FiscalYear, a.InvoiceNumber), Method: paymentMethodEnum(a.Method),
-			AmountPaisa: a.AmountPaisa, CreatedAtUnix: a.CreatedAt.Unix(), OriginalShiftId: a.OriginalShiftID.String(),
-			PaymentId: a.PaymentID.String(),
-		})
+		adj := &restaurantv1.ShiftAdjustment{
+			Id: a.ID.String(), InvoiceId: uuidOf(a.InvoiceID), InvoiceNumber: a.InvoiceNumber,
+			Method: paymentMethodEnum(a.Method), AmountPaisa: a.AmountPaisa, CreatedAtUnix: a.CreatedAt.Unix(),
+			OriginalShiftId: a.OriginalShiftID.String(), PaymentId: uuidOf(a.PaymentID), RepaymentId: uuidOf(a.RepaymentID),
+		}
+		if a.RepaymentID.Valid {
+			adj.DisplayNumber = repaymentNumber(a.RepaymentNumber) // a voided credit repayment
+		} else {
+			adj.DisplayNumber = DisplayNumber(a.Mode, a.FiscalYear, a.InvoiceNumber)
+		}
+		report.Adjustments = append(report.Adjustments, adj)
 	}
 	for _, m := range order {
 		report.Totals = append(report.Totals, &restaurantv1.MethodTotal{Method: paymentMethodEnum(m), TotalPaisa: byMethod[m]})
 	}
 	report.ExpectedCashPaisa = sh.OpeningFloatPaisa + byMethod["CASH"]
+	if report.RepaymentsPaisa, err = s.q.ShiftRepaymentTotal(ctx, sh.ID); err != nil {
+		return nil, connecterr.Internal(err)
+	}
+	if report.CreditGivenPaisa, err = s.q.ShiftCreditGiven(ctx, sh.ID); err != nil {
+		return nil, connecterr.Internal(err)
+	}
 	if sh.Status == "CLOSED" && sh.CountedCashPaisa.Valid {
 		report.DifferencePaisa = sh.CountedCashPaisa.Int64 - report.ExpectedCashPaisa
 	}
@@ -292,8 +303,23 @@ func (s *Service) buildReport(ctx context.Context, sh sqlc.Shift, names map[uuid
 			})
 		}
 	}
+	// Credit repayments taken in the shift, after the bill payments.
+	repayments, err := s.q.ListShiftRepayments(ctx, sh.ID)
+	if err != nil {
+		return nil, connecterr.Internal(err)
+	}
+	for _, r := range repayments {
+		report.Payments = append(report.Payments, &restaurantv1.ShiftPaymentRow{
+			PaymentId: r.ID.String(), DisplayNumber: repaymentNumber(r.Number), Method: paymentMethodEnum(r.Method),
+			AmountPaisa: r.AmountPaisa, Reference: r.Reference, CreatedAtUnix: r.CreatedAt.Unix(), Confirmed: true,
+			Repayment: true, RepaymentId: r.ID.String(), RepaymentVoided: r.VoidedAt.Valid,
+		})
+	}
 	return report, nil
 }
+
+// repaymentNumber is a credit repayment's receipt number ("R-12"), as credit prints it.
+func repaymentNumber(n int32) string { return "R-" + strconv.Itoa(int(n)) }
 
 func (s *Service) userName(ctx context.Context, id uuid.UUID, cache map[uuid.UUID]string) (string, error) {
 	if n, ok := cache[id]; ok {
@@ -371,7 +397,16 @@ func paymentMethodEnum(s string) restaurantv1.PaymentMethod {
 		return restaurantv1.PaymentMethod_PAYMENT_METHOD_QR_FONEPAY
 	case "QR_OTHER":
 		return restaurantv1.PaymentMethod_PAYMENT_METHOD_QR_OTHER
+	case "ON_ACCOUNT":
+		return restaurantv1.PaymentMethod_PAYMENT_METHOD_ON_ACCOUNT
 	default:
 		return restaurantv1.PaymentMethod_PAYMENT_METHOD_UNSPECIFIED
 	}
+}
+
+func uuidOf(id pgtype.UUID) string {
+	if !id.Valid {
+		return ""
+	}
+	return uuid.UUID(id.Bytes).String()
 }

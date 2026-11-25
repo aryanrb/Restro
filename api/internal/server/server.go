@@ -22,6 +22,8 @@ import (
 	"github.com/oneaccord/restro/api/internal/catalog"
 	"github.com/oneaccord/restro/api/internal/config"
 	"github.com/oneaccord/restro/api/internal/connecterr"
+	"github.com/oneaccord/restro/api/internal/credit"
+	"github.com/oneaccord/restro/api/internal/inventory"
 	"github.com/oneaccord/restro/api/internal/kitchen"
 	"github.com/oneaccord/restro/api/internal/orders"
 	"github.com/oneaccord/restro/api/internal/realtime"
@@ -56,6 +58,10 @@ func New(d Deps) *echo.Echo {
 		authSvc.Interceptor(),
 		connectvalidate.NewInterceptor(),
 		connecterr.Interceptor(),
+		// Stock events (stock.low / stock.86suggest / stock.updated) written by any
+		// request — order sends, voids, counter sales, waste, counts — are broadcast
+		// only once the handler succeeded (its transaction committed).
+		inventory.EventsInterceptor(d.Hub),
 	)
 
 	authHandler := auth.NewHandler(authSvc, d.Cfg.Env == "prod")
@@ -86,6 +92,12 @@ func New(d Deps) *echo.Echo {
 	billingPath, billingHH := restaurantv1connect.NewBillingServiceHandler(billingH, ic)
 	mount(e, billingPath, billingHH)
 
+	creditH := credit.NewHandler(credit.NewService(d.Pool, d.Hub, d.Log))
+	customerPath, customerHH := restaurantv1connect.NewCustomerServiceHandler(creditH, ic)
+	mount(e, customerPath, customerHH)
+	creditPath, creditHH := restaurantv1connect.NewCreditServiceHandler(creditH, ic)
+	mount(e, creditPath, creditHH)
+
 	shiftH := shift.NewHandler(shift.NewService(d.Pool, d.Hub, d.Log))
 	shiftPath, shiftHH := restaurantv1connect.NewShiftServiceHandler(shiftH, ic)
 	mount(e, shiftPath, shiftHH)
@@ -93,6 +105,10 @@ func New(d Deps) *echo.Echo {
 	reportH := reports.NewHandler(reports.NewService(d.Pool, d.Log))
 	reportPath, reportHH := restaurantv1connect.NewReportServiceHandler(reportH, ic)
 	mount(e, reportPath, reportHH)
+
+	inventoryH := inventory.NewHandler(inventory.NewService(d.Pool, d.Hub, authSvc, d.Log))
+	inventoryPath, inventoryHH := restaurantv1connect.NewInventoryServiceHandler(inventoryH, ic)
+	mount(e, inventoryPath, inventoryHH)
 
 	return e
 }

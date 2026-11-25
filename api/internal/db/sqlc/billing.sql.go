@@ -317,7 +317,7 @@ func (q *Queries) CreateInvoicePrint(ctx context.Context, arg CreateInvoicePrint
 const createPayment = `-- name: CreatePayment :one
 INSERT INTO payments (invoice_id, method, amount_paisa, reference, confirmed_by_user_id, shift_id, status)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, invoice_id, method, amount_paisa, reference, confirmed_by_user_id, shift_id, status, created_at
+RETURNING id, invoice_id, method, amount_paisa, reference, confirmed_by_user_id, shift_id, status, created_at, customer_id, customer_name, balance_after_paisa, credit_approved_by_user_id
 `
 
 type CreatePaymentParams struct {
@@ -351,6 +351,10 @@ func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (P
 		&i.ShiftID,
 		&i.Status,
 		&i.CreatedAt,
+		&i.CustomerID,
+		&i.CustomerName,
+		&i.BalanceAfterPaisa,
+		&i.CreditApprovedByUserID,
 	)
 	return i, err
 }
@@ -705,7 +709,7 @@ func (q *Queries) ListInvoicesForOrder(ctx context.Context, orderID pgtype.UUID)
 }
 
 const listPaymentsForInvoice = `-- name: ListPaymentsForInvoice :many
-SELECT id, invoice_id, method, amount_paisa, reference, confirmed_by_user_id, shift_id, status, created_at FROM payments WHERE invoice_id = $1 ORDER BY created_at
+SELECT id, invoice_id, method, amount_paisa, reference, confirmed_by_user_id, shift_id, status, created_at, customer_id, customer_name, balance_after_paisa, credit_approved_by_user_id FROM payments WHERE invoice_id = $1 ORDER BY created_at
 `
 
 func (q *Queries) ListPaymentsForInvoice(ctx context.Context, invoiceID uuid.UUID) ([]Payment, error) {
@@ -727,6 +731,10 @@ func (q *Queries) ListPaymentsForInvoice(ctx context.Context, invoiceID uuid.UUI
 			&i.ShiftID,
 			&i.Status,
 			&i.CreatedAt,
+			&i.CustomerID,
+			&i.CustomerName,
+			&i.BalanceAfterPaisa,
+			&i.CreditApprovedByUserID,
 		); err != nil {
 			return nil, err
 		}
@@ -739,7 +747,7 @@ func (q *Queries) ListPaymentsForInvoice(ctx context.Context, invoiceID uuid.UUI
 }
 
 const listUnbilledOrderItems = `-- name: ListUnbilledOrderItems :many
-SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id FROM order_items WHERE order_id = $1 AND invoice_id IS NULL AND status <> 'VOIDED' ORDER BY created_at
+SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id, variant_id, modifier_ids FROM order_items WHERE order_id = $1 AND invoice_id IS NULL AND status <> 'VOIDED' ORDER BY created_at
 `
 
 func (q *Queries) ListUnbilledOrderItems(ctx context.Context, orderID uuid.UUID) ([]OrderItem, error) {
@@ -773,6 +781,8 @@ func (q *Queries) ListUnbilledOrderItems(ctx context.Context, orderID uuid.UUID)
 			&i.InvoiceID,
 			&i.SentAt,
 			&i.AddedByUserID,
+			&i.VariantID,
+			&i.ModifierIds,
 		); err != nil {
 			return nil, err
 		}

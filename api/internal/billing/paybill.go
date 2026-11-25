@@ -16,6 +16,7 @@ import (
 	"github.com/oneaccord/restro/api/internal/auth"
 	"github.com/oneaccord/restro/api/internal/bsdate"
 	"github.com/oneaccord/restro/api/internal/connecterr"
+	"github.com/oneaccord/restro/api/internal/credit"
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
 	"github.com/oneaccord/restro/api/internal/dbx"
 	"github.com/oneaccord/restro/api/internal/idem"
@@ -30,10 +31,11 @@ func requireBillingRole(ctx context.Context) (*auth.Actor, error) {
 
 // tender is a validated PaymentInput.
 type tender struct {
-	method   string
-	amount   int64
-	ref      string
-	provider PaymentProvider
+	method     string
+	amount     int64
+	ref        string
+	provider   PaymentProvider // nil for ON_ACCOUNT (no money moves)
+	customerID uuid.UUID       // ON_ACCOUNT only
 }
 
 // validateTenders checks the payment list's shape: non-empty, every amount > 0,
@@ -48,6 +50,14 @@ func (s *Service) validateTenders(in []*restaurantv1.PaymentInput) ([]tender, er
 			return nil, connecterr.Invalid("payments", "every payment amount must be more than zero")
 		}
 		method := paymentMethodStr(p.GetMethod())
+		if method == methodOnAccount {
+			id, err := uuid.Parse(p.GetCustomerId())
+			if err != nil {
+				return nil, connecterr.Invalid("customer_id", "choose the customer this bill is on account to")
+			}
+			out = append(out, tender{method: method, amount: p.GetAmountPaisa(), ref: p.GetReference(), customerID: id})
+			continue
+		}
 		provider, ok := s.providers[method]
 		if !ok {
 			return nil, connecterr.Invalid("payments", "unsupported payment method")
@@ -76,15 +86,20 @@ func lockShift(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) (sqlc.Shi
 // marks the order BILLED once nothing is left unbilled, and applies the close
 // rule. It reports whether the order closed. Any error rolls everything back,
 // including the invoice number allocation.
+//
+// On-account tenders are checked (account active, within the available credit or
+// approved by creditApproval / an owner-manager biller) under a lock on each
+// customer before the invoice is numbered; a business account fills a blank buyer
+// name/PAN. Their ids are returned for the customer.updated event.
 func (s *Service) payBill(ctx context.Context, q *sqlc.Queries, actor *auth.Actor, shift sqlc.Shift, order sqlc.Order, items []sqlc.OrderItem, settings sqlc.Setting,
-	disc *restaurantv1.DiscountInput, buyerName, buyerPan, label string, tenders []tender) (sqlc.Invoice, bool, error) {
+	disc *restaurantv1.DiscountInput, buyerName, buyerPan, label string, tenders []tender, creditApproval *restaurantv1.ManagerApproval) (sqlc.Invoice, bool, []string, error) {
 	subtotal, byItem, err := s.subtotalOf(ctx, q, order.ID, items)
 	if err != nil {
-		return sqlc.Invoice{}, false, err
+		return sqlc.Invoice{}, false, nil, err
 	}
 	discount, reason, approvedBy, err := s.computeDiscount(ctx, disc, subtotal, actor)
 	if err != nil {
-		return sqlc.Invoice{}, false, err
+		return sqlc.Invoice{}, false, nil, err
 	}
 	total := s.compute(settings, subtotal, discount).Total
 	var paid int64
@@ -92,43 +107,74 @@ func (s *Service) payBill(ctx context.Context, q *sqlc.Queries, actor *auth.Acto
 		paid += t.amount
 	}
 	if paid != total {
-		return sqlc.Invoice{}, false, connecterr.Invalid("payments", fmt.Sprintf("payments add up to %d paisa but the bill is %d paisa", paid, total))
+		return sqlc.Invoice{}, false, nil, connecterr.Invalid("payments", fmt.Sprintf("payments add up to %d paisa but the bill is %d paisa", paid, total))
+	}
+
+	onAccount := map[uuid.UUID]int64{}
+	var accountTenders []credit.Tender
+	for _, t := range tenders {
+		if t.method == methodOnAccount {
+			onAccount[t.customerID] += t.amount
+			accountTenders = append(accountTenders, credit.Tender{CustomerID: t.customerID, Amount: t.amount, Reference: t.ref})
+		}
+	}
+	var checks []credit.OnAccount
+	if len(onAccount) > 0 {
+		if checks, err = credit.CheckOnAccount(ctx, q, actor, onAccount, creditApproval, s.auth.VerifyManagerApproval); err != nil {
+			return sqlc.Invoice{}, false, nil, err
+		}
+		if name, pan, ok := credit.BusinessBuyer(checks); ok && buyerName == "" && buyerPan == "" {
+			buyerName, buyerPan = name, pan
+		}
 	}
 
 	inv, err := s.issueInvoiceForItems(ctx, q, order, items, byItem, subtotal, settings, discount, reason, approvedBy, buyerName, buyerPan, actor, label)
 	if err != nil {
-		return sqlc.Invoice{}, false, err
+		return sqlc.Invoice{}, false, nil, err
 	}
 	for _, t := range tenders {
+		if t.method == methodOnAccount {
+			continue // recorded below, with the receipt snapshot
+		}
 		status, ref, e := t.provider.Record(ctx, t.amount, t.ref)
 		if e != nil {
-			return sqlc.Invoice{}, false, connecterr.Internal(e)
+			return sqlc.Invoice{}, false, nil, connecterr.Internal(e)
 		}
 		if _, e := q.CreatePayment(ctx, sqlc.CreatePaymentParams{
 			InvoiceID: inv.ID, Method: t.method, AmountPaisa: t.amount, Reference: ref,
 			ConfirmedByUserID: actor.User.ID, ShiftID: shift.ID, Status: status,
 		}); e != nil {
-			return sqlc.Invoice{}, false, connecterr.Internal(e)
+			return sqlc.Invoice{}, false, nil, connecterr.Internal(e)
 		}
 		if e := audit.Write(ctx, q, audit.Entry{ActorID: actor.User.ID, Action: "payment.record", Entity: "invoice", EntityID: inv.ID.String(), After: audit.JSON(map[string]any{"method": t.method, "amount": t.amount})}); e != nil {
-			return sqlc.Invoice{}, false, e
+			return sqlc.Invoice{}, false, nil, e
 		}
+	}
+
+	if len(checks) > 0 {
+		if e := credit.RecordOnAccount(ctx, q, actor, inv.ID, shift.ID, inv.DisplayNumber, checks, accountTenders); e != nil {
+			return sqlc.Invoice{}, false, nil, e
+		}
+	}
+	customers := make([]string, 0, len(checks))
+	for _, c := range checks {
+		customers = append(customers, c.Customer.ID.String())
 	}
 
 	remaining, err := q.ListUnbilledOrderItems(ctx, order.ID)
 	if err != nil {
-		return sqlc.Invoice{}, false, connecterr.Internal(err)
+		return sqlc.Invoice{}, false, nil, connecterr.Internal(err)
 	}
 	if len(remaining) == 0 {
 		if e := q.SetOrderStatus(ctx, sqlc.SetOrderStatusParams{ID: order.ID, Status: "BILLED"}); e != nil {
-			return sqlc.Invoice{}, false, connecterr.Internal(e)
+			return sqlc.Invoice{}, false, nil, connecterr.Internal(e)
 		}
 	}
 	closed, err := orders.CloseIfDone(ctx, q, order.ID)
 	if err != nil {
-		return sqlc.Invoice{}, false, err
+		return sqlc.Invoice{}, false, nil, err
 	}
-	return inv, closed, nil
+	return inv, closed, customers, nil
 }
 
 // IssueBill issues an invoice for the whole order (item_ids empty) or a subset of
@@ -148,6 +194,7 @@ func (s *Service) IssueBill(ctx context.Context, req *restaurantv1.IssueBillRequ
 	}
 
 	var freedTable string
+	var customers []string
 	out := &restaurantv1.Invoice{}
 	err = idem.Run(ctx, s.pool, s.q, cmdID, actor.User.ID, out, func(q *sqlc.Queries) error {
 		shift, e := lockShift(ctx, q, actor.User.ID)
@@ -166,10 +213,11 @@ func (s *Service) IssueBill(ctx context.Context, req *restaurantv1.IssueBillRequ
 		if e != nil {
 			return e
 		}
-		inv, closed, e := s.payBill(ctx, q, actor, shift, order, items, settings, req.GetDiscount(), req.GetBuyerName(), req.GetBuyerPan(), "", tenders)
+		inv, closed, cust, e := s.payBill(ctx, q, actor, shift, order, items, settings, req.GetDiscount(), req.GetBuyerName(), req.GetBuyerPan(), "", tenders, req.GetCreditApproval())
 		if e != nil {
 			return e
 		}
+		customers = cust
 		if closed {
 			freedTable = tableIDStr(order)
 		}
@@ -188,6 +236,7 @@ func (s *Service) IssueBill(ctx context.Context, req *restaurantv1.IssueBillRequ
 		s.emit(realtime.Event{Type: "table.updated", ID: freedTable})
 	}
 	s.emit(realtime.Event{Type: "invoice.issued", ID: out.Id})
+	s.emitCustomers(customers)
 	return out, nil
 }
 
@@ -242,6 +291,7 @@ func (s *Service) CounterSale(ctx context.Context, req *restaurantv1.CounterSale
 	}
 
 	var orderVersion int64
+	var customers []string
 	out := &restaurantv1.Invoice{}
 	err = idem.Run(ctx, s.pool, s.q, cmdID, actor.User.ID, out, func(q *sqlc.Queries) error {
 		shift, e := lockShift(ctx, q, actor.User.ID)
@@ -283,10 +333,11 @@ func (s *Service) CounterSale(ctx context.Context, req *restaurantv1.CounterSale
 		if e != nil {
 			return e
 		}
-		inv, _, e := s.payBill(ctx, q, actor, shift, order, items, settings, req.GetDiscount(), req.GetBuyerName(), req.GetBuyerPan(), req.GetLabel(), tenders)
+		inv, _, cust, e := s.payBill(ctx, q, actor, shift, order, items, settings, req.GetDiscount(), req.GetBuyerName(), req.GetBuyerPan(), req.GetLabel(), tenders, req.GetCreditApproval())
 		if e != nil {
 			return e
 		}
+		customers = cust
 		full, e := s.loadInvoice(ctx, q, inv.ID)
 		if e != nil {
 			return e
@@ -300,6 +351,7 @@ func (s *Service) CounterSale(ctx context.Context, req *restaurantv1.CounterSale
 	s.emit(realtime.Event{Type: "ticket.created", ID: out.OrderId})
 	s.emit(realtime.Event{Type: "order.updated", ID: out.OrderId, Version: orderVersion})
 	s.emit(realtime.Event{Type: "invoice.issued", ID: out.Id})
+	s.emitCustomers(customers)
 	return out, nil
 }
 
@@ -374,4 +426,14 @@ func validBsDate(s string) bool {
 	}
 	_, err := d.ToAD()
 	return err == nil
+}
+
+// methodOnAccount is the stored PAYMENT_METHOD_ON_ACCOUNT.
+const methodOnAccount = "ON_ACCOUNT"
+
+// emitCustomers pokes customer.updated for each account a bill changed.
+func (s *Service) emitCustomers(ids []string) {
+	for _, id := range ids {
+		s.emit(realtime.Event{Type: credit.EventCustomerUpdated, ID: id})
+	}
 }

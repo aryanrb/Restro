@@ -14,6 +14,7 @@ import (
 	"github.com/oneaccord/restro/api/internal/connecterr"
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
 	"github.com/oneaccord/restro/api/internal/dbx"
+	"github.com/oneaccord/restro/api/internal/inventory"
 )
 
 // pricedLine is a validated NewItem ready to snapshot into order_items.
@@ -137,7 +138,8 @@ func priceLine(ctx context.Context, q *sqlc.Queries, ni *restaurantv1.NewItem) (
 //
 // Per-line rejections (invalid/86'd item, bad variant/modifiers, a client_id
 // already used on another order) are returned, not failed; the caller decides
-// whether a partial accept is acceptable. Lines record the signed-in user from
+// whether a partial accept is acceptable. A line created SENT deducts its recipe
+// from stock (inventory.DeductSale) in the same transaction. Lines record the signed-in user from
 // ctx (auth.ActorFrom) as added_by_user_id, and a line created SENT gets sent_at. A line whose client_id is already on
 // this order is an idempotent no-op (neither applied nor rejected). applied is the
 // number of lines inserted; the caller bumps the order version when it is > 0.
@@ -150,6 +152,7 @@ func InsertLines(ctx context.Context, q *sqlc.Queries, orderID uuid.UUID, items 
 	reject := func(clientID string, reason restaurantv1.ErrorReason, msg string) {
 		rejected = append(rejected, &restaurantv1.RejectedLine{ClientId: clientID, Reason: reason, Message: msg})
 	}
+	var sent []inventory.SaleLine // lines created SENT: deducted together at the end
 	for _, ni := range items {
 		lineCID, perr := uuid.Parse(ni.GetClientId())
 		if perr != nil {
@@ -200,14 +203,32 @@ func InsertLines(ctx context.Context, q *sqlc.Queries, orderID uuid.UUID, items 
 		if ce != nil {
 			return 0, nil, connecterr.Internal(ce)
 		}
+		modIDs := make([]uuid.UUID, 0, len(pl.modifiers))
 		for _, m := range pl.modifiers {
 			if e := q.CreateOrderItemModifier(ctx, sqlc.CreateOrderItemModifierParams{
 				OrderItemID: oi.ID, NameEn: m.NameEn, NameNe: m.NameNe, PriceDeltaPaisa: m.PriceDeltaPaisa,
 			}); e != nil {
 				return 0, nil, connecterr.Internal(e)
 			}
+			modIDs = append(modIDs, m.ID)
+		}
+		// Stock: remember what the line was ordered as; a line created SENT (one-step
+		// send, counter sale) deducts its recipe in this transaction.
+		variantID := uuid.Nil
+		if pl.variant != nil {
+			variantID = pl.variant.ID
+		}
+		if e := inventory.StockKeys(ctx, q, oi.ID, variantID, modIDs); e != nil {
+			return 0, nil, e
+		}
+		oi.VariantID, oi.ModifierIds = dbx.UUIDOpt(variantID), modIDs
+		if status == "SENT" {
+			sent = append(sent, inventory.SaleLineOf(oi, uuid.UUID(addedBy.Bytes)))
 		}
 		applied++
+	}
+	if e := inventory.DeductSale(ctx, q, sent...); e != nil {
+		return 0, nil, e
 	}
 	return applied, rejected, nil
 }

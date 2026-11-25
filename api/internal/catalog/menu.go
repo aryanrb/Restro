@@ -70,6 +70,9 @@ func (s *Service) GetMenu(ctx context.Context) (*restaurantv1.Menu, error) {
 	for _, g := range groups {
 		out.ModifierGroups = append(out.ModifierGroups, toModifierGroup(g, modsByGroup[g.ID]))
 	}
+	if err := attachRecipes(ctx, s.q, out.Items, out.ModifierGroups); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -354,7 +357,11 @@ func (s *Service) assembleItem(ctx context.Context, q *sqlc.Queries, itemID uuid
 			gids = append(gids, l.GroupID.String())
 		}
 	}
-	return toMenuItem(it, vs, gids), nil
+	out := toMenuItem(it, vs, gids)
+	if err := attachRecipes(ctx, q, []*restaurantv1.MenuItem{out}, nil); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // MoveItem moves an item up/down within its own category.
@@ -521,6 +528,9 @@ func (s *Service) SaveModifierGroup(ctx context.Context, in *restaurantv1.Modifi
 			}
 		}
 		result = toModifierGroup(g, gm)
+		if e := attachRecipes(ctx, q, nil, []*restaurantv1.ModifierGroup{result}); e != nil {
+			return e
+		}
 		return audit.Write(ctx, q, audit.Entry{ActorID: actor.User.ID, Action: "menu.modifier_group.save", Entity: "modifier_group", EntityID: groupID.String(), After: audit.JSON(result)})
 	})
 	if err != nil {

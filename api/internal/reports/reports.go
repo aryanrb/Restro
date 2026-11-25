@@ -20,6 +20,7 @@ import (
 	restaurantv1 "github.com/oneaccord/restro/api/gen/restaurant/v1"
 	"github.com/oneaccord/restro/api/internal/auth"
 	"github.com/oneaccord/restro/api/internal/connecterr"
+	"github.com/oneaccord/restro/api/internal/credit"
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
 	"github.com/oneaccord/restro/api/internal/shift"
 )
@@ -77,6 +78,15 @@ func (s *Service) Dashboard(ctx context.Context) (*restaurantv1.DashboardRespons
 		OpenOrders: openOrders, OpenTables: openTables, VoidCount: voids.VoidCount, DiscountCount: discounts,
 		DiscountPaisa: discountTotal, VoidValuePaisa: voids.VoidValue,
 		CancelledCount: cancelled.CancelledCount, CancelledValuePaisa: cancelled.CancelledValue,
+	}
+	if out.CreditGivenTodayPaisa, err = s.q.CreditGivenSince(ctx, since); err != nil {
+		return nil, connecterr.Internal(err)
+	}
+	if out.RepaymentsTodayPaisa, err = s.q.RepaymentsSince(ctx, since); err != nil {
+		return nil, connecterr.Internal(err)
+	}
+	if out.CreditOwedPaisa, err = s.q.TotalCreditOwed(ctx); err != nil {
+		return nil, connecterr.Internal(err)
 	}
 	for _, t := range top {
 		out.TopItems = append(out.TopItems, &restaurantv1.TopItem{Name: t.Name, Quantity: t.Quantity, AmountPaisa: t.AmountPaisa})
@@ -243,6 +253,9 @@ func auditDetail(reason string, after []byte) string {
 		if v, ok := m["print_count"].(float64); ok {
 			parts = append(parts, fmt.Sprintf("print #%d", int64(v)))
 		}
+		if v, ok := m["detail"].(string); ok && v != "" {
+			parts = append(parts, v)
+		}
 	}
 	if reason != "" {
 		parts = append(parts, reason)
@@ -295,6 +308,8 @@ func paymentMethodEnum(s string) restaurantv1.PaymentMethod {
 		return restaurantv1.PaymentMethod_PAYMENT_METHOD_QR_FONEPAY
 	case "QR_OTHER":
 		return restaurantv1.PaymentMethod_PAYMENT_METHOD_QR_OTHER
+	case "ON_ACCOUNT":
+		return restaurantv1.PaymentMethod_PAYMENT_METHOD_ON_ACCOUNT
 	default:
 		return restaurantv1.PaymentMethod_PAYMENT_METHOD_UNSPECIFIED
 	}
@@ -306,4 +321,16 @@ func printedAt(unix int64) string {
 		return ""
 	}
 	return time.Unix(unix, 0).In(nepal).Format("2006-01-02 15:04")
+}
+
+// CreditReport lists every credit account with a balance (see credit.CreditReport).
+func (s *Service) CreditReport(ctx context.Context) (*restaurantv1.CreditReportResponse, error) {
+	if _, err := auth.RequireManager(ctx); err != nil {
+		return nil, err
+	}
+	rows, err := credit.CreditReport(ctx, s.q)
+	if err != nil {
+		return nil, err
+	}
+	return &restaurantv1.CreditReportResponse{Rows: rows}, nil
 }

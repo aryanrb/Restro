@@ -19,6 +19,9 @@ enum PaymentMethod {
   PAYMENT_METHOD_CARD = 2;
   PAYMENT_METHOD_QR_FONEPAY = 3;
   PAYMENT_METHOD_QR_OTHER = 4;
+  // On a customer's credit account (see credit.proto): not money, never in a
+  // shift's takings. Only in IssueBill / CounterSale payments, with customer_id.
+  PAYMENT_METHOD_ON_ACCOUNT = 5;
 }
 
 enum DiscountType {
@@ -60,6 +63,10 @@ message Payment {
   string confirmed_by_user_id = 5;
   int64 created_at_unix = 6;
   string shift_id = 7; // the collector's shift the payment was taken in
+  // --- ON_ACCOUNT only (receipt snapshot, captured at issue) ---
+  string customer_id = 8;
+  string customer_name = 9;
+  int64 balance_after_paisa = 10; // the customer's balance right after this bill
 }
 
 // The seller's details captured when the invoice was issued; reprints show these,
@@ -190,6 +197,13 @@ message PaymentInput {
   PaymentMethod method = 1;
   int64 amount_paisa = 2;
   string reference = 3;
+  // Required for PAYMENT_METHOD_ON_ACCOUNT (INVALID "customer_id" otherwise). The
+  // customer must be active (CUSTOMER_INACTIVE) and the amount within their
+  // available credit (limit - balance), else CREDIT_LIMIT_EXCEEDED unless the bill
+  // carries credit_approval (or an owner/manager is billing). Checked in the same
+  // transaction as the bill is issued. A business account (with a PAN) fills a
+  // blank buyer name and PAN.
+  string customer_id = 4;
 }
 
 // Issue + pay in one transaction. item_ids empty = every unbilled, non-voided item
@@ -204,6 +218,10 @@ message IssueBillRequest {
   string buyer_name = 5;
   string buyer_pan = 6;
   repeated PaymentInput payments = 7;
+  // Manager/owner PIN approving on-account credit over the customer's limit for
+  // this bill (separate from the discount approval). A bad PIN is reported with
+  // field "credit_approval".
+  optional ManagerApproval credit_approval = 8;
 }
 
 // Counter (pay first): creates a TAKEAWAY order, its lines already SENT, and the
@@ -218,6 +236,7 @@ message CounterSaleRequest {
   string buyer_name = 6;
   string buyer_pan = 7;
   repeated PaymentInput payments = 8;
+  optional ManagerApproval credit_approval = 9; // as IssueBillRequest.credit_approval
 }
 
 // AD half-open range [from_unix, to_unix) in unix seconds.

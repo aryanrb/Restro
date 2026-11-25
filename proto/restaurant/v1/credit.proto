@@ -1,0 +1,182 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+import "buf/validate/validate.proto";
+import "restaurant/v1/billing.proto";
+
+// ---------------------------------------------------------------------------
+// Credit customers (udharo).
+//
+// CustomerService — credit accounts. Anyone who bills (owner, manager, cashier)
+// lists, reads, creates and edits accounts; only an owner or manager changes the
+// credit limit (NOT_ALLOWED field "credit_limit") or (de)activates an account.
+// New accounts start with a limit of 0. Accounts are never deleted.
+//
+// CreditService — repayments and statements.
+//
+// The balance is server-computed: on-account payments on ISSUED invoices minus
+// repayments not voided. Negative = credit in the customer's favour (a bill was
+// cancelled after it had been repaid); that credit pays for the next on-account
+// bill without needing any limit.
+//
+// On-account billing itself goes through BillingService.IssueBill / CounterSale
+// with a PAYMENT_METHOD_ON_ACCOUNT PaymentInput carrying customer_id (see
+// billing.proto). Realtime: `customer.updated` (id = customer id).
+// ---------------------------------------------------------------------------
+
+message Customer {
+  string id = 1;
+  string name = 2;
+  string phone = 3;               // normalised: digits only, no country code; "" = none. Unique.
+  string notes = 4;
+  int64 credit_limit_paisa = 5;
+  bool active = 6;                // inactive: no new credit; repayments still accepted
+  string pan = 7;                 // business accounts: 9 digits, fills the bill's buyer PAN
+  string address = 8;
+  string contact_person = 9;
+  string created_by_user_id = 10;
+  int64 created_at_unix = 11;
+  int64 balance_paisa = 12;       // server-computed; negative = in the customer's favour
+}
+
+// The editable fields. Validated by the service: name required (≤ 80 chars),
+// phone a Nepali number (INVALID "phone") and unique (DUPLICATE "phone"), PAN
+// blank or 9 digits (INVALID "pan").
+message CustomerInput {
+  string name = 1;
+  string phone = 2;
+  string notes = 3;
+  string pan = 4;
+  string address = 5;
+  string contact_person = 6;
+}
+
+// Matches name (case-insensitive substring) or phone (3+ digits, +977 ignored).
+// Active accounts only unless include_inactive. Sorted by name.
+message ListCustomersRequest {
+  string query = 1;
+  bool include_inactive = 2;
+}
+message ListCustomersResponse {
+  repeated Customer customers = 1;
+}
+
+message GetCustomerRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message CreateCustomerRequest {
+  CustomerInput customer = 1 [(buf.validate.field).required = true];
+}
+
+// credit_limit_paisa is the full new limit (send the current one to leave it);
+// changing it needs an owner or manager.
+message UpdateCustomerRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  CustomerInput customer = 2 [(buf.validate.field).required = true];
+  int64 credit_limit_paisa = 3;
+}
+
+message SetCustomerActiveRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  bool active = 2;
+}
+
+service CustomerService {
+  rpc ListCustomers(ListCustomersRequest) returns (ListCustomersResponse);
+  rpc GetCustomer(GetCustomerRequest) returns (Customer);
+  rpc CreateCustomer(CreateCustomerRequest) returns (Customer);
+  rpc UpdateCustomer(UpdateCustomerRequest) returns (Customer);
+  rpc SetCustomerActive(SetCustomerActiveRequest) returns (Customer); // owner/manager
+}
+
+// A repayment: money taken against a customer's balance. Not an invoice; it has
+// its own gap-free sequence ("R-12").
+message Repayment {
+  string id = 1;
+  int32 number = 2;
+  string display_number = 3;      // "R-12"
+  string customer_id = 4;
+  string customer_name = 5;
+  int64 amount_paisa = 6;
+  PaymentMethod method = 7;       // CASH, CARD, QR_FONEPAY or QR_OTHER
+  string reference = 8;
+  string note = 9;
+  string shift_id = 10;           // the collector's shift it is counted in
+  string taken_by_user_id = 11;
+  string taken_by_name = 12;
+  int64 at_unix = 13;
+  string bs_date = 14;            // YYYY.MM.DD
+  int64 balance_after_paisa = 15; // the customer's balance right after it (for the receipt)
+  int64 voided_at_unix = 16;      // 0 while not voided
+  string voided_by_user_id = 17;
+  string void_reason = 18;
+}
+
+// Needs the caller's open shift (SHIFT_NOT_OPEN) and is counted in its takings.
+// amount > 0 and ≤ the balance (REPAYMENT_TOO_HIGH "amount"). request_id (a UUID)
+// makes retries return the original repayment.
+message RepayRequest {
+  string request_id = 1;
+  string customer_id = 2;
+  int64 amount_paisa = 3;
+  PaymentMethod method = 4;
+  string reference = 5;
+  string note = 6;
+}
+
+// Owner/manager, with a reason. Voiding a repayment taken in a shift that has
+// since closed is counted back in the voider's open shift (SHIFT_NOT_OPEN without one).
+message VoidRepaymentRequest {
+  string id = 1;
+  string reason = 2;
+}
+
+message ListRepaymentsRequest {
+  string customer_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+message ListRepaymentsResponse {
+  repeated Repayment repayments = 1; // newest first, voided included
+}
+
+enum StatementEntryKind {
+  STATEMENT_ENTRY_KIND_UNSPECIFIED = 0;
+  STATEMENT_ENTRY_KIND_BILL = 1;
+  STATEMENT_ENTRY_KIND_REPAYMENT = 2;
+}
+
+message StatementEntry {
+  StatementEntryKind kind = 1;
+  string invoice_id = 2;       // BILL
+  string repayment_id = 3;     // REPAYMENT
+  string ref = 4;              // invoice display number, or "R-12"
+  int64 at_unix = 5;
+  string bs_date = 6;
+  int64 amount_paisa = 7;      // this bill's on-account amount / the repayment amount
+  int64 settled_paisa = 8;     // BILL: paid off by repayments, oldest bill first (as of now)
+  PaymentMethod method = 9;    // REPAYMENT
+  int64 balance_paisa = 10;    // running balance after this entry
+}
+
+// AD dates "YYYY-MM-DD" in Kathmandu time, inclusive.
+message StatementRequest {
+  string customer_id = 1 [(buf.validate.field).string.min_len = 1];
+  string from = 2;
+  string to = 3;
+}
+message Statement {
+  Customer customer = 1;
+  string from = 2;
+  string to = 3;
+  int64 opening_paisa = 4;
+  repeated StatementEntry entries = 5;
+  int64 closing_paisa = 6;
+}
+
+service CreditService {
+  rpc Repay(RepayRequest) returns (Repayment);
+  rpc VoidRepayment(VoidRepaymentRequest) returns (Repayment);
+  rpc ListRepayments(ListRepaymentsRequest) returns (ListRepaymentsResponse);
+  rpc GetStatement(StatementRequest) returns (Statement);
+}

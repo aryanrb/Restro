@@ -17,6 +17,7 @@ import (
 	"github.com/oneaccord/restro/api/internal/auth"
 	"github.com/oneaccord/restro/api/internal/bsdate"
 	"github.com/oneaccord/restro/api/internal/connecterr"
+	"github.com/oneaccord/restro/api/internal/credit"
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
 	"github.com/oneaccord/restro/api/internal/dbx"
 	"github.com/oneaccord/restro/api/internal/idem"
@@ -297,6 +298,7 @@ func (s *Service) CancelInvoice(ctx context.Context, req *restaurantv1.CancelInv
 	}
 
 	var reopened []string
+	var credited []uuid.UUID
 	out := &restaurantv1.Invoice{}
 	err = idem.Run(ctx, s.pool, s.q, cmdID, actor.User.ID, out, func(q *sqlc.Queries) error {
 		inv, e := q.CancelInvoice(ctx, sqlc.CancelInvoiceParams{
@@ -314,6 +316,11 @@ func (s *Service) CancelInvoice(ctx context.Context, req *restaurantv1.CancelInv
 		// back) when that's owed but the canceller has no shift open.
 		if e := shift.RecordCancelAdjustments(ctx, q, invID); e != nil {
 			return e
+		}
+		// Its on-account amounts come off the customers' balances by themselves
+		// (balances count ISSUED bills only); tell their screens.
+		if credited, e = q.ListInvoiceCreditCustomers(ctx, invID); e != nil {
+			return connecterr.Internal(e)
 		}
 		orderIDs, e := q.UnlinkInvoiceItems(ctx, dbx.UUID(invID))
 		if e != nil {
@@ -349,6 +356,9 @@ func (s *Service) CancelInvoice(ctx context.Context, req *restaurantv1.CancelInv
 		s.emit(realtime.Event{Type: "order.updated", ID: oid})
 	}
 	s.emit(realtime.Event{Type: "invoice.cancelled", ID: invID.String()})
+	for _, c := range credited {
+		s.emit(realtime.Event{Type: credit.EventCustomerUpdated, ID: c.String()})
+	}
 	return out, nil
 }
 

@@ -46,7 +46,7 @@ func (q *Queries) CloseShift(ctx context.Context, arg CloseShiftParams) (Shift, 
 const countUnplacedCancelAdjustments = `-- name: CountUnplacedCancelAdjustments :one
 SELECT count(*)::int
 FROM invoices i
-JOIN payments p ON p.invoice_id = i.id AND p.status = 'CONFIRMED'
+JOIN payments p ON p.invoice_id = i.id AND p.status = 'CONFIRMED' AND p.method <> 'ON_ACCOUNT'
 JOIN shifts os ON os.id = p.shift_id
 WHERE i.id = $1 AND i.status = 'CANCELLED'
   AND os.closed_at IS NOT NULL AND os.closed_at < i.cancelled_at
@@ -139,28 +139,34 @@ func (q *Queries) ListOpenShifts(ctx context.Context) ([]Shift, error) {
 }
 
 const listShiftAdjustments = `-- name: ListShiftAdjustments :many
-SELECT a.id, a.shift_id, a.original_shift_id, a.invoice_id, a.payment_id, a.method, a.amount_paisa, a.created_at,
-       i.number AS invoice_number, i.fiscal_year, i.mode
+SELECT a.id, a.shift_id, a.original_shift_id, a.invoice_id, a.payment_id, a.repayment_id, a.method, a.amount_paisa, a.created_at,
+       COALESCE(i.number, 0)::int AS invoice_number, COALESCE(i.fiscal_year, '')::text AS fiscal_year, COALESCE(i.mode, '')::text AS mode,
+       COALESCE(r.number, 0)::int AS repayment_number
 FROM shift_adjustments a
-JOIN invoices i ON i.id = a.invoice_id
+LEFT JOIN invoices i ON i.id = a.invoice_id
+LEFT JOIN repayments r ON r.id = a.repayment_id
 WHERE a.shift_id = $1
 ORDER BY a.created_at, a.id
 `
 
 type ListShiftAdjustmentsRow struct {
-	ID              uuid.UUID `json:"id"`
-	ShiftID         uuid.UUID `json:"shift_id"`
-	OriginalShiftID uuid.UUID `json:"original_shift_id"`
-	InvoiceID       uuid.UUID `json:"invoice_id"`
-	PaymentID       uuid.UUID `json:"payment_id"`
-	Method          string    `json:"method"`
-	AmountPaisa     int64     `json:"amount_paisa"`
-	CreatedAt       time.Time `json:"created_at"`
-	InvoiceNumber   int32     `json:"invoice_number"`
-	FiscalYear      string    `json:"fiscal_year"`
-	Mode            string    `json:"mode"`
+	ID              uuid.UUID   `json:"id"`
+	ShiftID         uuid.UUID   `json:"shift_id"`
+	OriginalShiftID uuid.UUID   `json:"original_shift_id"`
+	InvoiceID       pgtype.UUID `json:"invoice_id"`
+	PaymentID       pgtype.UUID `json:"payment_id"`
+	RepaymentID     pgtype.UUID `json:"repayment_id"`
+	Method          string      `json:"method"`
+	AmountPaisa     int64       `json:"amount_paisa"`
+	CreatedAt       time.Time   `json:"created_at"`
+	InvoiceNumber   int32       `json:"invoice_number"`
+	FiscalYear      string      `json:"fiscal_year"`
+	Mode            string      `json:"mode"`
+	RepaymentNumber int32       `json:"repayment_number"`
 }
 
+// A row is either a cancelled bill's payment (invoice fields set) or a voided
+// repayment (repayment_id + repayment_number set).
 func (q *Queries) ListShiftAdjustments(ctx context.Context, shiftID uuid.UUID) ([]ListShiftAdjustmentsRow, error) {
 	rows, err := q.db.Query(ctx, listShiftAdjustments, shiftID)
 	if err != nil {
@@ -176,12 +182,14 @@ func (q *Queries) ListShiftAdjustments(ctx context.Context, shiftID uuid.UUID) (
 			&i.OriginalShiftID,
 			&i.InvoiceID,
 			&i.PaymentID,
+			&i.RepaymentID,
 			&i.Method,
 			&i.AmountPaisa,
 			&i.CreatedAt,
 			&i.InvoiceNumber,
 			&i.FiscalYear,
 			&i.Mode,
+			&i.RepaymentNumber,
 		); err != nil {
 			return nil, err
 		}
@@ -198,7 +206,7 @@ SELECT p.id, p.invoice_id, p.method, p.amount_paisa, p.reference, p.status, p.cr
        i.number AS invoice_number, i.fiscal_year, i.mode, i.status AS invoice_status
 FROM payments p
 JOIN invoices i ON i.id = p.invoice_id
-WHERE p.shift_id = $1
+WHERE p.shift_id = $1 AND p.method <> 'ON_ACCOUNT'
 ORDER BY p.created_at, p.id
 `
 
@@ -250,7 +258,7 @@ func (q *Queries) ListShiftPayments(ctx context.Context, shiftID uuid.UUID) ([]L
 }
 
 const listShiftQrPayments = `-- name: ListShiftQrPayments :many
-SELECT p.id, p.invoice_id, p.method, p.amount_paisa, p.reference, p.confirmed_by_user_id, p.shift_id, p.status, p.created_at, i.number AS invoice_number
+SELECT p.id, p.invoice_id, p.method, p.amount_paisa, p.reference, p.confirmed_by_user_id, p.shift_id, p.status, p.created_at, p.customer_id, p.customer_name, p.balance_after_paisa, p.credit_approved_by_user_id, i.number AS invoice_number
 FROM payments p
 JOIN invoices i ON i.id = p.invoice_id
 WHERE p.shift_id = $1 AND p.method IN ('QR_FONEPAY', 'QR_OTHER')
@@ -258,16 +266,20 @@ ORDER BY p.created_at
 `
 
 type ListShiftQrPaymentsRow struct {
-	ID                uuid.UUID `json:"id"`
-	InvoiceID         uuid.UUID `json:"invoice_id"`
-	Method            string    `json:"method"`
-	AmountPaisa       int64     `json:"amount_paisa"`
-	Reference         string    `json:"reference"`
-	ConfirmedByUserID uuid.UUID `json:"confirmed_by_user_id"`
-	ShiftID           uuid.UUID `json:"shift_id"`
-	Status            string    `json:"status"`
-	CreatedAt         time.Time `json:"created_at"`
-	InvoiceNumber     int32     `json:"invoice_number"`
+	ID                     uuid.UUID   `json:"id"`
+	InvoiceID              uuid.UUID   `json:"invoice_id"`
+	Method                 string      `json:"method"`
+	AmountPaisa            int64       `json:"amount_paisa"`
+	Reference              string      `json:"reference"`
+	ConfirmedByUserID      uuid.UUID   `json:"confirmed_by_user_id"`
+	ShiftID                uuid.UUID   `json:"shift_id"`
+	Status                 string      `json:"status"`
+	CreatedAt              time.Time   `json:"created_at"`
+	CustomerID             pgtype.UUID `json:"customer_id"`
+	CustomerName           string      `json:"customer_name"`
+	BalanceAfterPaisa      int64       `json:"balance_after_paisa"`
+	CreditApprovedByUserID pgtype.UUID `json:"credit_approved_by_user_id"`
+	InvoiceNumber          int32       `json:"invoice_number"`
 }
 
 // Kept for the deprecated ShiftReport.qr_payments field.
@@ -290,7 +302,56 @@ func (q *Queries) ListShiftQrPayments(ctx context.Context, shiftID uuid.UUID) ([
 			&i.ShiftID,
 			&i.Status,
 			&i.CreatedAt,
+			&i.CustomerID,
+			&i.CustomerName,
+			&i.BalanceAfterPaisa,
+			&i.CreditApprovedByUserID,
 			&i.InvoiceNumber,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listShiftRepayments = `-- name: ListShiftRepayments :many
+SELECT id, number, method, amount_paisa, reference, created_at, voided_at
+FROM repayments WHERE shift_id = $1
+ORDER BY created_at, number
+`
+
+type ListShiftRepaymentsRow struct {
+	ID          uuid.UUID          `json:"id"`
+	Number      int32              `json:"number"`
+	Method      string             `json:"method"`
+	AmountPaisa int64              `json:"amount_paisa"`
+	Reference   string             `json:"reference"`
+	CreatedAt   time.Time          `json:"created_at"`
+	VoidedAt    pgtype.Timestamptz `json:"voided_at"`
+}
+
+// Every repayment taken in the shift, oldest first.
+func (q *Queries) ListShiftRepayments(ctx context.Context, shiftID uuid.UUID) ([]ListShiftRepaymentsRow, error) {
+	rows, err := q.db.Query(ctx, listShiftRepayments, shiftID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListShiftRepaymentsRow{}
+	for rows.Next() {
+		var i ListShiftRepaymentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Number,
+			&i.Method,
+			&i.AmountPaisa,
+			&i.Reference,
+			&i.CreatedAt,
+			&i.VoidedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -400,7 +461,7 @@ const recordCancelAdjustments = `-- name: RecordCancelAdjustments :execrows
 INSERT INTO shift_adjustments (shift_id, original_shift_id, invoice_id, payment_id, method, amount_paisa, created_by_user_id, created_at)
 SELECT DISTINCT ON (p.id) cs.id, p.shift_id, i.id, p.id, p.method, p.amount_paisa, i.cancelled_by_user_id, i.cancelled_at
 FROM invoices i
-JOIN payments p ON p.invoice_id = i.id AND p.status = 'CONFIRMED'
+JOIN payments p ON p.invoice_id = i.id AND p.status = 'CONFIRMED' AND p.method <> 'ON_ACCOUNT'
 JOIN shifts os ON os.id = p.shift_id
 JOIN shifts cs ON cs.cashier_user_id = i.cancelled_by_user_id
      AND cs.opened_at <= i.cancelled_at AND (cs.closed_at IS NULL OR cs.closed_at >= i.cancelled_at)
@@ -424,14 +485,40 @@ func (q *Queries) RecordCancelAdjustments(ctx context.Context, invoiceID pgtype.
 	return result.RowsAffected(), nil
 }
 
-const shiftPaymentTotals = `-- name: ShiftPaymentTotals :many
-SELECT p.method, COALESCE(sum(p.amount_paisa), 0)::bigint AS total
+const shiftCreditGiven = `-- name: ShiftCreditGiven :one
+SELECT COALESCE(sum(p.amount_paisa), 0)::bigint
 FROM payments p
 JOIN invoices i ON i.id = p.invoice_id
 JOIN shifts s ON s.id = p.shift_id
-WHERE p.shift_id = $1 AND p.status = 'CONFIRMED'
+WHERE p.shift_id = $1 AND p.method = 'ON_ACCOUNT'
   AND NOT (i.status = 'CANCELLED' AND (s.closed_at IS NULL OR i.cancelled_at IS NULL OR i.cancelled_at <= s.closed_at))
-GROUP BY p.method
+`
+
+// On-account amounts billed in the shift (bills cancelled while it was open excluded).
+func (q *Queries) ShiftCreditGiven(ctx context.Context, shiftID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, shiftCreditGiven, shiftID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const shiftPaymentTotals = `-- name: ShiftPaymentTotals :many
+SELECT t.method::text AS method, COALESCE(sum(t.amount), 0)::bigint AS total
+FROM (
+    SELECT p.method, p.amount_paisa AS amount
+    FROM payments p
+    JOIN invoices i ON i.id = p.invoice_id
+    JOIN shifts s ON s.id = p.shift_id
+    WHERE p.shift_id = $1 AND p.status = 'CONFIRMED' AND p.method <> 'ON_ACCOUNT'
+      AND NOT (i.status = 'CANCELLED' AND (s.closed_at IS NULL OR i.cancelled_at IS NULL OR i.cancelled_at <= s.closed_at))
+    UNION ALL
+    SELECT r.method, r.amount_paisa
+    FROM repayments r
+    JOIN shifts s ON s.id = r.shift_id
+    WHERE r.shift_id = $1
+      AND NOT (r.voided_at IS NOT NULL AND (s.closed_at IS NULL OR r.voided_at <= s.closed_at))
+) t
+GROUP BY t.method
 `
 
 type ShiftPaymentTotalsRow struct {
@@ -442,6 +529,10 @@ type ShiftPaymentTotalsRow struct {
 // Confirmed takings by method. A payment on a bill cancelled while this shift was
 // still open does not count; one cancelled after it closed still counts here (it
 // was in the drawer) and is counted back as an adjustment in the canceller's shift.
+// On-account payments are not money and never count. Credit repayments taken in
+// the shift count by method, by the same rule as bills: one voided while the shift
+// was open doesn't count; one voided after it closed still counts here and is
+// counted back as an adjustment in the voider's shift.
 func (q *Queries) ShiftPaymentTotals(ctx context.Context, shiftID uuid.UUID) ([]ShiftPaymentTotalsRow, error) {
 	rows, err := q.db.Query(ctx, shiftPaymentTotals, shiftID)
 	if err != nil {
@@ -460,4 +551,20 @@ func (q *Queries) ShiftPaymentTotals(ctx context.Context, shiftID uuid.UUID) ([]
 		return nil, err
 	}
 	return items, nil
+}
+
+const shiftRepaymentTotal = `-- name: ShiftRepaymentTotal :one
+SELECT COALESCE(sum(r.amount_paisa), 0)::bigint
+FROM repayments r
+JOIN shifts s ON s.id = r.shift_id
+WHERE r.shift_id = $1
+  AND NOT (r.voided_at IS NOT NULL AND (s.closed_at IS NULL OR r.voided_at <= s.closed_at))
+`
+
+// Repayments counted in the shift (same rule as ShiftPaymentTotals).
+func (q *Queries) ShiftRepaymentTotal(ctx context.Context, shiftID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, shiftRepaymentTotal, shiftID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }

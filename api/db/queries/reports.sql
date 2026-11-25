@@ -127,6 +127,8 @@ SELECT a.id, a.actor_user_id, a.action, a.entity, a.entity_id, a.before, a.after
            WHEN 'area' THEN (SELECT ar.name_en FROM areas ar WHERE ar.id::text = a.entity_id)
            WHEN 'station' THEN (SELECT st.name_en FROM stations st WHERE st.id::text = a.entity_id)
            WHEN 'device' THEN (SELECT d.label FROM devices d WHERE d.id::text = a.entity_id)
+           WHEN 'customer' THEN (SELECT cu.name FROM customers cu WHERE cu.id::text = a.entity_id)
+           WHEN 'repayment' THEN (SELECT 'R-' || r.number FROM repayments r WHERE r.id::text = a.entity_id)
            WHEN 'settings' THEN 'Settings'
          END, '')::text AS subject
 FROM audit_log a

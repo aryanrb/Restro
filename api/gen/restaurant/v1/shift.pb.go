@@ -328,8 +328,13 @@ type ShiftPaymentRow struct {
 	CreatedAtUnix    int64                  `protobuf:"varint,8,opt,name=created_at_unix,json=createdAtUnix,proto3" json:"created_at_unix,omitempty"`
 	Confirmed        bool                   `protobuf:"varint,9,opt,name=confirmed,proto3" json:"confirmed,omitempty"`                                        // false while a QR payment is still AWAITING
 	InvoiceCancelled bool                   `protobuf:"varint,10,opt,name=invoice_cancelled,json=invoiceCancelled,proto3" json:"invoice_cancelled,omitempty"` // the bill has since been cancelled
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// A credit repayment (see credit.proto) instead of a bill payment: invoice_id is
+	// empty, payment_id is the repayment id and display_number its "R-12".
+	Repayment       bool   `protobuf:"varint,11,opt,name=repayment,proto3" json:"repayment,omitempty"`
+	RepaymentId     string `protobuf:"bytes,12,opt,name=repayment_id,json=repaymentId,proto3" json:"repayment_id,omitempty"`
+	RepaymentVoided bool   `protobuf:"varint,13,opt,name=repayment_voided,json=repaymentVoided,proto3" json:"repayment_voided,omitempty"` // the repayment has since been voided
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ShiftPaymentRow) Reset() {
@@ -432,6 +437,27 @@ func (x *ShiftPaymentRow) GetInvoiceCancelled() bool {
 	return false
 }
 
+func (x *ShiftPaymentRow) GetRepayment() bool {
+	if x != nil {
+		return x.Repayment
+	}
+	return false
+}
+
+func (x *ShiftPaymentRow) GetRepaymentId() string {
+	if x != nil {
+		return x.RepaymentId
+	}
+	return ""
+}
+
+func (x *ShiftPaymentRow) GetRepaymentVoided() bool {
+	if x != nil {
+		return x.RepaymentVoided
+	}
+	return false
+}
+
 // A bill cancelled after the shift that took its payment had closed is counted
 // back (subtracted) here, in the canceller's shift open at the time of the cancel.
 type ShiftAdjustment struct {
@@ -445,8 +471,11 @@ type ShiftAdjustment struct {
 	CreatedAtUnix   int64                  `protobuf:"varint,7,opt,name=created_at_unix,json=createdAtUnix,proto3" json:"created_at_unix,omitempty"`      // when the bill was cancelled
 	OriginalShiftId string                 `protobuf:"bytes,8,opt,name=original_shift_id,json=originalShiftId,proto3" json:"original_shift_id,omitempty"` // the closed shift the payment was taken in
 	PaymentId       string                 `protobuf:"bytes,9,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Set instead of invoice_id/payment_id when a repayment taken in a closed shift
+	// was voided; display_number is then its "R-12".
+	RepaymentId   string `protobuf:"bytes,10,opt,name=repayment_id,json=repaymentId,proto3" json:"repayment_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ShiftAdjustment) Reset() {
@@ -542,6 +571,13 @@ func (x *ShiftAdjustment) GetPaymentId() string {
 	return ""
 }
 
+func (x *ShiftAdjustment) GetRepaymentId() string {
+	if x != nil {
+		return x.RepaymentId
+	}
+	return ""
+}
+
 // Close-out / report view of a shift.
 type ShiftReport struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -552,11 +588,15 @@ type ShiftReport struct {
 	ExpectedCashPaisa int64          `protobuf:"varint,3,opt,name=expected_cash_paisa,json=expectedCashPaisa,proto3" json:"expected_cash_paisa,omitempty"` // opening float + cash takings (after adjustments)
 	DifferencePaisa   int64          `protobuf:"varint,4,opt,name=difference_paisa,json=differencePaisa,proto3" json:"difference_paisa,omitempty"`         // counted - expected (0 unless closed)
 	// Deprecated: use payments (QR only, no method or invoice id).
-	QrPayments    []*QrPaymentRow    `protobuf:"bytes,5,rep,name=qr_payments,json=qrPayments,proto3" json:"qr_payments,omitempty"`
-	Payments      []*ShiftPaymentRow `protobuf:"bytes,6,rep,name=payments,proto3" json:"payments,omitempty"`
-	Adjustments   []*ShiftAdjustment `protobuf:"bytes,7,rep,name=adjustments,proto3" json:"adjustments,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	QrPayments  []*QrPaymentRow    `protobuf:"bytes,5,rep,name=qr_payments,json=qrPayments,proto3" json:"qr_payments,omitempty"`
+	Payments    []*ShiftPaymentRow `protobuf:"bytes,6,rep,name=payments,proto3" json:"payments,omitempty"`
+	Adjustments []*ShiftAdjustment `protobuf:"bytes,7,rep,name=adjustments,proto3" json:"adjustments,omitempty"`
+	// Credit repayments counted in totals (already included there by method).
+	RepaymentsPaisa int64 `protobuf:"varint,8,opt,name=repayments_paisa,json=repaymentsPaisa,proto3" json:"repayments_paisa,omitempty"`
+	// On-account amounts billed in this shift (not money; never in totals or expected cash).
+	CreditGivenPaisa int64 `protobuf:"varint,9,opt,name=credit_given_paisa,json=creditGivenPaisa,proto3" json:"credit_given_paisa,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ShiftReport) Reset() {
@@ -636,6 +676,20 @@ func (x *ShiftReport) GetAdjustments() []*ShiftAdjustment {
 		return x.Adjustments
 	}
 	return nil
+}
+
+func (x *ShiftReport) GetRepaymentsPaisa() int64 {
+	if x != nil {
+		return x.RepaymentsPaisa
+	}
+	return 0
+}
+
+func (x *ShiftReport) GetCreditGivenPaisa() int64 {
+	if x != nil {
+		return x.CreditGivenPaisa
+	}
+	return 0
 }
 
 type OpenShiftRequest struct {
@@ -1069,7 +1123,7 @@ const file_restaurant_v1_shift_proto_rawDesc = "" +
 	"\x0einvoice_number\x18\x02 \x01(\x05R\rinvoiceNumber\x12!\n" +
 	"\famount_paisa\x18\x03 \x01(\x03R\vamountPaisa\x12\x1c\n" +
 	"\treference\x18\x04 \x01(\tR\treference\x12&\n" +
-	"\x0fcreated_at_unix\x18\x05 \x01(\x03R\rcreatedAtUnix\"\x87\x03\n" +
+	"\x0fcreated_at_unix\x18\x05 \x01(\x03R\rcreatedAtUnix\"\xf3\x03\n" +
 	"\x0fShiftPaymentRow\x12\x1d\n" +
 	"\n" +
 	"payment_id\x18\x01 \x01(\tR\tpaymentId\x12\x1d\n" +
@@ -1083,7 +1137,10 @@ const file_restaurant_v1_shift_proto_rawDesc = "" +
 	"\x0fcreated_at_unix\x18\b \x01(\x03R\rcreatedAtUnix\x12\x1c\n" +
 	"\tconfirmed\x18\t \x01(\bR\tconfirmed\x12+\n" +
 	"\x11invoice_cancelled\x18\n" +
-	" \x01(\bR\x10invoiceCancelled\"\xda\x02\n" +
+	" \x01(\bR\x10invoiceCancelled\x12\x1c\n" +
+	"\trepayment\x18\v \x01(\bR\trepayment\x12!\n" +
+	"\frepayment_id\x18\f \x01(\tR\vrepaymentId\x12)\n" +
+	"\x10repayment_voided\x18\r \x01(\bR\x0frepaymentVoided\"\xfd\x02\n" +
 	"\x0fShiftAdjustment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -1095,7 +1152,9 @@ const file_restaurant_v1_shift_proto_rawDesc = "" +
 	"\x0fcreated_at_unix\x18\a \x01(\x03R\rcreatedAtUnix\x12*\n" +
 	"\x11original_shift_id\x18\b \x01(\tR\x0foriginalShiftId\x12\x1d\n" +
 	"\n" +
-	"payment_id\x18\t \x01(\tR\tpaymentId\"\x84\x03\n" +
+	"payment_id\x18\t \x01(\tR\tpaymentId\x12!\n" +
+	"\frepayment_id\x18\n" +
+	" \x01(\tR\vrepaymentId\"\xdd\x03\n" +
 	"\vShiftReport\x12*\n" +
 	"\x05shift\x18\x01 \x01(\v2\x14.restaurant.v1.ShiftR\x05shift\x122\n" +
 	"\x06totals\x18\x02 \x03(\v2\x1a.restaurant.v1.MethodTotalR\x06totals\x12.\n" +
@@ -1104,7 +1163,9 @@ const file_restaurant_v1_shift_proto_rawDesc = "" +
 	"\vqr_payments\x18\x05 \x03(\v2\x1b.restaurant.v1.QrPaymentRowR\n" +
 	"qrPayments\x12:\n" +
 	"\bpayments\x18\x06 \x03(\v2\x1e.restaurant.v1.ShiftPaymentRowR\bpayments\x12@\n" +
-	"\vadjustments\x18\a \x03(\v2\x1e.restaurant.v1.ShiftAdjustmentR\vadjustments\"_\n" +
+	"\vadjustments\x18\a \x03(\v2\x1e.restaurant.v1.ShiftAdjustmentR\vadjustments\x12)\n" +
+	"\x10repayments_paisa\x18\b \x01(\x03R\x0frepaymentsPaisa\x12,\n" +
+	"\x12credit_given_paisa\x18\t \x01(\x03R\x10creditGivenPaisa\"_\n" +
 	"\x10OpenShiftRequest\x127\n" +
 	"\x13opening_float_paisa\x18\x01 \x01(\x03B\a\xbaH\x04\"\x02(\x00R\x11openingFloatPaisa\x12\x12\n" +
 	"\x04note\x18\x02 \x01(\tR\x04note\"\x17\n" +

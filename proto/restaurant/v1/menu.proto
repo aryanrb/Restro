@@ -19,16 +19,28 @@ message Category {
   bool active = 4;
 }
 
+// One ingredient of a recipe, per 1 unit sold: an inventory item and a quantity in
+// thousandths of its base unit (see InventoryService).
+message RecipeLine {
+  string inventory_item_id = 1;
+  int64 quantity_milli = 2;
+}
+
 message Variant {
   string id = 1;
   LocalText name = 2;
   int64 price_paisa = 3;
+  // Own recipe, which REPLACES the item recipe when has_own_recipe is true
+  // (an own recipe may be empty). false = use the item recipe.
+  repeated RecipeLine recipe = 4;
+  bool has_own_recipe = 5;
 }
 
 message Modifier {
   string id = 1;
   LocalText name = 2;
   int64 price_delta_paisa = 3;
+  repeated RecipeLine recipe = 4; // ADDED to the dish's recipe
 }
 
 message ModifierGroup {
@@ -54,6 +66,7 @@ message MenuItem {
   repeated Variant variants = 11;
   repeated string modifier_group_ids = 12;
   int32 sort = 13;
+  repeated RecipeLine recipe = 14; // per 1 sold; empty = no recipe (deducts nothing)
 }
 
 message Menu {
@@ -149,6 +162,28 @@ message DeleteModifierGroupRequest {
 } // IN_USE if any item links it
 message DeleteModifierGroupResponse {}
 
+// A variant's own recipe; absent from SaveRecipeRequest.variant_recipes = unchanged.
+message VariantRecipe {
+  string variant_id = 1;
+  bool use_item_recipe = 2;        // true = drop the own recipe (lines ignored)
+  repeated RecipeLine lines = 3;   // the own recipe (may be empty)
+}
+
+// Owner/manager. Applies from now on (past stock movements never change). Bumps the
+// item's version; STALE_VERSION on a wrong base_version.
+message SaveRecipeRequest {
+  string menu_item_id = 1;
+  repeated RecipeLine recipe = 2;
+  repeated VariantRecipe variant_recipes = 3;
+  int64 base_version = 4;
+}
+
+message SaveModifierRecipeRequest {
+  string modifier_id = 1;
+  repeated RecipeLine recipe = 2;
+}
+message SaveModifierRecipeResponse {}
+
 service MenuService {
   rpc GetMenu(GetMenuRequest) returns (Menu);
   rpc SaveCategory(SaveCategoryRequest) returns (Category);
@@ -160,4 +195,6 @@ service MenuService {
   rpc Set86(Set86Request) returns (Set86Response);          // emits item.86d per id
   rpc SaveModifierGroup(SaveModifierGroupRequest) returns (ModifierGroup);
   rpc DeleteModifierGroup(DeleteModifierGroupRequest) returns (DeleteModifierGroupResponse);
+  rpc SaveRecipe(SaveRecipeRequest) returns (MenuItem);     // INVALID(recipe | variant_recipes) / STALE_VERSION
+  rpc SaveModifierRecipe(SaveModifierRecipeRequest) returns (SaveModifierRecipeResponse);
 }

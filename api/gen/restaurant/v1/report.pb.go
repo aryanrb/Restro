@@ -131,8 +131,13 @@ type DashboardResponse struct {
 	VoidValuePaisa      int64                  `protobuf:"varint,10,opt,name=void_value_paisa,json=voidValuePaisa,proto3" json:"void_value_paisa,omitempty"` // value of items voided today
 	CancelledCount      int32                  `protobuf:"varint,11,opt,name=cancelled_count,json=cancelledCount,proto3" json:"cancelled_count,omitempty"`   // bills cancelled today
 	CancelledValuePaisa int64                  `protobuf:"varint,12,opt,name=cancelled_value_paisa,json=cancelledValuePaisa,proto3" json:"cancelled_value_paisa,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Credit (udharo): on-account amounts on today's issued bills, repayments taken
+	// today (not voided), and everything owed now (sum of positive balances).
+	CreditGivenTodayPaisa int64 `protobuf:"varint,13,opt,name=credit_given_today_paisa,json=creditGivenTodayPaisa,proto3" json:"credit_given_today_paisa,omitempty"`
+	RepaymentsTodayPaisa  int64 `protobuf:"varint,14,opt,name=repayments_today_paisa,json=repaymentsTodayPaisa,proto3" json:"repayments_today_paisa,omitempty"`
+	CreditOwedPaisa       int64 `protobuf:"varint,15,opt,name=credit_owed_paisa,json=creditOwedPaisa,proto3" json:"credit_owed_paisa,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *DashboardResponse) Reset() {
@@ -245,6 +250,27 @@ func (x *DashboardResponse) GetCancelledCount() int32 {
 func (x *DashboardResponse) GetCancelledValuePaisa() int64 {
 	if x != nil {
 		return x.CancelledValuePaisa
+	}
+	return 0
+}
+
+func (x *DashboardResponse) GetCreditGivenTodayPaisa() int64 {
+	if x != nil {
+		return x.CreditGivenTodayPaisa
+	}
+	return 0
+}
+
+func (x *DashboardResponse) GetRepaymentsTodayPaisa() int64 {
+	if x != nil {
+		return x.RepaymentsTodayPaisa
+	}
+	return 0
+}
+
+func (x *DashboardResponse) GetCreditOwedPaisa() int64 {
+	if x != nil {
+		return x.CreditOwedPaisa
 	}
 	return 0
 }
@@ -1208,6 +1234,188 @@ func (x *CsvExport) GetFilename() string {
 	return ""
 }
 
+// Every credit account whose balance is not zero, oldest unpaid bill first
+// (accounts with none last), then by name.
+type CreditReportRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreditReportRequest) Reset() {
+	*x = CreditReportRequest{}
+	mi := &file_restaurant_v1_report_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreditReportRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreditReportRequest) ProtoMessage() {}
+
+func (x *CreditReportRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_report_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreditReportRequest.ProtoReflect.Descriptor instead.
+func (*CreditReportRequest) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_report_proto_rawDescGZIP(), []int{14}
+}
+
+type CreditReportRow struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	CustomerId          string                 `protobuf:"bytes,1,opt,name=customer_id,json=customerId,proto3" json:"customer_id,omitempty"`
+	Name                string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Phone               string                 `protobuf:"bytes,3,opt,name=phone,proto3" json:"phone,omitempty"`
+	Active              bool                   `protobuf:"varint,4,opt,name=active,proto3" json:"active,omitempty"`
+	BalancePaisa        int64                  `protobuf:"varint,5,opt,name=balance_paisa,json=balancePaisa,proto3" json:"balance_paisa,omitempty"`
+	CreditLimitPaisa    int64                  `protobuf:"varint,6,opt,name=credit_limit_paisa,json=creditLimitPaisa,proto3" json:"credit_limit_paisa,omitempty"`
+	OldestUnpaidAtUnix  int64                  `protobuf:"varint,7,opt,name=oldest_unpaid_at_unix,json=oldestUnpaidAtUnix,proto3" json:"oldest_unpaid_at_unix,omitempty"`    // issue time of the oldest bill not yet paid off; 0 = none
+	LastRepaymentAtUnix int64                  `protobuf:"varint,8,opt,name=last_repayment_at_unix,json=lastRepaymentAtUnix,proto3" json:"last_repayment_at_unix,omitempty"` // 0 = none
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *CreditReportRow) Reset() {
+	*x = CreditReportRow{}
+	mi := &file_restaurant_v1_report_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreditReportRow) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreditReportRow) ProtoMessage() {}
+
+func (x *CreditReportRow) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_report_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreditReportRow.ProtoReflect.Descriptor instead.
+func (*CreditReportRow) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_report_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *CreditReportRow) GetCustomerId() string {
+	if x != nil {
+		return x.CustomerId
+	}
+	return ""
+}
+
+func (x *CreditReportRow) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreditReportRow) GetPhone() string {
+	if x != nil {
+		return x.Phone
+	}
+	return ""
+}
+
+func (x *CreditReportRow) GetActive() bool {
+	if x != nil {
+		return x.Active
+	}
+	return false
+}
+
+func (x *CreditReportRow) GetBalancePaisa() int64 {
+	if x != nil {
+		return x.BalancePaisa
+	}
+	return 0
+}
+
+func (x *CreditReportRow) GetCreditLimitPaisa() int64 {
+	if x != nil {
+		return x.CreditLimitPaisa
+	}
+	return 0
+}
+
+func (x *CreditReportRow) GetOldestUnpaidAtUnix() int64 {
+	if x != nil {
+		return x.OldestUnpaidAtUnix
+	}
+	return 0
+}
+
+func (x *CreditReportRow) GetLastRepaymentAtUnix() int64 {
+	if x != nil {
+		return x.LastRepaymentAtUnix
+	}
+	return 0
+}
+
+type CreditReportResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rows          []*CreditReportRow     `protobuf:"bytes,1,rep,name=rows,proto3" json:"rows,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreditReportResponse) Reset() {
+	*x = CreditReportResponse{}
+	mi := &file_restaurant_v1_report_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreditReportResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreditReportResponse) ProtoMessage() {}
+
+func (x *CreditReportResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_report_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreditReportResponse.ProtoReflect.Descriptor instead.
+func (*CreditReportResponse) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_report_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *CreditReportResponse) GetRows() []*CreditReportRow {
+	if x != nil {
+		return x.Rows
+	}
+	return nil
+}
+
 var File_restaurant_v1_report_proto protoreflect.FileDescriptor
 
 const file_restaurant_v1_report_proto_rawDesc = "" +
@@ -1217,7 +1425,7 @@ const file_restaurant_v1_report_proto_rawDesc = "" +
 	"\aTopItem\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\bquantity\x18\x02 \x01(\x05R\bquantity\x12!\n" +
-	"\famount_paisa\x18\x03 \x01(\x03R\vamountPaisa\"\x93\x04\n" +
+	"\famount_paisa\x18\x03 \x01(\x03R\vamountPaisa\"\xae\x05\n" +
 	"\x11DashboardResponse\x12*\n" +
 	"\x11today_sales_paisa\x18\x01 \x01(\x03R\x0ftodaySalesPaisa\x12.\n" +
 	"\x13today_invoice_count\x18\x02 \x01(\x05R\x11todayInvoiceCount\x12\x1f\n" +
@@ -1234,7 +1442,10 @@ const file_restaurant_v1_report_proto_rawDesc = "" +
 	"\x10void_value_paisa\x18\n" +
 	" \x01(\x03R\x0evoidValuePaisa\x12'\n" +
 	"\x0fcancelled_count\x18\v \x01(\x05R\x0ecancelledCount\x122\n" +
-	"\x15cancelled_value_paisa\x18\f \x01(\x03R\x13cancelledValuePaisa\"q\n" +
+	"\x15cancelled_value_paisa\x18\f \x01(\x03R\x13cancelledValuePaisa\x127\n" +
+	"\x18credit_given_today_paisa\x18\r \x01(\x03R\x15creditGivenTodayPaisa\x124\n" +
+	"\x16repayments_today_paisa\x18\x0e \x01(\x03R\x14repaymentsTodayPaisa\x12*\n" +
+	"\x11credit_owed_paisa\x18\x0f \x01(\x03R\x0fcreditOwedPaisa\"q\n" +
 	"\fRangeRequest\x12\x1b\n" +
 	"\tfrom_unix\x18\x01 \x01(\x03R\bfromUnix\x12\x17\n" +
 	"\ato_unix\x18\x02 \x01(\x03R\x06toUnix\x12+\n" +
@@ -1330,7 +1541,20 @@ const file_restaurant_v1_report_proto_rawDesc = "" +
 	"\aentries\x18\x01 \x03(\v2\x19.restaurant.v1.AuditEntryR\aentries\";\n" +
 	"\tCsvExport\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x12\x1a\n" +
-	"\bfilename\x18\x02 \x01(\tR\bfilename2\xef\x03\n" +
+	"\bfilename\x18\x02 \x01(\tR\bfilename\"\x15\n" +
+	"\x13CreditReportRequest\"\xaf\x02\n" +
+	"\x0fCreditReportRow\x12\x1f\n" +
+	"\vcustomer_id\x18\x01 \x01(\tR\n" +
+	"customerId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
+	"\x05phone\x18\x03 \x01(\tR\x05phone\x12\x16\n" +
+	"\x06active\x18\x04 \x01(\bR\x06active\x12#\n" +
+	"\rbalance_paisa\x18\x05 \x01(\x03R\fbalancePaisa\x12,\n" +
+	"\x12credit_limit_paisa\x18\x06 \x01(\x03R\x10creditLimitPaisa\x121\n" +
+	"\x15oldest_unpaid_at_unix\x18\a \x01(\x03R\x12oldestUnpaidAtUnix\x123\n" +
+	"\x16last_repayment_at_unix\x18\b \x01(\x03R\x13lastRepaymentAtUnix\"J\n" +
+	"\x14CreditReportResponse\x122\n" +
+	"\x04rows\x18\x01 \x03(\v2\x1e.restaurant.v1.CreditReportRowR\x04rows2\xc8\x04\n" +
 	"\rReportService\x12N\n" +
 	"\tDashboard\x12\x1f.restaurant.v1.DashboardRequest\x1a .restaurant.v1.DashboardResponse\x12J\n" +
 	"\tSalesBook\x12\x1b.restaurant.v1.RangeRequest\x1a .restaurant.v1.SalesBookResponse\x12K\n" +
@@ -1338,7 +1562,8 @@ const file_restaurant_v1_report_proto_rawDesc = "" +
 	"\n" +
 	"DailySales\x12\x1b.restaurant.v1.RangeRequest\x1a!.restaurant.v1.DailySalesResponse\x12Z\n" +
 	"\x11CancelledInvoices\x12\x1b.restaurant.v1.RangeRequest\x1a(.restaurant.v1.CancelledInvoicesResponse\x12K\n" +
-	"\bAuditLog\x12\x1e.restaurant.v1.AuditLogRequest\x1a\x1f.restaurant.v1.AuditLogResponseB\xb5\x01\n" +
+	"\bAuditLog\x12\x1e.restaurant.v1.AuditLogRequest\x1a\x1f.restaurant.v1.AuditLogResponse\x12W\n" +
+	"\fCreditReport\x12\".restaurant.v1.CreditReportRequest\x1a#.restaurant.v1.CreditReportResponseB\xb5\x01\n" +
 	"\x11com.restaurant.v1B\vReportProtoP\x01Z>github.com/oneaccord/restro/api/gen/restaurant/v1;restaurantv1\xa2\x02\x03RXX\xaa\x02\rRestaurant.V1\xca\x02\rRestaurant\\V1\xe2\x02\x19Restaurant\\V1\\GPBMetadata\xea\x02\x0eRestaurant::V1b\x06proto3"
 
 var (
@@ -1353,7 +1578,7 @@ func file_restaurant_v1_report_proto_rawDescGZIP() []byte {
 	return file_restaurant_v1_report_proto_rawDescData
 }
 
-var file_restaurant_v1_report_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_restaurant_v1_report_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_restaurant_v1_report_proto_goTypes = []any{
 	(*DashboardRequest)(nil),          // 0: restaurant.v1.DashboardRequest
 	(*TopItem)(nil),                   // 1: restaurant.v1.TopItem
@@ -1369,33 +1594,39 @@ var file_restaurant_v1_report_proto_goTypes = []any{
 	(*AuditEntry)(nil),                // 11: restaurant.v1.AuditEntry
 	(*AuditLogResponse)(nil),          // 12: restaurant.v1.AuditLogResponse
 	(*CsvExport)(nil),                 // 13: restaurant.v1.CsvExport
-	(*MethodTotal)(nil),               // 14: restaurant.v1.MethodTotal
+	(*CreditReportRequest)(nil),       // 14: restaurant.v1.CreditReportRequest
+	(*CreditReportRow)(nil),           // 15: restaurant.v1.CreditReportRow
+	(*CreditReportResponse)(nil),      // 16: restaurant.v1.CreditReportResponse
+	(*MethodTotal)(nil),               // 17: restaurant.v1.MethodTotal
 }
 var file_restaurant_v1_report_proto_depIdxs = []int32{
 	1,  // 0: restaurant.v1.DashboardResponse.top_items:type_name -> restaurant.v1.TopItem
-	14, // 1: restaurant.v1.DashboardResponse.by_method:type_name -> restaurant.v1.MethodTotal
+	17, // 1: restaurant.v1.DashboardResponse.by_method:type_name -> restaurant.v1.MethodTotal
 	4,  // 2: restaurant.v1.SalesBookResponse.rows:type_name -> restaurant.v1.SalesBookRow
-	14, // 3: restaurant.v1.DailySalesRow.by_method:type_name -> restaurant.v1.MethodTotal
+	17, // 3: restaurant.v1.DailySalesRow.by_method:type_name -> restaurant.v1.MethodTotal
 	6,  // 4: restaurant.v1.DailySalesResponse.rows:type_name -> restaurant.v1.DailySalesRow
 	8,  // 5: restaurant.v1.CancelledInvoicesResponse.rows:type_name -> restaurant.v1.CancelledInvoiceRow
 	11, // 6: restaurant.v1.AuditLogResponse.entries:type_name -> restaurant.v1.AuditEntry
-	0,  // 7: restaurant.v1.ReportService.Dashboard:input_type -> restaurant.v1.DashboardRequest
-	3,  // 8: restaurant.v1.ReportService.SalesBook:input_type -> restaurant.v1.RangeRequest
-	3,  // 9: restaurant.v1.ReportService.ExportSalesBookCsv:input_type -> restaurant.v1.RangeRequest
-	3,  // 10: restaurant.v1.ReportService.DailySales:input_type -> restaurant.v1.RangeRequest
-	3,  // 11: restaurant.v1.ReportService.CancelledInvoices:input_type -> restaurant.v1.RangeRequest
-	10, // 12: restaurant.v1.ReportService.AuditLog:input_type -> restaurant.v1.AuditLogRequest
-	2,  // 13: restaurant.v1.ReportService.Dashboard:output_type -> restaurant.v1.DashboardResponse
-	5,  // 14: restaurant.v1.ReportService.SalesBook:output_type -> restaurant.v1.SalesBookResponse
-	13, // 15: restaurant.v1.ReportService.ExportSalesBookCsv:output_type -> restaurant.v1.CsvExport
-	7,  // 16: restaurant.v1.ReportService.DailySales:output_type -> restaurant.v1.DailySalesResponse
-	9,  // 17: restaurant.v1.ReportService.CancelledInvoices:output_type -> restaurant.v1.CancelledInvoicesResponse
-	12, // 18: restaurant.v1.ReportService.AuditLog:output_type -> restaurant.v1.AuditLogResponse
-	13, // [13:19] is the sub-list for method output_type
-	7,  // [7:13] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	15, // 7: restaurant.v1.CreditReportResponse.rows:type_name -> restaurant.v1.CreditReportRow
+	0,  // 8: restaurant.v1.ReportService.Dashboard:input_type -> restaurant.v1.DashboardRequest
+	3,  // 9: restaurant.v1.ReportService.SalesBook:input_type -> restaurant.v1.RangeRequest
+	3,  // 10: restaurant.v1.ReportService.ExportSalesBookCsv:input_type -> restaurant.v1.RangeRequest
+	3,  // 11: restaurant.v1.ReportService.DailySales:input_type -> restaurant.v1.RangeRequest
+	3,  // 12: restaurant.v1.ReportService.CancelledInvoices:input_type -> restaurant.v1.RangeRequest
+	10, // 13: restaurant.v1.ReportService.AuditLog:input_type -> restaurant.v1.AuditLogRequest
+	14, // 14: restaurant.v1.ReportService.CreditReport:input_type -> restaurant.v1.CreditReportRequest
+	2,  // 15: restaurant.v1.ReportService.Dashboard:output_type -> restaurant.v1.DashboardResponse
+	5,  // 16: restaurant.v1.ReportService.SalesBook:output_type -> restaurant.v1.SalesBookResponse
+	13, // 17: restaurant.v1.ReportService.ExportSalesBookCsv:output_type -> restaurant.v1.CsvExport
+	7,  // 18: restaurant.v1.ReportService.DailySales:output_type -> restaurant.v1.DailySalesResponse
+	9,  // 19: restaurant.v1.ReportService.CancelledInvoices:output_type -> restaurant.v1.CancelledInvoicesResponse
+	12, // 20: restaurant.v1.ReportService.AuditLog:output_type -> restaurant.v1.AuditLogResponse
+	16, // 21: restaurant.v1.ReportService.CreditReport:output_type -> restaurant.v1.CreditReportResponse
+	15, // [15:22] is the sub-list for method output_type
+	8,  // [8:15] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_restaurant_v1_report_proto_init() }
@@ -1410,7 +1641,7 @@ func file_restaurant_v1_report_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_restaurant_v1_report_proto_rawDesc), len(file_restaurant_v1_report_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

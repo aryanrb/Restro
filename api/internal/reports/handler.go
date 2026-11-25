@@ -37,6 +37,10 @@ func (h *Handler) AuditLog(ctx context.Context, req *connect.Request[restaurantv
 	return wrap(h.svc.AuditLog(ctx, req.Msg))
 }
 
+func (h *Handler) CreditReport(ctx context.Context, _ *connect.Request[restaurantv1.CreditReportRequest]) (*connect.Response[restaurantv1.CreditReportResponse], error) {
+	return wrap(h.svc.CreditReport(ctx))
+}
+
 func wrap[T any](v *T, err error) (*connect.Response[T], error) {
 	if err != nil {
 		return nil, err

@@ -55,6 +55,11 @@ message ShiftPaymentRow {
   int64 created_at_unix = 8;
   bool confirmed = 9;          // false while a QR payment is still AWAITING
   bool invoice_cancelled = 10; // the bill has since been cancelled
+  // A credit repayment (see credit.proto) instead of a bill payment: invoice_id is
+  // empty, payment_id is the repayment id and display_number its "R-12".
+  bool repayment = 11;
+  string repayment_id = 12;
+  bool repayment_voided = 13;  // the repayment has since been voided
 }
 
 // A bill cancelled after the shift that took its payment had closed is counted
@@ -69,6 +74,9 @@ message ShiftAdjustment {
   int64 created_at_unix = 7;    // when the bill was cancelled
   string original_shift_id = 8; // the closed shift the payment was taken in
   string payment_id = 9;
+  // Set instead of invoice_id/payment_id when a repayment taken in a closed shift
+  // was voided; display_number is then its "R-12".
+  string repayment_id = 10;
 }
 
 // Close-out / report view of a shift.
@@ -83,6 +91,10 @@ message ShiftReport {
   repeated QrPaymentRow qr_payments = 5;
   repeated ShiftPaymentRow payments = 6;
   repeated ShiftAdjustment adjustments = 7;
+  // Credit repayments counted in totals (already included there by method).
+  int64 repayments_paisa = 8;
+  // On-account amounts billed in this shift (not money; never in totals or expected cash).
+  int64 credit_given_paisa = 9;
 }
 
 message OpenShiftRequest {

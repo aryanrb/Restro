@@ -49,6 +49,21 @@ query via Connect; a missed or out-of-order event can only delay state, never co
 | `settings.updated` | — (broadcast)       | settings saved                                            | admin            |
 | `station.updated`  | station id          | station added/renamed/removed                             | admin, kitchen   |
 | `invoice.issued`   | invoice id          | `IssueBill` / `CounterSale` issued (and paid) an invoice  | cashier, owner   |
+| `customer.updated` | customer id         | credit account created/edited/limit/(de)activated; its balance changed (on-account bill issued or cancelled, repayment taken or voided) | cashier, owner |
+
+### Inventory (InventoryService, recipes on MenuService)
+
+| `type`             | `id` is…                 | Emitted when                                                                 | Primary audience |
+|--------------------|--------------------------|------------------------------------------------------------------------------|------------------|
+| `stock.updated`    | `"stock"`                | any stock movement was written (send, void before cooking, counter sale, waste, count post, tracking on) | admin inventory |
+| `stock.low`        | inventory item id        | a tracked item's on hand crossed down to its low-stock level (once per crossing) | owner, manager (toast) |
+| `stock.86suggest`  | menu item id             | a dish can no longer be made from what is on hand (once per crossing; never auto-86) | KDS, manager |
+| `inventory.updated`| inventory item id        | a stock item was saved or tracking turned on/off (`version` = item version)  | admin            |
+| `count.updated`    | count id, or `"lists"`   | a stock count started / counted / submitted / recount / posted / discarded; a count list saved | counters, manager |
+| `waste.logged`     | waste entry id           | waste was logged                                                             | manager          |
+
+Stock events from order commands and counter sales are sent only after the
+request's transaction committed (server-side `inventory.EventsInterceptor`).
 
 ### Later plans (reserved names — do not reuse)
 
