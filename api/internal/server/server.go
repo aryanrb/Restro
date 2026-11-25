@@ -29,8 +29,10 @@ import (
 	"github.com/oneaccord/restro/api/internal/kitchen"
 	"github.com/oneaccord/restro/api/internal/live"
 	"github.com/oneaccord/restro/api/internal/orders"
+	"github.com/oneaccord/restro/api/internal/purchases"
 	"github.com/oneaccord/restro/api/internal/realtime"
 	"github.com/oneaccord/restro/api/internal/reports"
+	"github.com/oneaccord/restro/api/internal/reservations"
 	"github.com/oneaccord/restro/api/internal/shift"
 )
 
@@ -136,9 +138,18 @@ func New(d Deps) *echo.Echo {
 	calendarPath, calendarHH := restaurantv1connect.NewCalendarServiceHandler(analyticsH, ic)
 	mount(e, calendarPath, calendarHH)
 
+	purchaseH := purchases.NewHandler(purchases.NewService(d.Pool, d.Hub, authSvc, d.Log))
+	supplierPath, supplierHH := restaurantv1connect.NewSupplierServiceHandler(purchaseH, ic)
+	mount(e, supplierPath, supplierHH)
+	purchasePath, purchaseHH := restaurantv1connect.NewPurchaseServiceHandler(purchaseH, ic)
+	mount(e, purchasePath, purchaseHH)
+
 	alertH := alerts.NewHandler(alerts.NewService(d.Pool, d.Hub, d.Log))
 	alertPath, alertHH := restaurantv1connect.NewAlertServiceHandler(alertH, ic)
 	mount(e, alertPath, alertHH)
+
+	reservationPath, reservationHH := restaurantv1connect.NewReservationServiceHandler(reservations.NewHandler(reservations.NewService(d.Pool, d.Hub, d.Log)), ic)
+	mount(e, reservationPath, reservationHH)
 
 	return e
 }

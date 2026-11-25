@@ -388,6 +388,35 @@ var registry = []ruleDef{
 		},
 	},
 	{
+		// Supplier cash from the till: one payment above the till limit, or one
+		// person's till paid-outs in a shift reaching shiftTotal (one alert per shift, updated).
+		rule: "LARGE_PAID_OUT", triggers: []string{"SUPPLIER_PAID"},
+		eval: func(c *ruleCtx) ([]firing, error) {
+			p, err := c.q.GetSupplierPaymentRow(c.ctx, c.entityID())
+			if err != nil || p.Method != "TILL" || !p.ShiftID.Valid {
+				return nil, err
+			}
+			shiftID := uuid.UUID(p.ShiftID.Bytes)
+			var out []firing
+			if p.AmountPaisa > c.t["amount"] {
+				key := "payout:" + p.ID.String()
+				out = append(out, firing{subject: p.PaidByUserID, approvers: []uuid.UUID{c.approver()}, text: "SP-" + itoa(int64(p.Number)),
+					num: map[string]int64{"paid": p.AmountPaisa}, str: map[string]string{"variant": "single", "supplier": p.SupplierName},
+					amount: amountOf(p.AmountPaisa), shiftID: shiftID, groupKey: key, dedupKey: key})
+			}
+			sum, err := c.q.AlertTillPaidOutsInShift(c.ctx, sqlc.AlertTillPaidOutsInShiftParams{ShiftID: shiftID, PaidByUserID: p.PaidByUserID})
+			if err != nil {
+				return nil, err
+			}
+			if sum.Total >= c.t["shiftTotal"] {
+				out = append(out, firing{subject: p.PaidByUserID, text: p.PaidByName,
+					num: map[string]int64{"total": sum.Total, "payments": int64(sum.Payments)}, str: map[string]string{"variant": "shift"},
+					amount: amountOf(sum.Total), shiftID: shiftID, groupKey: "shift:" + shiftID.String()})
+			}
+			return out, nil
+		},
+	},
+	{
 		// The restaurant's waste over the business day (one alert, updated), or one posted count's loss.
 		rule: "HIGH_WASTE", triggers: []string{"WASTE_LOGGED", "STOCK_COUNT_POSTED"},
 		eval: func(c *ruleCtx) ([]firing, error) {

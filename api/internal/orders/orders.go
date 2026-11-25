@@ -133,7 +133,7 @@ func toOrder(o sqlc.Order, items []sqlc.OrderItem, mods map[uuid.UUID][]sqlc.Ord
 	out := &restaurantv1.Order{
 		Id: o.ID.String(), ClientId: o.ClientID.String(), Type: orderTypeEnum(o.Type),
 		WaiterUserId: o.WaiterUserID.String(), Status: orderStatusEnum(o.Status), GuestCount: o.GuestCount, Version: o.Version,
-		Label: o.Label, CreatedAtUnix: o.CreatedAt.Unix(),
+		Label: o.Label, CreatedAtUnix: o.CreatedAt.Unix(), ReservationId: pgUUIDStr(o.ReservationID),
 	}
 	if o.TableID.Valid {
 		s := pgUUIDStr(o.TableID)

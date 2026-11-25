@@ -126,3 +126,6 @@ VALUES ($1, $2, $3, $4);
 SELECT m.* FROM order_item_modifiers m
 JOIN order_items i ON i.id = m.order_item_id
 WHERE i.order_id = $1;
+
+-- name: SetOrderReservation :exec
+UPDATE orders SET reservation_id = @reservation_id WHERE id = @id;

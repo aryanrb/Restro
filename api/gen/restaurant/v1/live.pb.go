@@ -328,13 +328,16 @@ func (x *LiveOrder) GetLate() bool {
 }
 
 type LiveTable struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TableId       string                 `protobuf:"bytes,1,opt,name=table_id,json=tableId,proto3" json:"table_id,omitempty"`
-	AreaId        string                 `protobuf:"bytes,2,opt,name=area_id,json=areaId,proto3" json:"area_id,omitempty"`
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Seats         int32                  `protobuf:"varint,4,opt,name=seats,proto3" json:"seats,omitempty"`
-	State         LiveState              `protobuf:"varint,5,opt,name=state,proto3,enum=restaurant.v1.LiveState" json:"state,omitempty"` // the most urgent of its orders; FREE when none
-	Orders        []*LiveOrder           `protobuf:"bytes,6,rep,name=orders,proto3" json:"orders,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	TableId string                 `protobuf:"bytes,1,opt,name=table_id,json=tableId,proto3" json:"table_id,omitempty"`
+	AreaId  string                 `protobuf:"bytes,2,opt,name=area_id,json=areaId,proto3" json:"area_id,omitempty"`
+	Name    string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Seats   int32                  `protobuf:"varint,4,opt,name=seats,proto3" json:"seats,omitempty"`
+	State   LiveState              `protobuf:"varint,5,opt,name=state,proto3,enum=restaurant.v1.LiveState" json:"state,omitempty"` // the most urgent of its orders; FREE when none
+	Orders  []*LiveOrder           `protobuf:"bytes,6,rep,name=orders,proto3" json:"orders,omitempty"`
+	// The booking holding this table now (reservations): from hold-before until
+	// released; only on tables with no open order; absent when reservations are off.
+	Reservation   *LiveReservation `protobuf:"bytes,7,opt,name=reservation,proto3" json:"reservation,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -411,6 +414,90 @@ func (x *LiveTable) GetOrders() []*LiveOrder {
 	return nil
 }
 
+func (x *LiveTable) GetReservation() *LiveReservation {
+	if x != nil {
+		return x.Reservation
+	}
+	return nil
+}
+
+// A booking holding a free table: the floor's "reserved" tile, "late" after the grace.
+type LiveReservation struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"` // the customer's name
+	PartySize     int32                  `protobuf:"varint,3,opt,name=party_size,json=partySize,proto3" json:"party_size,omitempty"`
+	StartsAtUnix  int64                  `protobuf:"varint,4,opt,name=starts_at_unix,json=startsAtUnix,proto3" json:"starts_at_unix,omitempty"`
+	Late          bool                   `protobuf:"varint,5,opt,name=late,proto3" json:"late,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LiveReservation) Reset() {
+	*x = LiveReservation{}
+	mi := &file_restaurant_v1_live_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LiveReservation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LiveReservation) ProtoMessage() {}
+
+func (x *LiveReservation) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_live_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LiveReservation.ProtoReflect.Descriptor instead.
+func (*LiveReservation) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *LiveReservation) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *LiveReservation) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *LiveReservation) GetPartySize() int32 {
+	if x != nil {
+		return x.PartySize
+	}
+	return 0
+}
+
+func (x *LiveReservation) GetStartsAtUnix() int64 {
+	if x != nil {
+		return x.StartsAtUnix
+	}
+	return 0
+}
+
+func (x *LiveReservation) GetLate() bool {
+	if x != nil {
+		return x.Late
+	}
+	return false
+}
+
 type LiveArea struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -421,7 +508,7 @@ type LiveArea struct {
 
 func (x *LiveArea) Reset() {
 	*x = LiveArea{}
-	mi := &file_restaurant_v1_live_proto_msgTypes[3]
+	mi := &file_restaurant_v1_live_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -433,7 +520,7 @@ func (x *LiveArea) String() string {
 func (*LiveArea) ProtoMessage() {}
 
 func (x *LiveArea) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_live_proto_msgTypes[3]
+	mi := &file_restaurant_v1_live_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -446,7 +533,7 @@ func (x *LiveArea) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LiveArea.ProtoReflect.Descriptor instead.
 func (*LiveArea) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{3}
+	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *LiveArea) GetId() string {
@@ -476,7 +563,7 @@ type LiveLateItem struct {
 
 func (x *LiveLateItem) Reset() {
 	*x = LiveLateItem{}
-	mi := &file_restaurant_v1_live_proto_msgTypes[4]
+	mi := &file_restaurant_v1_live_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -488,7 +575,7 @@ func (x *LiveLateItem) String() string {
 func (*LiveLateItem) ProtoMessage() {}
 
 func (x *LiveLateItem) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_live_proto_msgTypes[4]
+	mi := &file_restaurant_v1_live_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -501,7 +588,7 @@ func (x *LiveLateItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LiveLateItem.ProtoReflect.Descriptor instead.
 func (*LiveLateItem) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{4}
+	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *LiveLateItem) GetOrderId() string {
@@ -559,7 +646,7 @@ type LiveStation struct {
 
 func (x *LiveStation) Reset() {
 	*x = LiveStation{}
-	mi := &file_restaurant_v1_live_proto_msgTypes[5]
+	mi := &file_restaurant_v1_live_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -571,7 +658,7 @@ func (x *LiveStation) String() string {
 func (*LiveStation) ProtoMessage() {}
 
 func (x *LiveStation) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_live_proto_msgTypes[5]
+	mi := &file_restaurant_v1_live_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -584,7 +671,7 @@ func (x *LiveStation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LiveStation.ProtoReflect.Descriptor instead.
 func (*LiveStation) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{5}
+	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *LiveStation) GetStationId() string {
@@ -673,7 +760,7 @@ type LiveTill struct {
 
 func (x *LiveTill) Reset() {
 	*x = LiveTill{}
-	mi := &file_restaurant_v1_live_proto_msgTypes[6]
+	mi := &file_restaurant_v1_live_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -685,7 +772,7 @@ func (x *LiveTill) String() string {
 func (*LiveTill) ProtoMessage() {}
 
 func (x *LiveTill) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_live_proto_msgTypes[6]
+	mi := &file_restaurant_v1_live_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -698,7 +785,7 @@ func (x *LiveTill) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LiveTill.ProtoReflect.Descriptor instead.
 func (*LiveTill) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{6}
+	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *LiveTill) GetShiftId() string {
@@ -764,7 +851,7 @@ type LiveException struct {
 
 func (x *LiveException) Reset() {
 	*x = LiveException{}
-	mi := &file_restaurant_v1_live_proto_msgTypes[7]
+	mi := &file_restaurant_v1_live_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -776,7 +863,7 @@ func (x *LiveException) String() string {
 func (*LiveException) ProtoMessage() {}
 
 func (x *LiveException) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_live_proto_msgTypes[7]
+	mi := &file_restaurant_v1_live_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -789,7 +876,7 @@ func (x *LiveException) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LiveException.ProtoReflect.Descriptor instead.
 func (*LiveException) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{7}
+	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *LiveException) GetEntry() *AuditEntry {
@@ -819,7 +906,7 @@ type LiveToday struct {
 
 func (x *LiveToday) Reset() {
 	*x = LiveToday{}
-	mi := &file_restaurant_v1_live_proto_msgTypes[8]
+	mi := &file_restaurant_v1_live_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -831,7 +918,7 @@ func (x *LiveToday) String() string {
 func (*LiveToday) ProtoMessage() {}
 
 func (x *LiveToday) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_live_proto_msgTypes[8]
+	mi := &file_restaurant_v1_live_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -844,7 +931,7 @@ func (x *LiveToday) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LiveToday.ProtoReflect.Descriptor instead.
 func (*LiveToday) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{8}
+	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *LiveToday) GetSalesPaisa() int64 {
@@ -890,7 +977,7 @@ type GetLiveSnapshotRequest struct {
 
 func (x *GetLiveSnapshotRequest) Reset() {
 	*x = GetLiveSnapshotRequest{}
-	mi := &file_restaurant_v1_live_proto_msgTypes[9]
+	mi := &file_restaurant_v1_live_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -902,7 +989,7 @@ func (x *GetLiveSnapshotRequest) String() string {
 func (*GetLiveSnapshotRequest) ProtoMessage() {}
 
 func (x *GetLiveSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_live_proto_msgTypes[9]
+	mi := &file_restaurant_v1_live_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -915,7 +1002,7 @@ func (x *GetLiveSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLiveSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*GetLiveSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{9}
+	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{10}
 }
 
 type LiveSnapshot struct {
@@ -939,7 +1026,7 @@ type LiveSnapshot struct {
 
 func (x *LiveSnapshot) Reset() {
 	*x = LiveSnapshot{}
-	mi := &file_restaurant_v1_live_proto_msgTypes[10]
+	mi := &file_restaurant_v1_live_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -951,7 +1038,7 @@ func (x *LiveSnapshot) String() string {
 func (*LiveSnapshot) ProtoMessage() {}
 
 func (x *LiveSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_live_proto_msgTypes[10]
+	mi := &file_restaurant_v1_live_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -964,7 +1051,7 @@ func (x *LiveSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LiveSnapshot.ProtoReflect.Descriptor instead.
 func (*LiveSnapshot) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{10}
+	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *LiveSnapshot) GetAtUnix() int64 {
@@ -1067,7 +1154,7 @@ type GetLiveOrderRequest struct {
 
 func (x *GetLiveOrderRequest) Reset() {
 	*x = GetLiveOrderRequest{}
-	mi := &file_restaurant_v1_live_proto_msgTypes[11]
+	mi := &file_restaurant_v1_live_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1079,7 +1166,7 @@ func (x *GetLiveOrderRequest) String() string {
 func (*GetLiveOrderRequest) ProtoMessage() {}
 
 func (x *GetLiveOrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_live_proto_msgTypes[11]
+	mi := &file_restaurant_v1_live_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1092,7 +1179,7 @@ func (x *GetLiveOrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLiveOrderRequest.ProtoReflect.Descriptor instead.
 func (*GetLiveOrderRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{11}
+	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetLiveOrderRequest) GetOrderId() string {
@@ -1123,7 +1210,7 @@ type LiveOrderLine struct {
 
 func (x *LiveOrderLine) Reset() {
 	*x = LiveOrderLine{}
-	mi := &file_restaurant_v1_live_proto_msgTypes[12]
+	mi := &file_restaurant_v1_live_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1135,7 +1222,7 @@ func (x *LiveOrderLine) String() string {
 func (*LiveOrderLine) ProtoMessage() {}
 
 func (x *LiveOrderLine) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_live_proto_msgTypes[12]
+	mi := &file_restaurant_v1_live_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1148,7 +1235,7 @@ func (x *LiveOrderLine) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LiveOrderLine.ProtoReflect.Descriptor instead.
 func (*LiveOrderLine) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{12}
+	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *LiveOrderLine) GetId() string {
@@ -1252,7 +1339,7 @@ type LiveOrderCard struct {
 
 func (x *LiveOrderCard) Reset() {
 	*x = LiveOrderCard{}
-	mi := &file_restaurant_v1_live_proto_msgTypes[13]
+	mi := &file_restaurant_v1_live_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1264,7 +1351,7 @@ func (x *LiveOrderCard) String() string {
 func (*LiveOrderCard) ProtoMessage() {}
 
 func (x *LiveOrderCard) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_live_proto_msgTypes[13]
+	mi := &file_restaurant_v1_live_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1277,7 +1364,7 @@ func (x *LiveOrderCard) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LiveOrderCard.ProtoReflect.Descriptor instead.
 func (*LiveOrderCard) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{13}
+	return file_restaurant_v1_live_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *LiveOrderCard) GetOrder() *LiveOrder {
@@ -1325,14 +1412,22 @@ const file_restaurant_v1_live_proto_rawDesc = "" +
 	"itemCounts\x129\n" +
 	"\x16oldest_waiting_minutes\x18\x0e \x01(\x05H\x00R\x14oldestWaitingMinutes\x88\x01\x01\x12\x12\n" +
 	"\x04late\x18\x0f \x01(\bR\x04lateB\x19\n" +
-	"\x17_oldest_waiting_minutes\"\xcb\x01\n" +
+	"\x17_oldest_waiting_minutes\"\x8d\x02\n" +
 	"\tLiveTable\x12\x19\n" +
 	"\btable_id\x18\x01 \x01(\tR\atableId\x12\x17\n" +
 	"\aarea_id\x18\x02 \x01(\tR\x06areaId\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x14\n" +
 	"\x05seats\x18\x04 \x01(\x05R\x05seats\x12.\n" +
 	"\x05state\x18\x05 \x01(\x0e2\x18.restaurant.v1.LiveStateR\x05state\x120\n" +
-	"\x06orders\x18\x06 \x03(\v2\x18.restaurant.v1.LiveOrderR\x06orders\"H\n" +
+	"\x06orders\x18\x06 \x03(\v2\x18.restaurant.v1.LiveOrderR\x06orders\x12@\n" +
+	"\vreservation\x18\a \x01(\v2\x1e.restaurant.v1.LiveReservationR\vreservation\"\x8e\x01\n" +
+	"\x0fLiveReservation\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
+	"\n" +
+	"party_size\x18\x03 \x01(\x05R\tpartySize\x12$\n" +
+	"\x0estarts_at_unix\x18\x04 \x01(\x03R\fstartsAtUnix\x12\x12\n" +
+	"\x04late\x18\x05 \x01(\bR\x04late\"H\n" +
 	"\bLiveArea\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12,\n" +
 	"\x04name\x18\x02 \x01(\v2\x18.restaurant.v1.LocalTextR\x04name\"\xa3\x01\n" +
@@ -1451,65 +1546,67 @@ func file_restaurant_v1_live_proto_rawDescGZIP() []byte {
 }
 
 var file_restaurant_v1_live_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_restaurant_v1_live_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_restaurant_v1_live_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_restaurant_v1_live_proto_goTypes = []any{
 	(LiveState)(0),                 // 0: restaurant.v1.LiveState
 	(*LiveItemCounts)(nil),         // 1: restaurant.v1.LiveItemCounts
 	(*LiveOrder)(nil),              // 2: restaurant.v1.LiveOrder
 	(*LiveTable)(nil),              // 3: restaurant.v1.LiveTable
-	(*LiveArea)(nil),               // 4: restaurant.v1.LiveArea
-	(*LiveLateItem)(nil),           // 5: restaurant.v1.LiveLateItem
-	(*LiveStation)(nil),            // 6: restaurant.v1.LiveStation
-	(*LiveTill)(nil),               // 7: restaurant.v1.LiveTill
-	(*LiveException)(nil),          // 8: restaurant.v1.LiveException
-	(*LiveToday)(nil),              // 9: restaurant.v1.LiveToday
-	(*GetLiveSnapshotRequest)(nil), // 10: restaurant.v1.GetLiveSnapshotRequest
-	(*LiveSnapshot)(nil),           // 11: restaurant.v1.LiveSnapshot
-	(*GetLiveOrderRequest)(nil),    // 12: restaurant.v1.GetLiveOrderRequest
-	(*LiveOrderLine)(nil),          // 13: restaurant.v1.LiveOrderLine
-	(*LiveOrderCard)(nil),          // 14: restaurant.v1.LiveOrderCard
-	(OrderType)(0),                 // 15: restaurant.v1.OrderType
-	(*LocalText)(nil),              // 16: restaurant.v1.LocalText
-	(*MethodTotal)(nil),            // 17: restaurant.v1.MethodTotal
-	(*AuditEntry)(nil),             // 18: restaurant.v1.AuditEntry
-	(OrderItemStatus)(0),           // 19: restaurant.v1.OrderItemStatus
+	(*LiveReservation)(nil),        // 4: restaurant.v1.LiveReservation
+	(*LiveArea)(nil),               // 5: restaurant.v1.LiveArea
+	(*LiveLateItem)(nil),           // 6: restaurant.v1.LiveLateItem
+	(*LiveStation)(nil),            // 7: restaurant.v1.LiveStation
+	(*LiveTill)(nil),               // 8: restaurant.v1.LiveTill
+	(*LiveException)(nil),          // 9: restaurant.v1.LiveException
+	(*LiveToday)(nil),              // 10: restaurant.v1.LiveToday
+	(*GetLiveSnapshotRequest)(nil), // 11: restaurant.v1.GetLiveSnapshotRequest
+	(*LiveSnapshot)(nil),           // 12: restaurant.v1.LiveSnapshot
+	(*GetLiveOrderRequest)(nil),    // 13: restaurant.v1.GetLiveOrderRequest
+	(*LiveOrderLine)(nil),          // 14: restaurant.v1.LiveOrderLine
+	(*LiveOrderCard)(nil),          // 15: restaurant.v1.LiveOrderCard
+	(OrderType)(0),                 // 16: restaurant.v1.OrderType
+	(*LocalText)(nil),              // 17: restaurant.v1.LocalText
+	(*MethodTotal)(nil),            // 18: restaurant.v1.MethodTotal
+	(*AuditEntry)(nil),             // 19: restaurant.v1.AuditEntry
+	(OrderItemStatus)(0),           // 20: restaurant.v1.OrderItemStatus
 }
 var file_restaurant_v1_live_proto_depIdxs = []int32{
-	15, // 0: restaurant.v1.LiveOrder.type:type_name -> restaurant.v1.OrderType
+	16, // 0: restaurant.v1.LiveOrder.type:type_name -> restaurant.v1.OrderType
 	0,  // 1: restaurant.v1.LiveOrder.state:type_name -> restaurant.v1.LiveState
 	1,  // 2: restaurant.v1.LiveOrder.item_counts:type_name -> restaurant.v1.LiveItemCounts
 	0,  // 3: restaurant.v1.LiveTable.state:type_name -> restaurant.v1.LiveState
 	2,  // 4: restaurant.v1.LiveTable.orders:type_name -> restaurant.v1.LiveOrder
-	16, // 5: restaurant.v1.LiveArea.name:type_name -> restaurant.v1.LocalText
-	16, // 6: restaurant.v1.LiveLateItem.name:type_name -> restaurant.v1.LocalText
-	16, // 7: restaurant.v1.LiveStation.name:type_name -> restaurant.v1.LocalText
-	5,  // 8: restaurant.v1.LiveStation.late_items:type_name -> restaurant.v1.LiveLateItem
-	17, // 9: restaurant.v1.LiveTill.takings:type_name -> restaurant.v1.MethodTotal
-	18, // 10: restaurant.v1.LiveException.entry:type_name -> restaurant.v1.AuditEntry
-	17, // 11: restaurant.v1.LiveToday.by_method:type_name -> restaurant.v1.MethodTotal
-	9,  // 12: restaurant.v1.LiveSnapshot.today:type_name -> restaurant.v1.LiveToday
-	3,  // 13: restaurant.v1.LiveSnapshot.tables:type_name -> restaurant.v1.LiveTable
-	4,  // 14: restaurant.v1.LiveSnapshot.areas:type_name -> restaurant.v1.LiveArea
-	2,  // 15: restaurant.v1.LiveSnapshot.takeaway:type_name -> restaurant.v1.LiveOrder
-	6,  // 16: restaurant.v1.LiveSnapshot.stations:type_name -> restaurant.v1.LiveStation
-	16, // 17: restaurant.v1.LiveSnapshot.items_86:type_name -> restaurant.v1.LocalText
-	7,  // 18: restaurant.v1.LiveSnapshot.tills:type_name -> restaurant.v1.LiveTill
-	8,  // 19: restaurant.v1.LiveSnapshot.exceptions:type_name -> restaurant.v1.LiveException
-	16, // 20: restaurant.v1.LiveOrderLine.name:type_name -> restaurant.v1.LocalText
-	16, // 21: restaurant.v1.LiveOrderLine.variant_name:type_name -> restaurant.v1.LocalText
-	16, // 22: restaurant.v1.LiveOrderLine.modifiers:type_name -> restaurant.v1.LocalText
-	19, // 23: restaurant.v1.LiveOrderLine.status:type_name -> restaurant.v1.OrderItemStatus
-	2,  // 24: restaurant.v1.LiveOrderCard.order:type_name -> restaurant.v1.LiveOrder
-	13, // 25: restaurant.v1.LiveOrderCard.lines:type_name -> restaurant.v1.LiveOrderLine
-	10, // 26: restaurant.v1.LiveService.GetSnapshot:input_type -> restaurant.v1.GetLiveSnapshotRequest
-	12, // 27: restaurant.v1.LiveService.GetOrder:input_type -> restaurant.v1.GetLiveOrderRequest
-	11, // 28: restaurant.v1.LiveService.GetSnapshot:output_type -> restaurant.v1.LiveSnapshot
-	14, // 29: restaurant.v1.LiveService.GetOrder:output_type -> restaurant.v1.LiveOrderCard
-	28, // [28:30] is the sub-list for method output_type
-	26, // [26:28] is the sub-list for method input_type
-	26, // [26:26] is the sub-list for extension type_name
-	26, // [26:26] is the sub-list for extension extendee
-	0,  // [0:26] is the sub-list for field type_name
+	4,  // 5: restaurant.v1.LiveTable.reservation:type_name -> restaurant.v1.LiveReservation
+	17, // 6: restaurant.v1.LiveArea.name:type_name -> restaurant.v1.LocalText
+	17, // 7: restaurant.v1.LiveLateItem.name:type_name -> restaurant.v1.LocalText
+	17, // 8: restaurant.v1.LiveStation.name:type_name -> restaurant.v1.LocalText
+	6,  // 9: restaurant.v1.LiveStation.late_items:type_name -> restaurant.v1.LiveLateItem
+	18, // 10: restaurant.v1.LiveTill.takings:type_name -> restaurant.v1.MethodTotal
+	19, // 11: restaurant.v1.LiveException.entry:type_name -> restaurant.v1.AuditEntry
+	18, // 12: restaurant.v1.LiveToday.by_method:type_name -> restaurant.v1.MethodTotal
+	10, // 13: restaurant.v1.LiveSnapshot.today:type_name -> restaurant.v1.LiveToday
+	3,  // 14: restaurant.v1.LiveSnapshot.tables:type_name -> restaurant.v1.LiveTable
+	5,  // 15: restaurant.v1.LiveSnapshot.areas:type_name -> restaurant.v1.LiveArea
+	2,  // 16: restaurant.v1.LiveSnapshot.takeaway:type_name -> restaurant.v1.LiveOrder
+	7,  // 17: restaurant.v1.LiveSnapshot.stations:type_name -> restaurant.v1.LiveStation
+	17, // 18: restaurant.v1.LiveSnapshot.items_86:type_name -> restaurant.v1.LocalText
+	8,  // 19: restaurant.v1.LiveSnapshot.tills:type_name -> restaurant.v1.LiveTill
+	9,  // 20: restaurant.v1.LiveSnapshot.exceptions:type_name -> restaurant.v1.LiveException
+	17, // 21: restaurant.v1.LiveOrderLine.name:type_name -> restaurant.v1.LocalText
+	17, // 22: restaurant.v1.LiveOrderLine.variant_name:type_name -> restaurant.v1.LocalText
+	17, // 23: restaurant.v1.LiveOrderLine.modifiers:type_name -> restaurant.v1.LocalText
+	20, // 24: restaurant.v1.LiveOrderLine.status:type_name -> restaurant.v1.OrderItemStatus
+	2,  // 25: restaurant.v1.LiveOrderCard.order:type_name -> restaurant.v1.LiveOrder
+	14, // 26: restaurant.v1.LiveOrderCard.lines:type_name -> restaurant.v1.LiveOrderLine
+	11, // 27: restaurant.v1.LiveService.GetSnapshot:input_type -> restaurant.v1.GetLiveSnapshotRequest
+	13, // 28: restaurant.v1.LiveService.GetOrder:input_type -> restaurant.v1.GetLiveOrderRequest
+	12, // 29: restaurant.v1.LiveService.GetSnapshot:output_type -> restaurant.v1.LiveSnapshot
+	15, // 30: restaurant.v1.LiveService.GetOrder:output_type -> restaurant.v1.LiveOrderCard
+	29, // [29:31] is the sub-list for method output_type
+	27, // [27:29] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_restaurant_v1_live_proto_init() }
@@ -1522,17 +1619,17 @@ func file_restaurant_v1_live_proto_init() {
 	file_restaurant_v1_report_proto_init()
 	file_restaurant_v1_shift_proto_init()
 	file_restaurant_v1_live_proto_msgTypes[1].OneofWrappers = []any{}
-	file_restaurant_v1_live_proto_msgTypes[5].OneofWrappers = []any{}
-	file_restaurant_v1_live_proto_msgTypes[8].OneofWrappers = []any{}
-	file_restaurant_v1_live_proto_msgTypes[10].OneofWrappers = []any{}
-	file_restaurant_v1_live_proto_msgTypes[12].OneofWrappers = []any{}
+	file_restaurant_v1_live_proto_msgTypes[6].OneofWrappers = []any{}
+	file_restaurant_v1_live_proto_msgTypes[9].OneofWrappers = []any{}
+	file_restaurant_v1_live_proto_msgTypes[11].OneofWrappers = []any{}
+	file_restaurant_v1_live_proto_msgTypes[13].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_restaurant_v1_live_proto_rawDesc), len(file_restaurant_v1_live_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   14,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

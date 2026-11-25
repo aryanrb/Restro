@@ -233,8 +233,9 @@ func (s *Service) GetShiftReport(ctx context.Context, shiftID string) (*restaura
 // calls (nil = no cache).
 // ExpectedCash is the cash a shift's drawer should hold: the opening float plus
 // its cash takings (payments and repayments, less cancelled bills and the cash
-// adjustments counted back into it). Runs on q, so a caller's transaction sees
-// its own writes (the alert rules use it on shift close).
+// adjustments counted back into it), less supplier paid-outs (net of refunds and
+// voids). Runs on q, so a caller's transaction sees its own writes (the alert
+// rules use it on shift close).
 func ExpectedCash(ctx context.Context, q *sqlc.Queries, sh sqlc.Shift) (int64, error) {
 	totals, err := q.ShiftPaymentTotals(ctx, sh.ID)
 	if err != nil {
@@ -255,7 +256,20 @@ func ExpectedCash(ctx context.Context, q *sqlc.Queries, sh sqlc.Shift) (int64, e
 			cash -= a.AmountPaisa
 		}
 	}
+	paidOuts, err := q.ListShiftPaidOuts(ctx, sh.ID)
+	if err != nil {
+		return 0, err
+	}
+	for _, p := range paidOuts {
+		cash -= p.AmountPaisa
+	}
 	return cash, nil
+}
+
+var paidOutKinds = map[string]restaurantv1.ShiftPaidOutKind{
+	"SUPPLIER_PAYMENT":      restaurantv1.ShiftPaidOutKind_SHIFT_PAID_OUT_KIND_SUPPLIER_PAYMENT,
+	"SUPPLIER_REFUND":       restaurantv1.ShiftPaidOutKind_SHIFT_PAID_OUT_KIND_SUPPLIER_REFUND,
+	"SUPPLIER_PAYMENT_VOID": restaurantv1.ShiftPaidOutKind_SHIFT_PAID_OUT_KIND_SUPPLIER_PAYMENT_VOID,
 }
 
 func (s *Service) buildReport(ctx context.Context, sh sqlc.Shift, names map[uuid.UUID]string) (*restaurantv1.ShiftReport, error) {
@@ -300,7 +314,18 @@ func (s *Service) buildReport(ctx context.Context, sh sqlc.Shift, names map[uuid
 	for _, m := range order {
 		report.Totals = append(report.Totals, &restaurantv1.MethodTotal{Method: paymentMethodEnum(m), TotalPaisa: byMethod[m]})
 	}
-	report.ExpectedCashPaisa = sh.OpeningFloatPaisa + byMethod["CASH"]
+	paidOuts, err := s.q.ListShiftPaidOuts(ctx, sh.ID)
+	if err != nil {
+		return nil, connecterr.Internal(err)
+	}
+	for _, p := range paidOuts {
+		report.PaidOuts = append(report.PaidOuts, &restaurantv1.ShiftPaidOut{
+			Kind: paidOutKinds[p.Kind], RefId: p.RefID.String(), Ref: p.Ref, SupplierName: p.SupplierName,
+			AmountPaisa: p.AmountPaisa, ByName: p.ByName, AtUnix: p.At.Unix(),
+		})
+		report.PaidOutTotalPaisa += p.AmountPaisa
+	}
+	report.ExpectedCashPaisa = sh.OpeningFloatPaisa + byMethod["CASH"] - report.PaidOutTotalPaisa
 	if report.RepaymentsPaisa, err = s.q.ShiftRepaymentTotal(ctx, sh.ID); err != nil {
 		return nil, connecterr.Internal(err)
 	}

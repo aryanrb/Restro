@@ -73,7 +73,7 @@ const createOrder = `-- name: CreateOrder :one
 INSERT INTO orders (client_id, type, table_id, waiter_user_id, guest_count, label)
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (client_id) DO NOTHING
-RETURNING id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label
+RETURNING id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label, reservation_id
 `
 
 type CreateOrderParams struct {
@@ -109,6 +109,7 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Label,
+		&i.ReservationID,
 	)
 	return i, err
 }
@@ -214,7 +215,7 @@ func (q *Queries) CreateOrderItemModifier(ctx context.Context, arg CreateOrderIt
 }
 
 const getOrderByClientID = `-- name: GetOrderByClientID :one
-SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label FROM orders WHERE client_id = $1
+SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label, reservation_id FROM orders WHERE client_id = $1
 `
 
 func (q *Queries) GetOrderByClientID(ctx context.Context, clientID uuid.UUID) (Order, error) {
@@ -232,12 +233,13 @@ func (q *Queries) GetOrderByClientID(ctx context.Context, clientID uuid.UUID) (O
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Label,
+		&i.ReservationID,
 	)
 	return i, err
 }
 
 const getOrderByID = `-- name: GetOrderByID :one
-SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label FROM orders WHERE id = $1
+SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label, reservation_id FROM orders WHERE id = $1
 `
 
 func (q *Queries) GetOrderByID(ctx context.Context, id uuid.UUID) (Order, error) {
@@ -255,6 +257,7 @@ func (q *Queries) GetOrderByID(ctx context.Context, id uuid.UUID) (Order, error)
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Label,
+		&i.ReservationID,
 	)
 	return i, err
 }
@@ -402,7 +405,7 @@ func (q *Queries) InsertProcessedCommand(ctx context.Context, arg InsertProcesse
 }
 
 const listOpenOrders = `-- name: ListOpenOrders :many
-SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label FROM orders WHERE status IN ('OPEN', 'BILLED') ORDER BY created_at
+SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label, reservation_id FROM orders WHERE status IN ('OPEN', 'BILLED') ORDER BY created_at
 `
 
 func (q *Queries) ListOpenOrders(ctx context.Context) ([]Order, error) {
@@ -426,6 +429,7 @@ func (q *Queries) ListOpenOrders(ctx context.Context) ([]Order, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Label,
+			&i.ReservationID,
 		); err != nil {
 			return nil, err
 		}
@@ -518,7 +522,7 @@ func (q *Queries) ListOrderItems(ctx context.Context, orderID uuid.UUID) ([]Orde
 }
 
 const lockOrderForUpdate = `-- name: LockOrderForUpdate :one
-SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label FROM orders WHERE id = $1 FOR UPDATE
+SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label, reservation_id FROM orders WHERE id = $1 FOR UPDATE
 `
 
 // Locks the order row so the close-rule evaluation that follows sees every
@@ -538,6 +542,7 @@ func (q *Queries) LockOrderForUpdate(ctx context.Context, id uuid.UUID) (Order, 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Label,
+		&i.ReservationID,
 	)
 	return i, err
 }
@@ -593,6 +598,20 @@ func (q *Queries) SetOrderItemStatus(ctx context.Context, arg SetOrderItemStatus
 		arg.Ids,
 		arg.FromStatus,
 	)
+	return err
+}
+
+const setOrderReservation = `-- name: SetOrderReservation :exec
+UPDATE orders SET reservation_id = $1 WHERE id = $2
+`
+
+type SetOrderReservationParams struct {
+	ReservationID pgtype.UUID `json:"reservation_id"`
+	ID            uuid.UUID   `json:"id"`
+}
+
+func (q *Queries) SetOrderReservation(ctx context.Context, arg SetOrderReservationParams) error {
+	_, err := q.db.Exec(ctx, setOrderReservation, arg.ReservationID, arg.ID)
 	return err
 }
 

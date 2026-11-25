@@ -45,6 +45,8 @@ const (
 	AlertRule_ALERT_RULE_CREDIT_OVER_LIMIT   AlertRule = 16 // on-account bill over the available credit, approved by a manager
 	AlertRule_ALERT_RULE_CREDIT_NEW_ACCOUNT  AlertRule = 17 // credit to an account the same person created that business day
 	AlertRule_ALERT_RULE_HIGH_WASTE          AlertRule = 18 // day's waste >= day_waste, or one posted count's loss >= count_loss
+	// 19-22 are kept for the loyalty rules.
+	AlertRule_ALERT_RULE_LARGE_PAID_OUT AlertRule = 23 // one till payment > amount, or one person's till paid-outs in a shift >= shift_total
 )
 
 // Enum value maps for AlertRule.
@@ -69,6 +71,7 @@ var (
 		16: "ALERT_RULE_CREDIT_OVER_LIMIT",
 		17: "ALERT_RULE_CREDIT_NEW_ACCOUNT",
 		18: "ALERT_RULE_HIGH_WASTE",
+		23: "ALERT_RULE_LARGE_PAID_OUT",
 	}
 	AlertRule_value = map[string]int32{
 		"ALERT_RULE_UNSPECIFIED":         0,
@@ -90,6 +93,7 @@ var (
 		"ALERT_RULE_CREDIT_OVER_LIMIT":   16,
 		"ALERT_RULE_CREDIT_NEW_ACCOUNT":  17,
 		"ALERT_RULE_HIGH_WASTE":          18,
+		"ALERT_RULE_LARGE_PAID_OUT":      23,
 	}
 )
 
@@ -1983,7 +1987,7 @@ const file_restaurant_v1_alerts_proto_rawDesc = "" +
 	"\x06_count\"\x1a\n" +
 	"\x18ListNotificationsRequest\"M\n" +
 	"\x19ListNotificationsResponse\x120\n" +
-	"\x06pushes\x18\x01 \x03(\v2\x18.restaurant.v1.AlertPushR\x06pushes*\xdf\x04\n" +
+	"\x06pushes\x18\x01 \x03(\v2\x18.restaurant.v1.AlertPushR\x06pushes*\xfe\x04\n" +
 	"\tAlertRule\x12\x1a\n" +
 	"\x16ALERT_RULE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dALERT_RULE_VOID_AFTER_KITCHEN\x10\x01\x12\x1d\n" +
@@ -2004,7 +2008,8 @@ const file_restaurant_v1_alerts_proto_rawDesc = "" +
 	"\x14ALERT_RULE_PRICE_DIP\x10\x0f\x12 \n" +
 	"\x1cALERT_RULE_CREDIT_OVER_LIMIT\x10\x10\x12!\n" +
 	"\x1dALERT_RULE_CREDIT_NEW_ACCOUNT\x10\x11\x12\x19\n" +
-	"\x15ALERT_RULE_HIGH_WASTE\x10\x12*c\n" +
+	"\x15ALERT_RULE_HIGH_WASTE\x10\x12\x12\x1d\n" +
+	"\x19ALERT_RULE_LARGE_PAID_OUT\x10\x17*c\n" +
 	"\rAlertSeverity\x12\x1e\n" +
 	"\x1aALERT_SEVERITY_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ALERT_SEVERITY_HIGH\x10\x01\x12\x19\n" +

@@ -437,6 +437,7 @@ type Order struct {
 	Label         string                 `protobuf:"bytes,10,opt,name=label,proto3" json:"label,omitempty"`                             // free text, e.g. a takeaway customer name; "" when none
 	WaiterName    string                 `protobuf:"bytes,11,opt,name=waiter_name,json=waiterName,proto3" json:"waiter_name,omitempty"` // display name of waiter_user_id
 	CreatedAtUnix int64                  `protobuf:"varint,12,opt,name=created_at_unix,json=createdAtUnix,proto3" json:"created_at_unix,omitempty"`
+	ReservationId string                 `protobuf:"bytes,13,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"` // the booking seated onto this order (reservations.proto); "" when none
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -553,6 +554,13 @@ func (x *Order) GetCreatedAtUnix() int64 {
 		return x.CreatedAtUnix
 	}
 	return 0
+}
+
+func (x *Order) GetReservationId() string {
+	if x != nil {
+		return x.ReservationId
+	}
+	return ""
 }
 
 type ListOpenOrdersRequest struct {
@@ -1607,7 +1615,7 @@ const file_restaurant_v1_order_proto_rawDesc = "" +
 	"\n" +
 	"invoice_id\x18\x11 \x01(\tR\tinvoiceId\x12\x16\n" +
 	"\x06billed\x18\x12 \x01(\bR\x06billedB\x0f\n" +
-	"\r_variant_name\"\xb3\x03\n" +
+	"\r_variant_name\"\xda\x03\n" +
 	"\x05Order\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tclient_id\x18\x02 \x01(\tR\bclientId\x12,\n" +
@@ -1623,7 +1631,8 @@ const file_restaurant_v1_order_proto_rawDesc = "" +
 	" \x01(\tR\x05label\x12\x1f\n" +
 	"\vwaiter_name\x18\v \x01(\tR\n" +
 	"waiterName\x12&\n" +
-	"\x0fcreated_at_unix\x18\f \x01(\x03R\rcreatedAtUnixB\v\n" +
+	"\x0fcreated_at_unix\x18\f \x01(\x03R\rcreatedAtUnix\x12%\n" +
+	"\x0ereservation_id\x18\r \x01(\tR\rreservationIdB\v\n" +
 	"\t_table_id\"\x17\n" +
 	"\x15ListOpenOrdersRequest\"F\n" +
 	"\x16ListOpenOrdersResponse\x12,\n" +

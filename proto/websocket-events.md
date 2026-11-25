@@ -50,6 +50,7 @@ query via Connect; a missed or out-of-order event can only delay state, never co
 | `station.updated`  | station id          | station added/renamed/removed                             | admin, kitchen   |
 | `invoice.issued`   | invoice id          | `IssueBill` / `CounterSale` issued (and paid) an invoice  | cashier, owner   |
 | `customer.updated` | customer id         | credit account created/edited/limit/(de)activated; its balance changed (on-account bill issued or cancelled, repayment taken or voided) | cashier, owner |
+| `reservation.updated` | reservation id, or `settings` | booking created/changed/cancelled/no-show/restored/seated/keep-waiting/messaged; reservation settings saved (floor screens also refetch on a minute tick for hold/late) | all but kitchen |
 
 ### Inventory (InventoryService, recipes on MenuService)
 

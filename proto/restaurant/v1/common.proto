@@ -80,6 +80,16 @@ enum ErrorReason {
   ERROR_REASON_COUNT_ALREADY_POSTED = 20;
   // Analytics: a range over 3 fiscal years (3 × 366 days) -> invalid_argument.
   ERROR_REASON_RANGE_TOO_LARGE = 23;
+  // Purchases (purchases.proto) -> code: failed_precondition / already_exists
+  ERROR_REASON_DUPLICATE_SUPPLIER_BILL = 24; // same supplier bill no. on a recorded bill (already_exists)
+  ERROR_REASON_PAYMENT_TOO_HIGH = 25;        // supplier payment more than what is owed
+  ERROR_REASON_RETURN_TOO_HIGH = 26;         // return quantity more than bought - already returned
+  ERROR_REASON_NOT_A_VAT_BILL = 27;          // VAT bill without supplier PAN + VAT registration + bill no.
+  // Reservations (reservations.proto) -> code: failed_precondition.
+  ERROR_REASON_TABLE_ALREADY_BOOKED = 28; // a table is in an overlapping booking; message = its id
+  ERROR_REASON_INVALID_STATUS = 29;       // not allowed from the booking's status (or restore on another day)
+  ERROR_REASON_TOO_EARLY = 30;            // no-show before the booking time
+  ERROR_REASON_RESERVATIONS_OFF = 31;     // reservations are switched off in settings
 }
 
 // Carried as a google.rpc-style error detail on every non-OK response.

@@ -795,7 +795,7 @@ func (q *Queries) ListUnbilledOrderItems(ctx context.Context, orderID uuid.UUID)
 }
 
 const lockOrderByClientIDForBilling = `-- name: LockOrderByClientIDForBilling :one
-SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label FROM orders WHERE client_id = $1 FOR UPDATE
+SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label, reservation_id FROM orders WHERE client_id = $1 FOR UPDATE
 `
 
 // Locks the order row for the billing transaction so concurrent bills (different
@@ -816,6 +816,7 @@ func (q *Queries) LockOrderByClientIDForBilling(ctx context.Context, clientID uu
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Label,
+		&i.ReservationID,
 	)
 	return i, err
 }

@@ -224,6 +224,16 @@ const (
 	ErrorReason_ERROR_REASON_COUNT_ALREADY_POSTED ErrorReason = 20
 	// Analytics: a range over 3 fiscal years (3 × 366 days) -> invalid_argument.
 	ErrorReason_ERROR_REASON_RANGE_TOO_LARGE ErrorReason = 23
+	// Purchases (purchases.proto) -> code: failed_precondition / already_exists
+	ErrorReason_ERROR_REASON_DUPLICATE_SUPPLIER_BILL ErrorReason = 24 // same supplier bill no. on a recorded bill (already_exists)
+	ErrorReason_ERROR_REASON_PAYMENT_TOO_HIGH        ErrorReason = 25 // supplier payment more than what is owed
+	ErrorReason_ERROR_REASON_RETURN_TOO_HIGH         ErrorReason = 26 // return quantity more than bought - already returned
+	ErrorReason_ERROR_REASON_NOT_A_VAT_BILL          ErrorReason = 27 // VAT bill without supplier PAN + VAT registration + bill no.
+	// Reservations (reservations.proto) -> code: failed_precondition.
+	ErrorReason_ERROR_REASON_TABLE_ALREADY_BOOKED ErrorReason = 28 // a table is in an overlapping booking; message = its id
+	ErrorReason_ERROR_REASON_INVALID_STATUS       ErrorReason = 29 // not allowed from the booking's status (or restore on another day)
+	ErrorReason_ERROR_REASON_TOO_EARLY            ErrorReason = 30 // no-show before the booking time
+	ErrorReason_ERROR_REASON_RESERVATIONS_OFF     ErrorReason = 31 // reservations are switched off in settings
 )
 
 // Enum value maps for ErrorReason.
@@ -251,6 +261,14 @@ var (
 		19: "ERROR_REASON_ITEM_UNTRACKED",
 		20: "ERROR_REASON_COUNT_ALREADY_POSTED",
 		23: "ERROR_REASON_RANGE_TOO_LARGE",
+		24: "ERROR_REASON_DUPLICATE_SUPPLIER_BILL",
+		25: "ERROR_REASON_PAYMENT_TOO_HIGH",
+		26: "ERROR_REASON_RETURN_TOO_HIGH",
+		27: "ERROR_REASON_NOT_A_VAT_BILL",
+		28: "ERROR_REASON_TABLE_ALREADY_BOOKED",
+		29: "ERROR_REASON_INVALID_STATUS",
+		30: "ERROR_REASON_TOO_EARLY",
+		31: "ERROR_REASON_RESERVATIONS_OFF",
 	}
 	ErrorReason_value = map[string]int32{
 		"ERROR_REASON_UNSPECIFIED":               0,
@@ -275,6 +293,14 @@ var (
 		"ERROR_REASON_ITEM_UNTRACKED":            19,
 		"ERROR_REASON_COUNT_ALREADY_POSTED":      20,
 		"ERROR_REASON_RANGE_TOO_LARGE":           23,
+		"ERROR_REASON_DUPLICATE_SUPPLIER_BILL":   24,
+		"ERROR_REASON_PAYMENT_TOO_HIGH":          25,
+		"ERROR_REASON_RETURN_TOO_HIGH":           26,
+		"ERROR_REASON_NOT_A_VAT_BILL":            27,
+		"ERROR_REASON_TABLE_ALREADY_BOOKED":      28,
+		"ERROR_REASON_INVALID_STATUS":            29,
+		"ERROR_REASON_TOO_EARLY":                 30,
+		"ERROR_REASON_RESERVATIONS_OFF":          31,
 	}
 )
 
@@ -506,7 +532,7 @@ const file_restaurant_v1_common_proto_rawDesc = "" +
 	"\x04Move\x12\x14\n" +
 	"\x10MOVE_UNSPECIFIED\x10\x00\x12\v\n" +
 	"\aMOVE_UP\x10\x01\x12\r\n" +
-	"\tMOVE_DOWN\x10\x02*\xe6\x05\n" +
+	"\tMOVE_DOWN\x10\x02*\xfd\a\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12$\n" +
 	" ERROR_REASON_INVALID_CREDENTIALS\x10\x01\x12\x1b\n" +
@@ -530,7 +556,15 @@ const file_restaurant_v1_common_proto_rawDesc = "" +
 	"\x18ERROR_REASON_UNIT_LOCKED\x10\x12\x12\x1f\n" +
 	"\x1bERROR_REASON_ITEM_UNTRACKED\x10\x13\x12%\n" +
 	"!ERROR_REASON_COUNT_ALREADY_POSTED\x10\x14\x12 \n" +
-	"\x1cERROR_REASON_RANGE_TOO_LARGE\x10\x17B\xb5\x01\n" +
+	"\x1cERROR_REASON_RANGE_TOO_LARGE\x10\x17\x12(\n" +
+	"$ERROR_REASON_DUPLICATE_SUPPLIER_BILL\x10\x18\x12!\n" +
+	"\x1dERROR_REASON_PAYMENT_TOO_HIGH\x10\x19\x12 \n" +
+	"\x1cERROR_REASON_RETURN_TOO_HIGH\x10\x1a\x12\x1f\n" +
+	"\x1bERROR_REASON_NOT_A_VAT_BILL\x10\x1b\x12%\n" +
+	"!ERROR_REASON_TABLE_ALREADY_BOOKED\x10\x1c\x12\x1f\n" +
+	"\x1bERROR_REASON_INVALID_STATUS\x10\x1d\x12\x1a\n" +
+	"\x16ERROR_REASON_TOO_EARLY\x10\x1e\x12!\n" +
+	"\x1dERROR_REASON_RESERVATIONS_OFF\x10\x1fB\xb5\x01\n" +
 	"\x11com.restaurant.v1B\vCommonProtoP\x01Z>github.com/oneaccord/restro/api/gen/restaurant/v1;restaurantv1\xa2\x02\x03RXX\xaa\x02\rRestaurant.V1\xca\x02\rRestaurant\\V1\xe2\x02\x19Restaurant\\V1\\GPBMetadata\xea\x02\x0eRestaurant::V1b\x06proto3"
 
 var (

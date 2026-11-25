@@ -67,6 +67,18 @@ message LiveTable {
   int32 seats = 4;
   LiveState state = 5;                 // the most urgent of its orders; FREE when none
   repeated LiveOrder orders = 6;
+  // The booking holding this table now (reservations): from hold-before until
+  // released; only on tables with no open order; absent when reservations are off.
+  LiveReservation reservation = 7;
+}
+
+// A booking holding a free table: the floor's "reserved" tile, "late" after the grace.
+message LiveReservation {
+  string id = 1;
+  string name = 2;                     // the customer's name
+  int32 party_size = 3;
+  int64 starts_at_unix = 4;
+  bool late = 5;
 }
 
 message LiveArea {

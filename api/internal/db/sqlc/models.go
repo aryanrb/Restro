@@ -264,6 +264,14 @@ type ItemModifierGroup struct {
 	GroupID uuid.UUID `json:"group_id"`
 }
 
+type ItemPurchaseSetting struct {
+	InventoryItemID     uuid.UUID   `json:"inventory_item_id"`
+	PreferredSupplierID pgtype.UUID `json:"preferred_supplier_id"`
+	DefaultUnitKey      pgtype.Text `json:"default_unit_key"`
+	BuyUpToMilli        pgtype.Int8 `json:"buy_up_to_milli"`
+	UpdatedAt           time.Time   `json:"updated_at"`
+}
+
 type ItemVariant struct {
 	ID         uuid.UUID `json:"id"`
 	ItemID     uuid.UUID `json:"item_id"`
@@ -331,17 +339,18 @@ type ModifierRecipeLine struct {
 }
 
 type Order struct {
-	ID           uuid.UUID   `json:"id"`
-	ClientID     uuid.UUID   `json:"client_id"`
-	Type         string      `json:"type"`
-	TableID      pgtype.UUID `json:"table_id"`
-	WaiterUserID uuid.UUID   `json:"waiter_user_id"`
-	Status       string      `json:"status"`
-	GuestCount   int32       `json:"guest_count"`
-	Version      int64       `json:"version"`
-	CreatedAt    time.Time   `json:"created_at"`
-	UpdatedAt    time.Time   `json:"updated_at"`
-	Label        string      `json:"label"`
+	ID            uuid.UUID   `json:"id"`
+	ClientID      uuid.UUID   `json:"client_id"`
+	Type          string      `json:"type"`
+	TableID       pgtype.UUID `json:"table_id"`
+	WaiterUserID  uuid.UUID   `json:"waiter_user_id"`
+	Status        string      `json:"status"`
+	GuestCount    int32       `json:"guest_count"`
+	Version       int64       `json:"version"`
+	CreatedAt     time.Time   `json:"created_at"`
+	UpdatedAt     time.Time   `json:"updated_at"`
+	Label         string      `json:"label"`
+	ReservationID pgtype.UUID `json:"reservation_id"`
 }
 
 type OrderItem struct {
@@ -401,6 +410,81 @@ type ProcessedCommand struct {
 	CreatedAt time.Time   `json:"created_at"`
 }
 
+type Purchase struct {
+	ID               uuid.UUID          `json:"id"`
+	Number           int32              `json:"number"`
+	SupplierID       uuid.UUID          `json:"supplier_id"`
+	SupplierName     string             `json:"supplier_name"`
+	SupplierPan      string             `json:"supplier_pan"`
+	SupplierBillNo   string             `json:"supplier_bill_no"`
+	BillDate         pgtype.Date        `json:"bill_date"`
+	BillDateBs       string             `json:"bill_date_bs"`
+	FiscalYear       string             `json:"fiscal_year"`
+	IsVatBill        bool               `json:"is_vat_bill"`
+	DiscountPaisa    int64              `json:"discount_paisa"`
+	TaxablePaisa     int64              `json:"taxable_paisa"`
+	ExemptPaisa      int64              `json:"exempt_paisa"`
+	VatPaisa         int64              `json:"vat_paisa"`
+	TotalPaisa       int64              `json:"total_paisa"`
+	Status           string             `json:"status"`
+	VoidReason       string             `json:"void_reason"`
+	VoidedByUserID   pgtype.UUID        `json:"voided_by_user_id"`
+	VoidedAt         pgtype.Timestamptz `json:"voided_at"`
+	RecordedByUserID uuid.UUID          `json:"recorded_by_user_id"`
+	At               time.Time          `json:"at"`
+}
+
+type PurchaseCounter struct {
+	Kind       string `json:"kind"`
+	NextNumber int32  `json:"next_number"`
+}
+
+type PurchaseLine struct {
+	ID              uuid.UUID   `json:"id"`
+	PurchaseID      uuid.UUID   `json:"purchase_id"`
+	Sort            int32       `json:"sort"`
+	InventoryItemID pgtype.UUID `json:"inventory_item_id"`
+	NameEn          string      `json:"name_en"`
+	NameNe          string      `json:"name_ne"`
+	StockUnit       string      `json:"stock_unit"`
+	QuantityMilli   int64       `json:"quantity_milli"`
+	UnitKey         string      `json:"unit_key"`
+	UnitLabelEn     string      `json:"unit_label_en"`
+	UnitLabelNe     string      `json:"unit_label_ne"`
+	FactorMilli     int64       `json:"factor_milli"`
+	UnitCostPaisa   int64       `json:"unit_cost_paisa"`
+	VatApplies      bool        `json:"vat_applies"`
+	AmountPaisa     int64       `json:"amount_paisa"`
+	DiscountPaisa   int64       `json:"discount_paisa"`
+	VatPaisa        int64       `json:"vat_paisa"`
+	StockUnitCostE4 int64       `json:"stock_unit_cost_e4"`
+	ReturnedMilli   int64       `json:"returned_milli"`
+}
+
+type PurchaseReturn struct {
+	ID            uuid.UUID   `json:"id"`
+	PurchaseID    uuid.UUID   `json:"purchase_id"`
+	NoteNo        string      `json:"note_no"`
+	Reason        string      `json:"reason"`
+	TaxablePaisa  int64       `json:"taxable_paisa"`
+	ExemptPaisa   int64       `json:"exempt_paisa"`
+	VatPaisa      int64       `json:"vat_paisa"`
+	TotalPaisa    int64       `json:"total_paisa"`
+	RefundPaisa   int64       `json:"refund_paisa"`
+	RefundShiftID pgtype.UUID `json:"refund_shift_id"`
+	ByUserID      uuid.UUID   `json:"by_user_id"`
+	At            time.Time   `json:"at"`
+	BsDate        string      `json:"bs_date"`
+}
+
+type PurchaseReturnLine struct {
+	ReturnID       uuid.UUID `json:"return_id"`
+	PurchaseLineID uuid.UUID `json:"purchase_line_id"`
+	QuantityMilli  int64     `json:"quantity_milli"`
+	NetPaisa       int64     `json:"net_paisa"`
+	VatPaisa       int64     `json:"vat_paisa"`
+}
+
 type Repayment struct {
 	ID                uuid.UUID          `json:"id"`
 	Number            int32              `json:"number"`
@@ -422,6 +506,49 @@ type Repayment struct {
 type RepaymentCounter struct {
 	ID         bool  `json:"id"`
 	NextNumber int32 `json:"next_number"`
+}
+
+type Reservation struct {
+	ID                uuid.UUID          `json:"id"`
+	RequestID         uuid.UUID          `json:"request_id"`
+	CustomerID        uuid.UUID          `json:"customer_id"`
+	PartySize         int32              `json:"party_size"`
+	StartsAt          time.Time          `json:"starts_at"`
+	DurationMin       int32              `json:"duration_min"`
+	AreaID            pgtype.UUID        `json:"area_id"`
+	TableIds          []uuid.UUID        `json:"table_ids"`
+	WholeArea         bool               `json:"whole_area"`
+	Status            string             `json:"status"`
+	Source            string             `json:"source"`
+	Notes             string             `json:"notes"`
+	OrderID           pgtype.UUID        `json:"order_id"`
+	SeatedAt          pgtype.Timestamptz `json:"seated_at"`
+	SeatedByUserID    pgtype.UUID        `json:"seated_by_user_id"`
+	CancelReason      pgtype.Text        `json:"cancel_reason"`
+	CancelledAt       pgtype.Timestamptz `json:"cancelled_at"`
+	CancelledByUserID pgtype.UUID        `json:"cancelled_by_user_id"`
+	NoShowAt          pgtype.Timestamptz `json:"no_show_at"`
+	NoShowByUserID    pgtype.UUID        `json:"no_show_by_user_id"`
+	ConfirmedAt       pgtype.Timestamptz `json:"confirmed_at"`
+	RemindedAt        pgtype.Timestamptz `json:"reminded_at"`
+	HoldExtendedMin   int32              `json:"hold_extended_min"`
+	CreatedByUserID   uuid.UUID          `json:"created_by_user_id"`
+	CreatedAt         time.Time          `json:"created_at"`
+	UpdatedByUserID   uuid.UUID          `json:"updated_by_user_id"`
+	UpdatedAt         time.Time          `json:"updated_at"`
+	Version           int64              `json:"version"`
+}
+
+type ReservationSetting struct {
+	ID               bool      `json:"id"`
+	Enabled          bool      `json:"enabled"`
+	DurationMin      int32     `json:"duration_min"`
+	LargePartySize   int32     `json:"large_party_size"`
+	LargeDurationMin int32     `json:"large_duration_min"`
+	HoldBeforeMin    int32     `json:"hold_before_min"`
+	GraceMin         int32     `json:"grace_min"`
+	ReleaseAfterMin  int32     `json:"release_after_min"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 type SchemaBaseline struct {
@@ -540,6 +667,48 @@ type StockMovement struct {
 	At              time.Time   `json:"at"`
 	UnitCostE4      int64       `json:"unit_cost_e4"`
 	CreatedAt       time.Time   `json:"created_at"`
+}
+
+type Supplier struct {
+	ID                  uuid.UUID   `json:"id"`
+	Name                string      `json:"name"`
+	Phone               string      `json:"phone"`
+	Address             string      `json:"address"`
+	Pan                 string      `json:"pan"`
+	VatRegistered       bool        `json:"vat_registered"`
+	ContactPerson       string      `json:"contact_person"`
+	Notes               string      `json:"notes"`
+	Active              bool        `json:"active"`
+	OpeningBalancePaisa int64       `json:"opening_balance_paisa"`
+	CreatedByUserID     pgtype.UUID `json:"created_by_user_id"`
+	CreatedAt           time.Time   `json:"created_at"`
+	UpdatedAt           time.Time   `json:"updated_at"`
+}
+
+type SupplierBalance struct {
+	SupplierID   uuid.UUID `json:"supplier_id"`
+	BalancePaisa int64     `json:"balance_paisa"`
+}
+
+type SupplierPayment struct {
+	ID                uuid.UUID          `json:"id"`
+	Number            int32              `json:"number"`
+	SupplierID        uuid.UUID          `json:"supplier_id"`
+	SupplierName      string             `json:"supplier_name"`
+	AmountPaisa       int64              `json:"amount_paisa"`
+	Method            string             `json:"method"`
+	Reference         string             `json:"reference"`
+	Note              string             `json:"note"`
+	ShiftID           pgtype.UUID        `json:"shift_id"`
+	PaidByUserID      uuid.UUID          `json:"paid_by_user_id"`
+	ApproverUserID    pgtype.UUID        `json:"approver_user_id"`
+	At                time.Time          `json:"at"`
+	BsDate            string             `json:"bs_date"`
+	BalanceAfterPaisa int64              `json:"balance_after_paisa"`
+	VoidedAt          pgtype.Timestamptz `json:"voided_at"`
+	VoidedByUserID    pgtype.UUID        `json:"voided_by_user_id"`
+	VoidReason        string             `json:"void_reason"`
+	VoidShiftID       pgtype.UUID        `json:"void_shift_id"`
 }
 
 type User struct {

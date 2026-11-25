@@ -1,0 +1,275 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+import "buf/validate/validate.proto";
+import "restaurant/v1/order.proto";
+
+// ---------------------------------------------------------------------------
+// ReservationService — table bookings (web: reservations-api.ts; design:
+// docs/superpowers/specs/2026-11-24-reservations-design.md).
+//
+// Staff enter every booking (phone, message, in person). Everyone except KITCHEN
+// takes and changes bookings (NOT_ALLOWED otherwise); settings, report and today
+// are owner/manager. Writes while reservations are switched off → RESERVATIONS_OFF.
+//
+// The booker is a credit `Customer` (credit.proto): an unknown caller is created in
+// the same write with credit limit 0 (no credit from a booking). Phones are
+// normalised and unique (DUPLICATE "phone").
+//
+// Times are unix seconds (UTC); dates are Kathmandu AD dates "YYYY-MM-DD".
+// "Late" and "released" are derived from starts_at, the settings and now (see
+// ReservationSettings), never stored.
+//
+// Rules: party_size 1–200; starts_at not more than 15 min in the past (when it
+// changes) and at most 365 days ahead (INVALID "starts_at"); duration 15–720 min.
+// A table can't be in two BOOKED bookings whose windows (starts_at → +duration)
+// overlap → TABLE_ALREADY_BOOKED (field "table_ids", message = the clashing
+// booking id). Unassigned bookings never clash. Status: BOOKED → SEATED |
+// CANCELLED | NO_SHOW (else INVALID_STATUS); NO_SHOW only after starts_at
+// (TOO_EARLY); CANCELLED | NO_SHOW → BOOKED via Restore only on the Kathmandu day
+// it happened (INVALID_STATUS). Seat on a table with an open order and no
+// existing_order_id → IN_USE (field "table_ids"; the web's TABLE_OCCUPIED).
+//
+// Audit actions: reservation.create, reservation.change (before/after detail),
+// reservation.cancel (reason), reservation.no_show, reservation.seat (order id),
+// reservation.settings. Realtime: `reservation.updated` (id = reservation id, or
+// "settings"); Seat also sends `order.updated`.
+// ---------------------------------------------------------------------------
+
+enum ReservationStatus {
+  RESERVATION_STATUS_UNSPECIFIED = 0;
+  RESERVATION_STATUS_BOOKED = 1;
+  RESERVATION_STATUS_SEATED = 2;
+  RESERVATION_STATUS_CANCELLED = 3;
+  RESERVATION_STATUS_NO_SHOW = 4;
+}
+
+// How the booking came in (reports only).
+enum ReservationSource {
+  RESERVATION_SOURCE_UNSPECIFIED = 0; // treated as PHONE on create
+  RESERVATION_SOURCE_PHONE = 1;
+  RESERVATION_SOURCE_IN_PERSON = 2;
+  RESERVATION_SOURCE_MESSAGE = 3;
+  RESERVATION_SOURCE_OTHER = 4;
+}
+
+enum ReservationMessageKind {
+  RESERVATION_MESSAGE_KIND_UNSPECIFIED = 0;
+  RESERVATION_MESSAGE_KIND_CONFIRMATION = 1;
+  RESERVATION_MESSAGE_KIND_REMINDER = 2;
+}
+
+message Reservation {
+  string id = 1;
+  string customer_id = 2;
+  string customer_name = 3;          // read-side copies, always the customer's current values
+  string customer_phone = 4;
+  int32 party_size = 5;
+  int64 starts_at_unix = 6;
+  int32 duration_min = 7;
+  string area_id = 8;                // preferred area; "" = any
+  repeated string table_ids = 9;     // may be empty; whole_area lists every active table of the area
+  bool whole_area = 10;
+  ReservationStatus status = 11;
+  ReservationSource source = 12;
+  string notes = 13;
+  string order_id = 14;              // "" until seated
+  int64 seated_at_unix = 15;         // 0 = not set (same for every *_unix below)
+  string seated_by_id = 16;
+  string cancel_reason = 17;
+  int64 cancelled_at_unix = 18;
+  string cancelled_by_id = 19;
+  int64 no_show_at_unix = 20;
+  string no_show_by_id = 21;
+  int64 confirmed_at_unix = 22;      // "Send confirmation" tapped
+  int64 reminded_at_unix = 23;       // "Send reminder" tapped
+  int32 hold_extended_min = 24;      // "Keep waiting" minutes added to the release time
+  string created_by_id = 25;
+  int64 created_at_unix = 26;
+  string updated_by_id = 27;
+  int64 updated_at_unix = 28;
+  int64 version = 29;
+}
+
+message ReservationSettings {
+  bool enabled = 1;
+  int32 duration_min = 2;            // 15–720, default 90
+  int32 large_party_size = 3;        // 2–200, default 9: this many people or more get large_duration_min
+  int32 large_duration_min = 4;      // 15–720, default 120
+  int32 hold_before_min = 5;         // 0–600, default 60: tile shows Reserved from this long before
+  int32 grace_min = 6;               // 0–240, default 15: Late after this
+  int32 release_after_min = 7;       // 0–480 and >= grace_min, default 30: tile freed, host asked No-show / Keep waiting
+}
+
+// A Customer as booking staff see it: no credit figures; history from bookings.
+message BookingCustomer {
+  string id = 1;
+  string name = 2;
+  string phone = 3;
+  string notes = 4;
+  int32 booking_count = 5;
+  int32 no_show_count = 6;
+  int64 last_visit_at_unix = 7;      // last seated booking; 0 = never
+}
+
+message NewBookingCustomer {
+  string name = 1;
+  string phone = 2;
+}
+
+message ListReservationsRequest {
+  string from = 1 [(buf.validate.field).string.min_len = 1]; // Kathmandu dates, inclusive
+  string to = 2 [(buf.validate.field).string.min_len = 1];
+  ReservationStatus status = 3;      // UNSPECIFIED = all
+}
+message ListReservationsResponse {
+  repeated Reservation reservations = 1; // by start time
+}
+
+message GetReservationRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// Exactly one of customer_id / new_customer. request_id makes a double tap safe.
+message CreateReservationRequest {
+  string request_id = 1 [(buf.validate.field).string.min_len = 1];
+  string customer_id = 2;
+  NewBookingCustomer new_customer = 3;
+  int32 party_size = 4;
+  int64 starts_at_unix = 5;
+  optional int32 duration_min = 6;   // default from the settings by party size
+  string area_id = 7;
+  repeated string table_ids = 8;
+  bool whole_area = 9;               // needs area_id
+  ReservationSource source = 10;
+  string notes = 11;                 // ≤ 500 chars
+}
+
+// Only the fields that are set change. clear_area drops the preferred area.
+message UpdateReservationRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  int64 base_version = 2;
+  optional int32 party_size = 3;
+  optional int64 starts_at_unix = 4;
+  optional int32 duration_min = 5;
+  optional string area_id = 6;       // "" = no preference
+  bool set_table_ids = 7;            // true: table_ids replaces the list (may be empty)
+  repeated string table_ids = 8;
+  optional bool whole_area = 9;
+  optional ReservationSource source = 10;
+  optional string notes = 11;
+}
+
+message CancelReservationRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  string reason = 2;
+}
+
+message MarkNoShowRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message RestoreReservationRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ExtendHoldRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  int32 minutes = 2;                 // 1–240
+}
+
+// Creates a DINE_IN order on the first table with guest_count and reservation_id,
+// or links existing_order_id (an OPEN order on one of the tables). Idempotent on command_id.
+message SeatReservationRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  repeated string table_ids = 2;
+  int32 guest_count = 3;             // 1–200
+  string existing_order_id = 4;
+  string command_id = 5 [(buf.validate.field).string.min_len = 1];
+}
+
+message SuggestTablesRequest {
+  int64 starts_at_unix = 1;
+  int32 duration_min = 2;
+  int32 party_size = 3;
+  string area_id = 4;
+  string exclude_id = 5;             // the booking being edited
+}
+message TableSet {
+  repeated string table_ids = 1;
+}
+message SuggestTablesResponse {
+  repeated TableSet sets = 1;        // up to three
+}
+
+message MarkMessagedRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  ReservationMessageKind kind = 2;
+}
+
+message FindBookingCustomersRequest {
+  string query = 1;                  // name, or 3+ phone digits (+977 ignored)
+}
+message FindBookingCustomersResponse {
+  repeated BookingCustomer customers = 1; // up to 10, by name
+}
+
+message ListCustomerReservationsRequest {
+  string customer_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetReservationSettingsRequest {}
+
+message ReservationReportRequest {
+  string from = 1 [(buf.validate.field).string.min_len = 1];
+  string to = 2 [(buf.validate.field).string.min_len = 1];
+}
+message ReservationSourceCounts {
+  int32 phone = 1;
+  int32 in_person = 2;
+  int32 message = 3;
+  int32 other = 4;
+}
+// Per Kathmandu day of starts_at. Covers leave out cancelled bookings and no-shows.
+message ReservationReportRow {
+  string date = 1;
+  string date_bs = 2;                // "YYYY.MM.DD"
+  int32 bookings = 3;
+  int32 covers = 4;
+  int32 seated = 5;
+  int32 cancelled = 6;
+  int32 no_shows = 7;
+  int32 open = 8;
+  ReservationSourceCounts by_source = 9;
+}
+message ReservationReportResponse {
+  repeated ReservationReportRow rows = 1;
+}
+
+message ReservationsTodayRequest {}
+message ReservationsToday {
+  int32 bookings = 1;                // not cancelled
+  int32 covers = 2;
+  int32 no_shows = 3;
+}
+
+service ReservationService {
+  rpc ListReservations(ListReservationsRequest) returns (ListReservationsResponse);
+  rpc GetReservation(GetReservationRequest) returns (Reservation);
+  rpc CreateReservation(CreateReservationRequest) returns (Reservation);
+  rpc UpdateReservation(UpdateReservationRequest) returns (Reservation);
+  rpc CancelReservation(CancelReservationRequest) returns (Reservation);
+  rpc MarkNoShow(MarkNoShowRequest) returns (Reservation);
+  rpc RestoreReservation(RestoreReservationRequest) returns (Reservation);
+  rpc ExtendHold(ExtendHoldRequest) returns (Reservation);
+  rpc SeatReservation(SeatReservationRequest) returns (Order);
+  rpc SuggestTables(SuggestTablesRequest) returns (SuggestTablesResponse);
+  rpc MarkMessaged(MarkMessagedRequest) returns (Reservation);
+  rpc FindBookingCustomers(FindBookingCustomersRequest) returns (FindBookingCustomersResponse);
+  rpc ListCustomerReservations(ListCustomerReservationsRequest) returns (ListReservationsResponse);
+  rpc GetReservationSettings(GetReservationSettingsRequest) returns (ReservationSettings);
+  rpc SaveReservationSettings(ReservationSettings) returns (ReservationSettings);
+  rpc ReservationReport(ReservationReportRequest) returns (ReservationReportResponse);
+  rpc GetReservationsToday(ReservationsTodayRequest) returns (ReservationsToday);
+}

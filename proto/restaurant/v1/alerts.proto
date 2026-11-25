@@ -52,6 +52,8 @@ enum AlertRule {
   ALERT_RULE_CREDIT_OVER_LIMIT = 16;  // on-account bill over the available credit, approved by a manager
   ALERT_RULE_CREDIT_NEW_ACCOUNT = 17; // credit to an account the same person created that business day
   ALERT_RULE_HIGH_WASTE = 18;         // day's waste >= day_waste, or one posted count's loss >= count_loss
+  // 19-22 are kept for the loyalty rules.
+  ALERT_RULE_LARGE_PAID_OUT = 23;     // one till payment > amount, or one person's till paid-outs in a shift >= shift_total
 }
 
 enum AlertSeverity {

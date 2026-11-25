@@ -107,6 +107,7 @@ message Order {
   string label = 10;            // free text, e.g. a takeaway customer name; "" when none
   string waiter_name = 11;      // display name of waiter_user_id
   int64 created_at_unix = 12;
+  string reservation_id = 13;    // the booking seated onto this order (reservations.proto); "" when none
 }
 
 // ---- queries ----

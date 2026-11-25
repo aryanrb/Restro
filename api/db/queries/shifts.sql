@@ -135,3 +135,27 @@ ORDER BY p.created_at;
 -- against it have committed (and are counted in its report).
 -- name: LockOpenShiftForUser :one
 SELECT * FROM shifts WHERE cashier_user_id = $1 AND status = 'OPEN' FOR SHARE;
+
+-- Supplier cash out of / back into the shift's drawer (purchases): till payments
+-- (+; one voided while its shift was still open never counts), till payments from
+-- a closed shift voided in this one (-), and refunds handed back on returns (-).
+-- name: ListShiftPaidOuts :many
+SELECT t.kind::text AS kind, t.ref_id::uuid AS ref_id, t.ref::text AS ref, t.supplier_name::text AS supplier_name,
+       t.amount::bigint AS amount_paisa, COALESCE(u.name, '')::text AS by_name, t.at::timestamptz AS at
+FROM (
+    SELECT 'SUPPLIER_PAYMENT' AS kind, sp.id AS ref_id, 'SP-' || sp.number AS ref, sp.supplier_name, sp.amount_paisa AS amount,
+           sp.paid_by_user_id AS by_id, sp.at
+    FROM supplier_payments sp
+    WHERE sp.method = 'TILL' AND sp.shift_id = @shift_id::uuid
+      AND NOT (sp.voided_at IS NOT NULL AND sp.void_shift_id IS NULL)
+    UNION ALL
+    SELECT 'SUPPLIER_PAYMENT_VOID', sp.id, 'SP-' || sp.number, sp.supplier_name, -sp.amount_paisa, sp.voided_by_user_id, sp.voided_at
+    FROM supplier_payments sp
+    WHERE sp.void_shift_id = @shift_id::uuid
+    UNION ALL
+    SELECT 'SUPPLIER_REFUND', r.id, 'P-' || p.number, p.supplier_name, -r.refund_paisa, r.by_user_id, r.at
+    FROM purchase_returns r JOIN purchases p ON p.id = r.purchase_id
+    WHERE r.refund_shift_id = @shift_id::uuid AND r.refund_paisa > 0
+) t
+LEFT JOIN users u ON u.id = t.by_id
+ORDER BY t.at, t.ref_id;

@@ -292,14 +292,22 @@ func (s *Service) Snapshot(ctx context.Context) (*restaurantv1.LiveSnapshot, err
 	if err != nil {
 		return nil, connecterr.Internal(err)
 	}
+	reserved, err := s.reservedTables(ctx, now)
+	if err != nil {
+		return nil, err
+	}
 	for _, t := range tables {
 		if !t.Active {
 			continue
 		}
 		mine := byTable[t.ID.String()]
-		snap.Tables = append(snap.Tables, &restaurantv1.LiveTable{
+		lt := &restaurantv1.LiveTable{
 			TableId: t.ID.String(), AreaId: t.AreaID.String(), Name: t.Name, Seats: t.Seats, State: tableState(mine), Orders: mine,
-		})
+		}
+		if len(mine) == 0 {
+			lt.Reservation = reserved[t.ID]
+		}
+		snap.Tables = append(snap.Tables, lt)
 	}
 	areas, err := s.q.ListAreas(ctx)
 	if err != nil {
