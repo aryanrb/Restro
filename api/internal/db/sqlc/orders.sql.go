@@ -12,6 +12,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addOrderGuestCount = `-- name: AddOrderGuestCount :exec
+UPDATE orders SET guest_count = guest_count + $1, updated_at = now() WHERE id = $2
+`
+
+type AddOrderGuestCountParams struct {
+	Add int32     `json:"add"`
+	ID  uuid.UUID `json:"id"`
+}
+
+func (q *Queries) AddOrderGuestCount(ctx context.Context, arg AddOrderGuestCountParams) error {
+	_, err := q.db.Exec(ctx, addOrderGuestCount, arg.Add, arg.ID)
+	return err
+}
+
 const bumpOrderVersion = `-- name: BumpOrderVersion :one
 UPDATE orders SET version = version + 1, updated_at = now() WHERE id = $1 RETURNING version
 `
@@ -41,12 +55,25 @@ func (q *Queries) CheckBumpOrderVersion(ctx context.Context, arg CheckBumpOrderV
 	return version, err
 }
 
+const closeOrder = `-- name: CloseOrder :execrows
+UPDATE orders SET status = 'CLOSED', version = version + 1, updated_at = now()
+WHERE id = $1 AND status IN ('OPEN', 'BILLED')
+`
+
+func (q *Queries) CloseOrder(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, closeOrder, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createOrder = `-- name: CreateOrder :one
 
-INSERT INTO orders (client_id, type, table_id, waiter_user_id, guest_count)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO orders (client_id, type, table_id, waiter_user_id, guest_count, label)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (client_id) DO NOTHING
-RETURNING id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at
+RETURNING id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label
 `
 
 type CreateOrderParams struct {
@@ -55,9 +82,11 @@ type CreateOrderParams struct {
 	TableID      pgtype.UUID `json:"table_id"`
 	WaiterUserID uuid.UUID   `json:"waiter_user_id"`
 	GuestCount   int32       `json:"guest_count"`
+	Label        string      `json:"label"`
 }
 
 // Orders --------------------------------------------------------------------
+// label is free text (e.g. a takeaway customer name); "" when none.
 func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order, error) {
 	row := q.db.QueryRow(ctx, createOrder,
 		arg.ClientID,
@@ -65,6 +94,7 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order
 		arg.TableID,
 		arg.WaiterUserID,
 		arg.GuestCount,
+		arg.Label,
 	)
 	var i Order
 	err := row.Scan(
@@ -78,6 +108,7 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order
 		&i.Version,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Label,
 	)
 	return i, err
 }
@@ -86,27 +117,34 @@ const createOrderItem = `-- name: CreateOrderItem :one
 
 INSERT INTO order_items (
     order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne,
-    has_variant, unit_price_paisa, quantity, note, station_id, status
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'DRAFT')
-RETURNING id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id
+    has_variant, unit_price_paisa, quantity, note, station_id, status, added_by_user_id, sent_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+    CASE WHEN $13::text = 'DRAFT' THEN NULL ELSE now() END)
+ON CONFLICT (client_id) DO NOTHING
+RETURNING id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id, variant_id, modifier_ids
 `
 
 type CreateOrderItemParams struct {
-	OrderID        uuid.UUID `json:"order_id"`
-	ClientID       uuid.UUID `json:"client_id"`
-	MenuItemID     uuid.UUID `json:"menu_item_id"`
-	NameEn         string    `json:"name_en"`
-	NameNe         string    `json:"name_ne"`
-	VariantNameEn  string    `json:"variant_name_en"`
-	VariantNameNe  string    `json:"variant_name_ne"`
-	HasVariant     bool      `json:"has_variant"`
-	UnitPricePaisa int64     `json:"unit_price_paisa"`
-	Quantity       int32     `json:"quantity"`
-	Note           string    `json:"note"`
-	StationID      uuid.UUID `json:"station_id"`
+	OrderID        uuid.UUID   `json:"order_id"`
+	ClientID       uuid.UUID   `json:"client_id"`
+	MenuItemID     uuid.UUID   `json:"menu_item_id"`
+	NameEn         string      `json:"name_en"`
+	NameNe         string      `json:"name_ne"`
+	VariantNameEn  string      `json:"variant_name_en"`
+	VariantNameNe  string      `json:"variant_name_ne"`
+	HasVariant     bool        `json:"has_variant"`
+	UnitPricePaisa int64       `json:"unit_price_paisa"`
+	Quantity       int32       `json:"quantity"`
+	Note           string      `json:"note"`
+	StationID      uuid.UUID   `json:"station_id"`
+	Status         string      `json:"status"`
+	AddedByUserID  pgtype.UUID `json:"added_by_user_id"`
 }
 
 // Order items ---------------------------------------------------------------
+// Per-line idempotency: a line whose client_id already exists inserts nothing
+// (no row returned); the caller decides whether that is a replay or a clash.
+// sent_at is stamped when the line is created already SENT (one-step add+send).
 func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) (OrderItem, error) {
 	row := q.db.QueryRow(ctx, createOrderItem,
 		arg.OrderID,
@@ -121,6 +159,8 @@ func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams
 		arg.Quantity,
 		arg.Note,
 		arg.StationID,
+		arg.Status,
+		arg.AddedByUserID,
 	)
 	var i OrderItem
 	err := row.Scan(
@@ -143,6 +183,10 @@ func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams
 		&i.VoidApprovedByUserID,
 		&i.CreatedAt,
 		&i.InvoiceID,
+		&i.SentAt,
+		&i.AddedByUserID,
+		&i.VariantID,
+		&i.ModifierIds,
 	)
 	return i, err
 }
@@ -170,7 +214,7 @@ func (q *Queries) CreateOrderItemModifier(ctx context.Context, arg CreateOrderIt
 }
 
 const getOrderByClientID = `-- name: GetOrderByClientID :one
-SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at FROM orders WHERE client_id = $1
+SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label FROM orders WHERE client_id = $1
 `
 
 func (q *Queries) GetOrderByClientID(ctx context.Context, clientID uuid.UUID) (Order, error) {
@@ -187,12 +231,13 @@ func (q *Queries) GetOrderByClientID(ctx context.Context, clientID uuid.UUID) (O
 		&i.Version,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Label,
 	)
 	return i, err
 }
 
 const getOrderByID = `-- name: GetOrderByID :one
-SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at FROM orders WHERE id = $1
+SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label FROM orders WHERE id = $1
 `
 
 func (q *Queries) GetOrderByID(ctx context.Context, id uuid.UUID) (Order, error) {
@@ -209,12 +254,41 @@ func (q *Queries) GetOrderByID(ctx context.Context, id uuid.UUID) (Order, error)
 		&i.Version,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Label,
 	)
 	return i, err
 }
 
+const getOrderCloseState = `-- name: GetOrderCloseState :one
+SELECT
+    count(i.id) FILTER (WHERE i.status <> 'VOIDED')::bigint AS live,
+    count(i.id) FILTER (
+        WHERE i.status <> 'VOIDED'
+          AND inv.status = 'ISSUED'
+          AND (i.status = 'SERVED' OR (o.type = 'TAKEAWAY' AND i.status = 'READY'))
+    )::bigint AS done
+FROM orders o
+LEFT JOIN order_items i ON i.order_id = o.id
+LEFT JOIN invoices inv ON inv.id = i.invoice_id
+WHERE o.id = $1
+`
+
+type GetOrderCloseStateRow struct {
+	Live int64 `json:"live"`
+	Done int64 `json:"done"`
+}
+
+// Close rule inputs: live (non-voided) lines, and how many of them are both on an
+// ISSUED invoice and handed over (SERVED, or READY for a takeaway).
+func (q *Queries) GetOrderCloseState(ctx context.Context, id uuid.UUID) (GetOrderCloseStateRow, error) {
+	row := q.db.QueryRow(ctx, getOrderCloseState, id)
+	var i GetOrderCloseStateRow
+	err := row.Scan(&i.Live, &i.Done)
+	return i, err
+}
+
 const getOrderItem = `-- name: GetOrderItem :one
-SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id FROM order_items WHERE id = $1
+SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id, variant_id, modifier_ids FROM order_items WHERE id = $1
 `
 
 func (q *Queries) GetOrderItem(ctx context.Context, id uuid.UUID) (OrderItem, error) {
@@ -240,6 +314,45 @@ func (q *Queries) GetOrderItem(ctx context.Context, id uuid.UUID) (OrderItem, er
 		&i.VoidApprovedByUserID,
 		&i.CreatedAt,
 		&i.InvoiceID,
+		&i.SentAt,
+		&i.AddedByUserID,
+		&i.VariantID,
+		&i.ModifierIds,
+	)
+	return i, err
+}
+
+const getOrderItemByClientID = `-- name: GetOrderItemByClientID :one
+SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id, variant_id, modifier_ids FROM order_items WHERE client_id = $1
+`
+
+func (q *Queries) GetOrderItemByClientID(ctx context.Context, clientID uuid.UUID) (OrderItem, error) {
+	row := q.db.QueryRow(ctx, getOrderItemByClientID, clientID)
+	var i OrderItem
+	err := row.Scan(
+		&i.ID,
+		&i.OrderID,
+		&i.ClientID,
+		&i.MenuItemID,
+		&i.NameEn,
+		&i.NameNe,
+		&i.VariantNameEn,
+		&i.VariantNameNe,
+		&i.HasVariant,
+		&i.UnitPricePaisa,
+		&i.Quantity,
+		&i.Note,
+		&i.StationID,
+		&i.Status,
+		&i.VoidReason,
+		&i.VoidedByUserID,
+		&i.VoidApprovedByUserID,
+		&i.CreatedAt,
+		&i.InvoiceID,
+		&i.SentAt,
+		&i.AddedByUserID,
+		&i.VariantID,
+		&i.ModifierIds,
 	)
 	return i, err
 }
@@ -255,6 +368,17 @@ func (q *Queries) GetProcessedCommand(ctx context.Context, commandID uuid.UUID) 
 	var response []byte
 	err := row.Scan(&response)
 	return response, err
+}
+
+const getUserName = `-- name: GetUserName :one
+SELECT name FROM users WHERE id = $1
+`
+
+func (q *Queries) GetUserName(ctx context.Context, id uuid.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getUserName, id)
+	var name string
+	err := row.Scan(&name)
+	return name, err
 }
 
 const insertProcessedCommand = `-- name: InsertProcessedCommand :one
@@ -278,7 +402,7 @@ func (q *Queries) InsertProcessedCommand(ctx context.Context, arg InsertProcesse
 }
 
 const listOpenOrders = `-- name: ListOpenOrders :many
-SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at FROM orders WHERE status IN ('OPEN', 'BILLED') ORDER BY created_at
+SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label FROM orders WHERE status IN ('OPEN', 'BILLED') ORDER BY created_at
 `
 
 func (q *Queries) ListOpenOrders(ctx context.Context) ([]Order, error) {
@@ -301,6 +425,7 @@ func (q *Queries) ListOpenOrders(ctx context.Context) ([]Order, error) {
 			&i.Version,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Label,
 		); err != nil {
 			return nil, err
 		}
@@ -345,7 +470,7 @@ func (q *Queries) ListOrderItemModifiersForOrder(ctx context.Context, orderID uu
 }
 
 const listOrderItems = `-- name: ListOrderItems :many
-SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id FROM order_items WHERE order_id = $1 ORDER BY created_at
+SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id, variant_id, modifier_ids FROM order_items WHERE order_id = $1 ORDER BY created_at
 `
 
 func (q *Queries) ListOrderItems(ctx context.Context, orderID uuid.UUID) ([]OrderItem, error) {
@@ -377,6 +502,10 @@ func (q *Queries) ListOrderItems(ctx context.Context, orderID uuid.UUID) ([]Orde
 			&i.VoidApprovedByUserID,
 			&i.CreatedAt,
 			&i.InvoiceID,
+			&i.SentAt,
+			&i.AddedByUserID,
+			&i.VariantID,
+			&i.ModifierIds,
 		); err != nil {
 			return nil, err
 		}
@@ -386,6 +515,31 @@ func (q *Queries) ListOrderItems(ctx context.Context, orderID uuid.UUID) ([]Orde
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockOrderForUpdate = `-- name: LockOrderForUpdate :one
+SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label FROM orders WHERE id = $1 FOR UPDATE
+`
+
+// Locks the order row so the close-rule evaluation that follows sees every
+// change committed by concurrent order/kitchen/billing transactions.
+func (q *Queries) LockOrderForUpdate(ctx context.Context, id uuid.UUID) (Order, error) {
+	row := q.db.QueryRow(ctx, lockOrderForUpdate, id)
+	var i Order
+	err := row.Scan(
+		&i.ID,
+		&i.ClientID,
+		&i.Type,
+		&i.TableID,
+		&i.WaiterUserID,
+		&i.Status,
+		&i.GuestCount,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Label,
+	)
+	return i, err
 }
 
 const moveOrderItemsToOrder = `-- name: MoveOrderItemsToOrder :exec
@@ -403,8 +557,24 @@ func (q *Queries) MoveOrderItemsToOrder(ctx context.Context, arg MoveOrderItemsT
 	return err
 }
 
+const setOrderGuestCount = `-- name: SetOrderGuestCount :exec
+UPDATE orders SET guest_count = $2, updated_at = now() WHERE id = $1
+`
+
+type SetOrderGuestCountParams struct {
+	ID         uuid.UUID `json:"id"`
+	GuestCount int32     `json:"guest_count"`
+}
+
+func (q *Queries) SetOrderGuestCount(ctx context.Context, arg SetOrderGuestCountParams) error {
+	_, err := q.db.Exec(ctx, setOrderGuestCount, arg.ID, arg.GuestCount)
+	return err
+}
+
 const setOrderItemStatus = `-- name: SetOrderItemStatus :exec
-UPDATE order_items SET status = $1
+UPDATE order_items
+SET status = $1,
+    sent_at = CASE WHEN $1::text = 'SENT' THEN COALESCE(sent_at, now()) ELSE sent_at END
 WHERE order_id = $2 AND id = ANY($3::uuid[]) AND status = ANY($4::text[])
 `
 
@@ -415,6 +585,7 @@ type SetOrderItemStatusParams struct {
 	FromStatus []string    `json:"from_status"`
 }
 
+// Moving a line to SENT stamps sent_at (once).
 func (q *Queries) SetOrderItemStatus(ctx context.Context, arg SetOrderItemStatusParams) error {
 	_, err := q.db.Exec(ctx, setOrderItemStatus,
 		arg.Status,
@@ -440,16 +611,21 @@ func (q *Queries) SetOrderStatus(ctx context.Context, arg SetOrderStatusParams) 
 }
 
 const setOrderTable = `-- name: SetOrderTable :exec
-UPDATE orders SET table_id = $2, updated_at = now() WHERE id = $1
+UPDATE orders
+SET table_id = $1,
+    type = CASE WHEN $1::uuid IS NULL THEN 'TAKEAWAY' ELSE 'DINE_IN' END,
+    updated_at = now()
+WHERE id = $2
 `
 
 type SetOrderTableParams struct {
-	ID      uuid.UUID   `json:"id"`
 	TableID pgtype.UUID `json:"table_id"`
+	ID      uuid.UUID   `json:"id"`
 }
 
+// Moves an order to a table (DINE_IN) or off the floor (NULL table -> TAKEAWAY).
 func (q *Queries) SetOrderTable(ctx context.Context, arg SetOrderTableParams) error {
-	_, err := q.db.Exec(ctx, setOrderTable, arg.ID, arg.TableID)
+	_, err := q.db.Exec(ctx, setOrderTable, arg.TableID, arg.ID)
 	return err
 }
 

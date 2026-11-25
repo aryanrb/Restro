@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,11 +17,14 @@ import (
 	"github.com/oneaccord/restro/api/internal/auth"
 	"github.com/oneaccord/restro/api/internal/bsdate"
 	"github.com/oneaccord/restro/api/internal/connecterr"
+	"github.com/oneaccord/restro/api/internal/credit"
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
 	"github.com/oneaccord/restro/api/internal/dbx"
 	"github.com/oneaccord/restro/api/internal/idem"
 	"github.com/oneaccord/restro/api/internal/money"
+	"github.com/oneaccord/restro/api/internal/orders"
 	"github.com/oneaccord/restro/api/internal/realtime"
+	"github.com/oneaccord/restro/api/internal/shift"
 )
 
 func (s *Service) PreviewBill(ctx context.Context, req *restaurantv1.PreviewBillRequest) (*restaurantv1.BillPreview, error) {
@@ -72,6 +76,7 @@ func (s *Service) IssueFullBill(ctx context.Context, req *restaurantv1.IssueFull
 		return nil, err
 	}
 
+	var freedTable string
 	out := &restaurantv1.Invoice{}
 	err = idem.Run(ctx, s.pool, s.q, cmdID, actor.User.ID, out, func(q *sqlc.Queries) error {
 		order, items, settings, e := s.loadForBilling(ctx, q, ocid)
@@ -89,12 +94,20 @@ func (s *Service) IssueFullBill(ctx context.Context, req *restaurantv1.IssueFull
 		if e != nil {
 			return e
 		}
-		inv, e := s.issueInvoiceForItems(ctx, q, order, items, byItem, subtotal, settings, discount, reason, approvedBy, req.GetBuyerName(), req.GetBuyerPan(), actor.User.ID)
+		inv, e := s.issueInvoiceForItems(ctx, q, order, items, byItem, subtotal, settings, discount, reason, approvedBy, req.GetBuyerName(), req.GetBuyerPan(), actor, "")
 		if e != nil {
 			return e
 		}
 		if e := q.SetOrderStatus(ctx, sqlc.SetOrderStatusParams{ID: order.ID, Status: "BILLED"}); e != nil {
 			return connecterr.Internal(e)
+		}
+		// Everything is billed now; if it is also all handed over, the order is done.
+		closed, e := orders.CloseIfDone(ctx, q, order.ID)
+		if e != nil {
+			return e
+		}
+		if closed {
+			freedTable = tableIDStr(order)
 		}
 		full, e := s.loadInvoice(ctx, q, inv.ID)
 		if e != nil {
@@ -107,6 +120,9 @@ func (s *Service) IssueFullBill(ctx context.Context, req *restaurantv1.IssueFull
 		return nil, err
 	}
 	s.emit(realtime.Event{Type: "order.updated", ID: out.OrderId})
+	if freedTable != "" {
+		s.emit(realtime.Event{Type: "table.updated", ID: freedTable})
+	}
 	return out, nil
 }
 
@@ -124,6 +140,7 @@ func (s *Service) SplitByItem(ctx context.Context, req *restaurantv1.SplitByItem
 		return nil, err
 	}
 
+	var freedTable string
 	out := &restaurantv1.SplitByItemResponse{}
 	err = idem.Run(ctx, s.pool, s.q, cmdID, actor.User.ID, out, func(q *sqlc.Queries) error {
 		order, items, settings, e := s.loadForBilling(ctx, q, ocid)
@@ -152,7 +169,7 @@ func (s *Service) SplitByItem(ctx context.Context, req *restaurantv1.SplitByItem
 			if e != nil {
 				return e
 			}
-			inv, e := s.issueInvoiceForItems(ctx, q, order, groupItems, byItem, subtotal, settings, 0, "", uuid.Nil, "", "", actor.User.ID)
+			inv, e := s.issueInvoiceForItems(ctx, q, order, groupItems, byItem, subtotal, settings, 0, "", uuid.Nil, "", "", actor, "")
 			if e != nil {
 				return e
 			}
@@ -171,6 +188,13 @@ func (s *Service) SplitByItem(ctx context.Context, req *restaurantv1.SplitByItem
 			if e := q.SetOrderStatus(ctx, sqlc.SetOrderStatusParams{ID: order.ID, Status: "BILLED"}); e != nil {
 				return connecterr.Internal(e)
 			}
+			closed, e := orders.CloseIfDone(ctx, q, order.ID)
+			if e != nil {
+				return e
+			}
+			if closed {
+				freedTable = tableIDStr(order)
+			}
 		}
 		return nil
 	})
@@ -178,6 +202,9 @@ func (s *Service) SplitByItem(ctx context.Context, req *restaurantv1.SplitByItem
 		return nil, err
 	}
 	s.emit(realtime.Event{Type: "order.updated"})
+	if freedTable != "" {
+		s.emit(realtime.Event{Type: "table.updated", ID: freedTable})
+	}
 	return out, nil
 }
 
@@ -230,8 +257,12 @@ func (s *Service) RecordPayment(ctx context.Context, req *restaurantv1.RecordPay
 		if e != nil {
 			return connecterr.Internal(e)
 		}
-		if e := s.closeOrderIfPaid(ctx, q, inv); e != nil {
-			return e
+		// Payment is not part of the close rule (billed + handed over); re-evaluate
+		// anyway so an order whose state was settled elsewhere is not left open.
+		if inv.OrderID.Valid {
+			if _, e := orders.CloseIfDone(ctx, q, uuid.UUID(inv.OrderID.Bytes)); e != nil {
+				return e
+			}
 		}
 		if e := audit.Write(ctx, q, audit.Entry{ActorID: actor.User.ID, Action: "payment.record", Entity: "invoice", EntityID: invID.String(), After: audit.JSON(map[string]any{"method": method, "amount": req.GetAmountPaisa()})}); e != nil {
 			return e
@@ -267,6 +298,7 @@ func (s *Service) CancelInvoice(ctx context.Context, req *restaurantv1.CancelInv
 	}
 
 	var reopened []string
+	var credited []uuid.UUID
 	out := &restaurantv1.Invoice{}
 	err = idem.Run(ctx, s.pool, s.q, cmdID, actor.User.ID, out, func(q *sqlc.Queries) error {
 		inv, e := q.CancelInvoice(ctx, sqlc.CancelInvoiceParams{
@@ -277,6 +309,17 @@ func (s *Service) CancelInvoice(ctx context.Context, req *restaurantv1.CancelInv
 			return connecterr.Invalid("invoice_id", "invoice is already cancelled or not found")
 		}
 		if e != nil {
+			return connecterr.Internal(e)
+		}
+		// Count the bill back in the canceller's open shift when its payment was
+		// taken in a shift that has since closed; refuse the cancel (rolling it
+		// back) when that's owed but the canceller has no shift open.
+		if e := shift.RecordCancelAdjustments(ctx, q, invID); e != nil {
+			return e
+		}
+		// Its on-account amounts come off the customers' balances by themselves
+		// (balances count ISSUED bills only); tell their screens.
+		if credited, e = q.ListInvoiceCreditCustomers(ctx, invID); e != nil {
 			return connecterr.Internal(e)
 		}
 		orderIDs, e := q.UnlinkInvoiceItems(ctx, dbx.UUID(invID))
@@ -313,6 +356,9 @@ func (s *Service) CancelInvoice(ctx context.Context, req *restaurantv1.CancelInv
 		s.emit(realtime.Event{Type: "order.updated", ID: oid})
 	}
 	s.emit(realtime.Event{Type: "invoice.cancelled", ID: invID.String()})
+	for _, c := range credited {
+		s.emit(realtime.Event{Type: credit.EventCustomerUpdated, ID: c.String()})
+	}
 	return out, nil
 }
 
@@ -335,6 +381,10 @@ func (s *Service) MarkPrinted(ctx context.Context, req *restaurantv1.MarkPrinted
 			return connecterr.Internal(e)
 		}
 		count = c
+		// Every print is logged (the first is the original) for the IRD sales book.
+		if e := q.CreateInvoicePrint(ctx, sqlc.CreateInvoicePrintParams{InvoiceID: invID, PrintedByUserID: actor.User.ID}); e != nil {
+			return connecterr.Internal(e)
+		}
 		if c > 1 {
 			return audit.Write(ctx, q, audit.Entry{ActorID: actor.User.ID, Action: "invoice.reprint", Entity: "invoice", EntityID: invID.String(), After: audit.JSON(map[string]int32{"print_count": c})})
 		}
@@ -366,8 +416,12 @@ func (s *Service) GetInvoice(ctx context.Context, req *restaurantv1.GetInvoiceRe
 
 // --- internals ---
 
+// loadForBilling must run inside the billing transaction: it locks the order row
+// (SELECT ... FOR UPDATE) before reading the unbilled items, so two bills of the
+// same order under different command ids serialize and the second sees the first's
+// result (status BILLED or the items already invoiced) instead of a stale read.
 func (s *Service) loadForBilling(ctx context.Context, q *sqlc.Queries, ocid uuid.UUID) (sqlc.Order, []sqlc.OrderItem, sqlc.Setting, error) {
-	order, e := q.GetOrderByClientID(ctx, ocid)
+	order, e := q.LockOrderByClientIDForBilling(ctx, ocid)
 	if errors.Is(e, pgx.ErrNoRows) {
 		return sqlc.Order{}, nil, sqlc.Setting{}, connecterr.NotFound("order not found")
 	}
@@ -404,12 +458,18 @@ func (s *Service) subtotalOf(ctx context.Context, q *sqlc.Queries, orderID uuid.
 	return subtotal, byItem, nil
 }
 
-func lineTotal(it sqlc.OrderItem, mods []sqlc.OrderItemModifier) int64 {
-	var delta int64
-	for _, m := range mods {
-		delta += m.PriceDeltaPaisa
+// lineTotal is unit price × quantity. The order line's unit_price_paisa already
+// includes its modifiers' price deltas (snapshotted that way by orders.AddItems),
+// so the modifier rows are display-only here and must not be added again.
+func lineTotal(it sqlc.OrderItem, _ []sqlc.OrderItemModifier) int64 {
+	return it.UnitPricePaisa * int64(it.Quantity)
+}
+
+func tableIDStr(o sqlc.Order) string {
+	if !o.TableID.Valid {
+		return ""
 	}
-	return (it.UnitPricePaisa + delta) * int64(it.Quantity)
+	return uuid.UUID(o.TableID.Bytes).String()
 }
 
 func (s *Service) compute(settings sqlc.Setting, subtotal, discount int64) money.Result {
@@ -421,8 +481,34 @@ func (s *Service) compute(settings sqlc.Setting, subtotal, discount int64) money
 	})
 }
 
-func (s *Service) issueInvoiceForItems(ctx context.Context, q *sqlc.Queries, order sqlc.Order, items []sqlc.OrderItem, byItem map[uuid.UUID][]sqlc.OrderItemModifier, subtotal int64, settings sqlc.Setting, discount int64, discountReason string, discountApprovedBy uuid.UUID, buyerName, buyerPan string, actorID uuid.UUID) (sqlc.Invoice, error) {
+// placeOf is what the invoice prints as its place: the table's name for a
+// dine-in order, else the counter-sale label, else "Takeaway".
+func placeOf(ctx context.Context, q *sqlc.Queries, order sqlc.Order, label string) (string, error) {
+	if order.TableID.Valid {
+		name, err := q.GetDiningTableName(ctx, uuid.UUID(order.TableID.Bytes))
+		if err == nil {
+			return name, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return "", connecterr.Internal(err)
+		}
+	}
+	if label = strings.TrimSpace(label); label != "" {
+		return label, nil
+	}
+	return "Takeaway", nil
+}
+
+// issueInvoiceForItems allocates the next number and writes the immutable invoice:
+// totals, lines, and the issue-time snapshot (seller details from settings,
+// display number, issuer, place). label is the counter-sale label ("" otherwise).
+func (s *Service) issueInvoiceForItems(ctx context.Context, q *sqlc.Queries, order sqlc.Order, items []sqlc.OrderItem, byItem map[uuid.UUID][]sqlc.OrderItemModifier, subtotal int64, settings sqlc.Setting, discount int64, discountReason string, discountApprovedBy uuid.UUID, buyerName, buyerPan string, actor *auth.Actor, label string) (sqlc.Invoice, error) {
 	r := s.compute(settings, subtotal, discount)
+	actorID := actor.User.ID
+	place, err := placeOf(ctx, q, order, label)
+	if err != nil {
+		return sqlc.Invoice{}, err
+	}
 
 	bsd, err := bsdate.FromAD(time.Now())
 	if err != nil {
@@ -442,6 +528,10 @@ func (s *Service) issueInvoiceForItems(ctx context.Context, q *sqlc.Queries, ord
 		SubtotalPaisa: r.Subtotal, DiscountPaisa: r.Discount, ServiceChargePaisa: r.ServiceCharge,
 		TaxablePaisa: r.Taxable, VatPaisa: r.Vat, RoundingPaisa: r.RoundingAdjustment, TotalPaisa: r.Total,
 		DiscountReason: discountReason, DiscountApprovedByUserID: dbx.UUIDOpt(discountApprovedBy), CreatedByUserID: dbx.UUID(actorID),
+		DisplayNumber: displayNumber(mode, fy, number),
+		SellerNameEn:  settings.NameEn, SellerNameNe: settings.NameNe, SellerAddress: settings.Address,
+		SellerPanNumber: settings.PanNumber, SellerVatRateBp: settings.VatRateBp, SellerVatRegistered: settings.VatRegistered,
+		SellerLogoUrl: settings.LogoUrl, IssuedByName: actor.User.Name, Place: place, OrderClientID: dbx.UUID(order.ClientID),
 	})
 	if err != nil {
 		return sqlc.Invoice{}, connecterr.Internal(err)
@@ -457,15 +547,21 @@ func (s *Service) issueInvoiceForItems(ctx context.Context, q *sqlc.Queries, ord
 		modJSON, _ := json.Marshal(snap)
 		if _, e := q.CreateInvoiceLine(ctx, sqlc.CreateInvoiceLineParams{
 			InvoiceID: inv.ID, OrderItemID: dbx.UUID(it.ID), NameEn: it.NameEn, NameNe: it.NameNe,
-			VariantName: it.VariantNameEn, Quantity: it.Quantity, UnitPricePaisa: it.UnitPricePaisa,
-			ModifiersJson: modJSON, LineTotalPaisa: lineTotal(it, mods),
+			VariantName: it.VariantNameEn, VariantNameNe: it.VariantNameNe, Quantity: it.Quantity, UnitPricePaisa: it.UnitPricePaisa,
+			ModifiersJson: modJSON, LineTotalPaisa: lineTotal(it, mods), OrderItemClientID: dbx.UUID(it.ClientID),
 		}); e != nil {
 			return sqlc.Invoice{}, connecterr.Internal(e)
 		}
 		itemIDs = append(itemIDs, it.ID)
 	}
-	if err := q.SetOrderItemsInvoice(ctx, sqlc.SetOrderItemsInvoiceParams{InvoiceID: dbx.UUID(inv.ID), Ids: itemIDs}); err != nil {
+	// Claim only still-unbilled items; a short count means another command billed
+	// some of them, so abort the whole transaction rather than double-bill.
+	claimed, err := q.SetOrderItemsInvoice(ctx, sqlc.SetOrderItemsInvoiceParams{InvoiceID: dbx.UUID(inv.ID), Ids: itemIDs})
+	if err != nil {
 		return sqlc.Invoice{}, connecterr.Internal(err)
+	}
+	if claimed != int64(len(itemIDs)) {
+		return sqlc.Invoice{}, connecterr.OrderClosed("some items were already billed; refresh the order")
 	}
 	if err := q.CreateCbmsOutbox(ctx, sqlc.CreateCbmsOutboxParams{
 		InvoiceID: inv.ID, Kind: "BILL", Payload: audit.JSON(map[string]any{"number": number, "total": r.Total, "fiscal_year": fy}), Status: "DISABLED",
@@ -491,37 +587,11 @@ func (s *Service) loadInvoice(ctx context.Context, q *sqlc.Queries, id uuid.UUID
 	if err != nil {
 		return nil, connecterr.Internal(err)
 	}
-	return toInvoice(inv, lines, payments), nil
-}
-
-func (s *Service) closeOrderIfPaid(ctx context.Context, q *sqlc.Queries, inv sqlc.Invoice) error {
-	if !inv.OrderID.Valid {
-		return nil
-	}
-	payments, err := q.ListPaymentsForInvoice(ctx, inv.ID)
+	prints, err := q.ListInvoicePrints(ctx, id)
 	if err != nil {
-		return connecterr.Internal(err)
+		return nil, connecterr.Internal(err)
 	}
-	var paid int64
-	for _, p := range payments {
-		if p.Status == "CONFIRMED" {
-			paid += p.AmountPaisa
-		}
-	}
-	if paid < inv.TotalPaisa {
-		return nil
-	}
-	orderID := uuid.UUID(inv.OrderID.Bytes)
-	remaining, err := q.ListUnbilledOrderItems(ctx, orderID)
-	if err != nil {
-		return connecterr.Internal(err)
-	}
-	if len(remaining) == 0 {
-		if err := q.SetOrderStatus(ctx, sqlc.SetOrderStatusParams{ID: orderID, Status: "CLOSED"}); err != nil {
-			return connecterr.Internal(err)
-		}
-	}
-	return nil
+	return toInvoice(inv, lines, payments, prints), nil
 }
 
 // computeDiscount applies the role limit and returns the discount amount in paisa.

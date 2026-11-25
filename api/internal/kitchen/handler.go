@@ -22,22 +22,25 @@ func (h *Handler) ListStationTickets(ctx context.Context, req *connect.Request[r
 }
 
 func (h *Handler) StartItems(ctx context.Context, req *connect.Request[restaurantv1.StartItemsRequest]) (*connect.Response[restaurantv1.KitchenActionResponse], error) {
-	if err := h.svc.StartItems(ctx, req.Msg.GetItemIds()); err != nil {
+	out, err := h.svc.StartItems(ctx, req.Msg.GetItemIds())
+	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&restaurantv1.KitchenActionResponse{}), nil
+	return connect.NewResponse(out), nil
 }
 
 func (h *Handler) MarkItemsReady(ctx context.Context, req *connect.Request[restaurantv1.MarkItemsReadyRequest]) (*connect.Response[restaurantv1.KitchenActionResponse], error) {
-	if err := h.svc.MarkItemsReady(ctx, req.Msg.GetItemIds()); err != nil {
+	out, err := h.svc.MarkItemsReady(ctx, req.Msg.GetItemIds())
+	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&restaurantv1.KitchenActionResponse{}), nil
+	return connect.NewResponse(out), nil
 }
 
 func (h *Handler) BumpTicket(ctx context.Context, req *connect.Request[restaurantv1.BumpTicketRequest]) (*connect.Response[restaurantv1.KitchenActionResponse], error) {
-	if err := h.svc.BumpTicket(ctx, req.Msg.GetOrderId(), req.Msg.GetStationId()); err != nil {
+	out, err := h.svc.BumpTicket(ctx, req.Msg.GetOrderId(), req.Msg.GetStationId())
+	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&restaurantv1.KitchenActionResponse{}), nil
+	return connect.NewResponse(out), nil
 }

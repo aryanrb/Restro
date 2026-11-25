@@ -1,0 +1,410 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+import "restaurant/v1/common.proto";
+
+// ---------------------------------------------------------------------------
+// InventoryService — stock items, the stock ledger, waste, stock counts and the
+// stock reports (spec: docs/superpowers/specs/2026-11-24-inventory-wastage-design.md).
+// Recipes live on the menu (MenuService.SaveRecipe / SaveModifierRecipe).
+//
+// UNITS: every item has one base unit (g / ml / pcs). Quantities are integers in
+// THOUSANDTHS of the base unit (`*_milli`: 1.5 g = 1500), so the ledger is exact.
+// Unit cost is paisa per base unit with 4 decimals, sent as an integer ×10,000
+// (`unit_cost_e4`: Rs 600/kg = 60.0000 paisa/g = 600000). Money values are paisa.
+//
+// ROLES: OWNER/MANAGER do everything. CASHIER/KITCHEN may list items, log waste,
+// count stock (blind) and read 86 suggestions; for them every cost/value field is
+// absent. WAITER has no access (NOT_ALLOWED).
+//
+// Stock never blocks a send or a void: SALE / SALE_REVERSAL movements are written
+// by the order commands in the same transaction (see OrderService).
+// ---------------------------------------------------------------------------
+
+enum StockUnit {
+  STOCK_UNIT_UNSPECIFIED = 0;
+  STOCK_UNIT_G = 1;
+  STOCK_UNIT_ML = 2;
+  STOCK_UNIT_PCS = 3;
+}
+
+enum StockMovementType {
+  STOCK_MOVEMENT_TYPE_UNSPECIFIED = 0;
+  STOCK_MOVEMENT_TYPE_SALE = 1;            // ref = order item id
+  STOCK_MOVEMENT_TYPE_SALE_REVERSAL = 2;   // ref = order item id (void before cooking)
+  STOCK_MOVEMENT_TYPE_WASTE = 3;           // ref = waste entry id
+  STOCK_MOVEMENT_TYPE_COUNT_ADJUST = 4;    // ref = stock count id
+  STOCK_MOVEMENT_TYPE_PURCHASE = 5;        // ref = purchase line id (purchases, later)
+  STOCK_MOVEMENT_TYPE_PURCHASE_RETURN = 6; // ref = purchase line id (purchases, later)
+  STOCK_MOVEMENT_TYPE_OPENING = 7;         // ref = inventory item id (tracking turned on)
+}
+
+enum WasteReason {
+  WASTE_REASON_UNSPECIFIED = 0;
+  WASTE_REASON_SPOILED = 1;
+  WASTE_REASON_DROPPED = 2;
+  WASTE_REASON_MISTAKE = 3;
+  WASTE_REASON_STAFF_MEAL = 4;
+  WASTE_REASON_RETURNED = 5;
+  WASTE_REASON_OTHER = 6; // needs a note
+}
+
+enum CountStatus {
+  COUNT_STATUS_UNSPECIFIED = 0;
+  COUNT_STATUS_OPEN = 1;
+  COUNT_STATUS_SUBMITTED = 2;
+  COUNT_STATUS_POSTED = 3;
+  COUNT_STATUS_DISCARDED = 4;
+}
+
+// An entry convenience for counts and purchases, e.g. "Crate = 12 pcs".
+message StockPack {
+  LocalText name = 1;
+  int64 size_milli = 2;
+}
+
+message InventoryItem {
+  string id = 1;
+  int64 version = 2;
+  LocalText name = 3;
+  StockUnit unit = 4;
+  bool tracked = 5;
+  int64 low_stock_milli = 6;
+  bool active = 7;
+  // Paisa per base unit ×10,000. Owner-typed until purchases exist, then the moving
+  // weighted average. Absent for cashier/kitchen.
+  optional int64 unit_cost_e4 = 8;
+  repeated StockPack packs = 9;
+  int32 sort = 10;      // shelf order, used for counts
+  int64 on_hand_milli = 11; // Σ movements (server-computed); may be negative
+  bool low = 12;        // tracked, active and on hand <= low-stock level
+  bool unit_locked = 13; // has movements, so the unit can't change
+}
+
+message InventoryItemInput {
+  optional string id = 1; // set = edit (base_version required)
+  LocalText name = 2;
+  StockUnit unit = 3;
+  int64 low_stock_milli = 4;
+  bool active = 5;
+  int64 unit_cost_e4 = 6;
+  repeated StockPack packs = 7;
+}
+
+// Never edited or deleted.
+message StockMovement {
+  string id = 1;
+  string inventory_item_id = 2;
+  int64 quantity_milli = 3; // signed
+  StockMovementType type = 4;
+  string ref_id = 5;
+  string reason = 6;
+  string by_user_id = 7;
+  string by_name = 8;
+  int64 at_unix = 9;
+  int64 unit_cost_e4 = 10; // snapshot at the time of the movement
+}
+
+message InventoryWasteTarget {
+  string inventory_item_id = 1;
+}
+message MenuWasteTarget {
+  string menu_item_id = 1;
+  optional string variant_id = 2; // required when the item has variants
+  repeated string modifier_ids = 3;
+}
+
+message WasteEntry {
+  string id = 1;
+  oneof target {
+    InventoryWasteTarget inventory = 2;
+    MenuWasteTarget menu = 3;
+  }
+  // Base units ×1000 for an inventory item; portions ×1000 for a menu item.
+  int64 quantity_milli = 4;
+  LocalText name = 5;            // "Chicken (boneless)" or "Chicken Momo · Half"
+  StockUnit unit = 6;            // UNSPECIFIED for portions of a menu item
+  WasteReason reason = 7;
+  string note = 8;
+  string by_user_id = 9;
+  string by_name = 10;
+  string approved_by_user_id = 11; // "" = none
+  string approved_by_name = 12;
+  int64 at_unix = 13;
+  optional int64 value_paisa = 14; // absent for cashier/kitchen
+}
+
+message CountLine {
+  string inventory_item_id = 1;
+  optional int64 counted_milli = 2;  // absent = not counted yet
+  int64 counted_at_unix = 3;         // 0 = not counted yet
+  string counted_by_user_id = 4;
+  bool recount = 5;                  // a manager asked for this line to be counted again
+  // Filled in when posted; absent for cashier/kitchen (blind count).
+  optional int64 expected_milli = 6;
+  optional int64 variance_milli = 7;
+  optional int64 value_paisa = 8;
+}
+
+message StockCount {
+  string id = 1;
+  int32 number = 2;
+  CountStatus status = 3;
+  string list_id = 4; // "" = none
+  string label = 5;   // "" (all tracked items), a list's name, or the item names of a single-item count
+  string started_by_user_id = 6;
+  string started_by_name = 7;
+  int64 started_at_unix = 8;
+  string submitted_by_user_id = 9;
+  int64 submitted_at_unix = 10;
+  string posted_by_user_id = 11;
+  int64 posted_at_unix = 12;
+  string discarded_reason = 13;
+  int64 discarded_at_unix = 14;
+  repeated CountLine lines = 15;
+  optional int64 total_value_paisa = 16; // Σ line values once posted; absent otherwise and for cashier/kitchen
+}
+
+message CountList {
+  string id = 1;
+  string name = 2;
+  repeated string inventory_item_ids = 3;
+}
+
+message VarianceLine {
+  string inventory_item_id = 1;
+  LocalText name = 2;
+  StockUnit unit = 3;
+  int64 opening_milli = 4; // counted at the previous posted count of this item (+ opening stock)
+  int64 purchases_milli = 5;
+  int64 sales_milli = 6;
+  int64 waste_milli = 7;
+  int64 expected_milli = 8;
+  int64 counted_milli = 9;
+  int64 variance_milli = 10;
+  int64 value_paisa = 11; // variance × unit cost (at posting once posted)
+  bool highlight = 12;    // |value| >= Rs 500 or >= 10 %
+  int64 counted_at_unix = 13;
+  bool recount = 14;
+}
+
+message VoidedAfterCooking {
+  int32 count = 1;
+  int64 value_paisa = 2;
+}
+
+message VarianceReport {
+  string count_id = 1;
+  int32 number = 2;
+  CountStatus status = 3;
+  int64 since_unix = 4; // earliest previous posted count among the lines; 0 = none
+  repeated VarianceLine lines = 5; // biggest loss first
+  int64 total_paisa = 6;
+  VoidedAfterCooking voided_after_cooking = 7;
+}
+
+message VoidedAfterCookingRow {
+  LocalText name = 1;
+  int32 quantity = 2;
+  string reason = 3;
+  string approver_name = 4;
+  int64 at_unix = 5; // sent at
+  int64 value_paisa = 6;
+}
+
+message WasteByReason {
+  WasteReason reason = 1;
+  int32 count = 2;
+  int64 value_paisa = 3;
+}
+message WasteByPerson {
+  string name = 1;
+  int32 count = 2;
+  int64 value_paisa = 3;
+}
+message WasteByItem {
+  LocalText name = 1;
+  StockUnit unit = 2;
+  int64 quantity_milli = 3;
+  int64 value_paisa = 4;
+}
+
+message WastageReport {
+  repeated WasteEntry entries = 1; // newest first
+  repeated WasteByReason by_reason = 2;
+  repeated WasteByPerson by_person = 3;
+  repeated WasteByItem by_item = 4;
+  int64 total_paisa = 5;
+  repeated VoidedAfterCookingRow voided_after_cooking = 6;
+}
+
+message LowStockRow {
+  string inventory_item_id = 1;
+  LocalText name = 2;
+  StockUnit unit = 3;
+  int64 on_hand_milli = 4;
+  int64 low_stock_milli = 5;
+}
+
+message WithoutRecipeRow {
+  string menu_item_id = 1;
+  LocalText name = 2;
+  LocalText variant_name = 3; // unset for an item without variants
+}
+
+message Suggestion86 {
+  string menu_item_id = 1;
+  LocalText menu_item_name = 2;
+  string inventory_item_id = 3;
+  LocalText ingredient_name = 4;
+  int64 left_milli = 5;
+  StockUnit unit = 6;
+}
+
+// ---- requests ----
+
+message ListInventoryItemsRequest {
+  bool include_inactive = 1;
+}
+message ListInventoryItemsResponse {
+  repeated InventoryItem items = 1; // shelf order
+}
+
+message SaveInventoryItemRequest {
+  InventoryItemInput input = 1;
+  optional int64 base_version = 2; // required when input.id is set
+}
+
+message SetTrackedRequest {
+  string id = 1;
+  bool tracked = 2;
+  optional int64 opening_milli = 3; // required (>= 0) when turning tracking on
+}
+
+message ListMovementsRequest {
+  string inventory_item_id = 1;
+  int64 from_unix = 2; // 0 = no lower bound
+  int64 to_unix = 3;   // 0 = no upper bound
+  StockMovementType type = 4; // UNSPECIFIED = all
+}
+message ListMovementsResponse {
+  repeated StockMovement movements = 1; // newest first
+}
+
+message LogWasteRequest {
+  oneof target {
+    InventoryWasteTarget inventory = 1;
+    MenuWasteTarget menu = 2;
+  }
+  int64 quantity_milli = 3; // > 0; whole portions (multiple of 1000) for a menu item
+  WasteReason reason = 4;
+  string note = 5;
+  ManagerApproval approval = 6; // needed when the value is over Rs 1,000
+  string request_id = 7;        // client UUID; a retry returns the original entry
+}
+
+message WasteRangeRequest {
+  int64 from_unix = 1;
+  int64 to_unix = 2;
+}
+message ListWasteResponse {
+  repeated WasteEntry entries = 1; // newest first
+}
+
+message StartCountRequest {
+  optional string list_id = 1;
+  repeated string inventory_item_ids = 2; // set = a single-item (or few-item) count
+}
+
+message CountLineInput {
+  string inventory_item_id = 1;
+  optional int64 counted_milli = 2; // absent clears the line
+}
+message SaveCountLinesRequest {
+  string count_id = 1;
+  repeated CountLineInput lines = 2;
+}
+
+message CountIdRequest {
+  string count_id = 1;
+}
+
+message RecountLinesRequest {
+  string count_id = 1;
+  repeated string inventory_item_ids = 2;
+}
+
+message DiscardCountRequest {
+  string count_id = 1;
+  string reason = 2;
+}
+
+message ListCountsRequest {}
+message ListCountsResponse {
+  repeated StockCount counts = 1; // newest first
+}
+
+message SaveCountListRequest {
+  optional string id = 1;
+  string name = 2;
+  repeated string inventory_item_ids = 3;
+}
+message ListCountListsRequest {}
+message ListCountListsResponse {
+  repeated CountList lists = 1;
+}
+
+message LowStockRequest {}
+message LowStockResponse {
+  repeated LowStockRow rows = 1;
+}
+message ItemsWithoutRecipeRequest {}
+message ItemsWithoutRecipeResponse {
+  repeated WithoutRecipeRow rows = 1;
+}
+message Suggestions86Request {}
+message Suggestions86Response {
+  repeated Suggestion86 suggestions = 1;
+}
+
+service InventoryService {
+  // Owner, manager, cashier, kitchen. Unit cost absent for cashier/kitchen.
+  rpc ListInventoryItems(ListInventoryItemsRequest) returns (ListInventoryItemsResponse);
+  // Owner/manager. STALE_VERSION on a wrong base_version; UNIT_LOCKED once the item has movements.
+  rpc SaveInventoryItem(SaveInventoryItemRequest) returns (InventoryItem);
+  // Owner/manager. Turning tracking on needs opening_milli, written as an OPENING movement.
+  rpc SetTracked(SetTrackedRequest) returns (InventoryItem);
+  // Owner/manager.
+  rpc ListMovements(ListMovementsRequest) returns (ListMovementsResponse);
+
+  // Owner, manager, cashier, kitchen. Idempotent on request_id. ITEM_UNTRACKED for an
+  // untracked/inactive item (or a dish with no tracked ingredient);
+  // MANAGER_APPROVAL_REQUIRED over Rs 1,000 (same PIN lockout as voids).
+  rpc LogWaste(LogWasteRequest) returns (WasteEntry);
+  rpc ListWaste(WasteRangeRequest) returns (ListWasteResponse);
+
+  // Owner, manager, cashier, kitchen: all tracked items, a saved list, or chosen items.
+  rpc StartCount(StartCountRequest) returns (StockCount);
+  // OPEN only. Each counted line gets its own timestamp.
+  rpc SaveCountLines(SaveCountLinesRequest) returns (StockCount);
+  rpc SubmitCount(CountIdRequest) returns (StockCount);
+  // Owner/manager: back to OPEN with these lines cleared.
+  rpc RecountLines(RecountLinesRequest) returns (StockCount);
+  // Owner/manager: one COUNT_ADJUST per line at its counted time. COUNT_ALREADY_POSTED when posted twice.
+  rpc PostCount(CountIdRequest) returns (StockCount);
+  rpc DiscardCount(DiscardCountRequest) returns (StockCount);
+  rpc GetCount(CountIdRequest) returns (StockCount);
+  rpc ListCounts(ListCountsRequest) returns (ListCountsResponse);
+  // Owner/manager.
+  rpc SaveCountList(SaveCountListRequest) returns (CountList);
+  rpc ListCountLists(ListCountListsRequest) returns (ListCountListsResponse);
+
+  // Owner/manager.
+  rpc Variance(CountIdRequest) returns (VarianceReport);
+  rpc Wastage(WasteRangeRequest) returns (WastageReport);
+  rpc LowStock(LowStockRequest) returns (LowStockResponse);
+  rpc ItemsWithoutRecipe(ItemsWithoutRecipeRequest) returns (ItemsWithoutRecipeResponse);
+  // Dishes that can't be made from what's on hand. Owner, manager, cashier, kitchen.
+  rpc Suggestions86(Suggestions86Request) returns (Suggestions86Response);
+}

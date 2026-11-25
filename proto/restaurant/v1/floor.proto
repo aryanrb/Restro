@@ -29,7 +29,7 @@ message Table {
 
 message Floor {
   repeated Area areas = 1;   // sorted by sort
-  repeated Table tables = 2; // sorted by sort
+  repeated Table tables = 2; // sorted by sort (sort is per area)
 }
 
 message Station {
@@ -61,6 +61,7 @@ message SaveTableRequest {
   int32 seats = 4 [(buf.validate.field).int32 = {gte: 1, lte: 50}];
   bool active = 5;
 }
+// Moves within the table's area. Changing area on SaveTable puts the table last there.
 message MoveTableRequest {
   string id = 1;
   Move move = 2;

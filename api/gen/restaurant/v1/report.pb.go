@@ -118,16 +118,26 @@ func (x *TopItem) GetAmountPaisa() int64 {
 }
 
 type DashboardResponse struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	TodaySalesPaisa   int64                  `protobuf:"varint,1,opt,name=today_sales_paisa,json=todaySalesPaisa,proto3" json:"today_sales_paisa,omitempty"`
-	TodayInvoiceCount int32                  `protobuf:"varint,2,opt,name=today_invoice_count,json=todayInvoiceCount,proto3" json:"today_invoice_count,omitempty"`
-	OpenOrders        int32                  `protobuf:"varint,3,opt,name=open_orders,json=openOrders,proto3" json:"open_orders,omitempty"`
-	OpenTables        int32                  `protobuf:"varint,4,opt,name=open_tables,json=openTables,proto3" json:"open_tables,omitempty"`
-	VoidCount         int32                  `protobuf:"varint,5,opt,name=void_count,json=voidCount,proto3" json:"void_count,omitempty"`
-	DiscountCount     int32                  `protobuf:"varint,6,opt,name=discount_count,json=discountCount,proto3" json:"discount_count,omitempty"`
-	TopItems          []*TopItem             `protobuf:"bytes,7,rep,name=top_items,json=topItems,proto3" json:"top_items,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	TodaySalesPaisa     int64                  `protobuf:"varint,1,opt,name=today_sales_paisa,json=todaySalesPaisa,proto3" json:"today_sales_paisa,omitempty"`
+	TodayInvoiceCount   int32                  `protobuf:"varint,2,opt,name=today_invoice_count,json=todayInvoiceCount,proto3" json:"today_invoice_count,omitempty"`
+	OpenOrders          int32                  `protobuf:"varint,3,opt,name=open_orders,json=openOrders,proto3" json:"open_orders,omitempty"`
+	OpenTables          int32                  `protobuf:"varint,4,opt,name=open_tables,json=openTables,proto3" json:"open_tables,omitempty"`
+	VoidCount           int32                  `protobuf:"varint,5,opt,name=void_count,json=voidCount,proto3" json:"void_count,omitempty"`
+	DiscountCount       int32                  `protobuf:"varint,6,opt,name=discount_count,json=discountCount,proto3" json:"discount_count,omitempty"`
+	TopItems            []*TopItem             `protobuf:"bytes,7,rep,name=top_items,json=topItems,proto3" json:"top_items,omitempty"`
+	ByMethod            []*MethodTotal         `protobuf:"bytes,8,rep,name=by_method,json=byMethod,proto3" json:"by_method,omitempty"`                       // confirmed payments on today's issued bills
+	DiscountPaisa       int64                  `protobuf:"varint,9,opt,name=discount_paisa,json=discountPaisa,proto3" json:"discount_paisa,omitempty"`       // discount amount on today's issued bills
+	VoidValuePaisa      int64                  `protobuf:"varint,10,opt,name=void_value_paisa,json=voidValuePaisa,proto3" json:"void_value_paisa,omitempty"` // value of items voided today
+	CancelledCount      int32                  `protobuf:"varint,11,opt,name=cancelled_count,json=cancelledCount,proto3" json:"cancelled_count,omitempty"`   // bills cancelled today
+	CancelledValuePaisa int64                  `protobuf:"varint,12,opt,name=cancelled_value_paisa,json=cancelledValuePaisa,proto3" json:"cancelled_value_paisa,omitempty"`
+	// Credit (udharo): on-account amounts on today's issued bills, repayments taken
+	// today (not voided), and everything owed now (sum of positive balances).
+	CreditGivenTodayPaisa int64 `protobuf:"varint,13,opt,name=credit_given_today_paisa,json=creditGivenTodayPaisa,proto3" json:"credit_given_today_paisa,omitempty"`
+	RepaymentsTodayPaisa  int64 `protobuf:"varint,14,opt,name=repayments_today_paisa,json=repaymentsTodayPaisa,proto3" json:"repayments_today_paisa,omitempty"`
+	CreditOwedPaisa       int64 `protobuf:"varint,15,opt,name=credit_owed_paisa,json=creditOwedPaisa,proto3" json:"credit_owed_paisa,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *DashboardResponse) Reset() {
@@ -209,12 +219,70 @@ func (x *DashboardResponse) GetTopItems() []*TopItem {
 	return nil
 }
 
+func (x *DashboardResponse) GetByMethod() []*MethodTotal {
+	if x != nil {
+		return x.ByMethod
+	}
+	return nil
+}
+
+func (x *DashboardResponse) GetDiscountPaisa() int64 {
+	if x != nil {
+		return x.DiscountPaisa
+	}
+	return 0
+}
+
+func (x *DashboardResponse) GetVoidValuePaisa() int64 {
+	if x != nil {
+		return x.VoidValuePaisa
+	}
+	return 0
+}
+
+func (x *DashboardResponse) GetCancelledCount() int32 {
+	if x != nil {
+		return x.CancelledCount
+	}
+	return 0
+}
+
+func (x *DashboardResponse) GetCancelledValuePaisa() int64 {
+	if x != nil {
+		return x.CancelledValuePaisa
+	}
+	return 0
+}
+
+func (x *DashboardResponse) GetCreditGivenTodayPaisa() int64 {
+	if x != nil {
+		return x.CreditGivenTodayPaisa
+	}
+	return 0
+}
+
+func (x *DashboardResponse) GetRepaymentsTodayPaisa() int64 {
+	if x != nil {
+		return x.RepaymentsTodayPaisa
+	}
+	return 0
+}
+
+func (x *DashboardResponse) GetCreditOwedPaisa() int64 {
+	if x != nil {
+		return x.CreditOwedPaisa
+	}
+	return 0
+}
+
 type RangeRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	FromUnix      int64                  `protobuf:"varint,1,opt,name=from_unix,json=fromUnix,proto3" json:"from_unix,omitempty"`
-	ToUnix        int64                  `protobuf:"varint,2,opt,name=to_unix,json=toUnix,proto3" json:"to_unix,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	FromUnix int64                  `protobuf:"varint,1,opt,name=from_unix,json=fromUnix,proto3" json:"from_unix,omitempty"`
+	ToUnix   int64                  `protobuf:"varint,2,opt,name=to_unix,json=toUnix,proto3" json:"to_unix,omitempty"`
+	// SalesBook / ExportSalesBookCsv only: false (default) = tax invoices only.
+	IncludeEstimates bool `protobuf:"varint,3,opt,name=include_estimates,json=includeEstimates,proto3" json:"include_estimates,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *RangeRequest) Reset() {
@@ -261,22 +329,38 @@ func (x *RangeRequest) GetToUnix() int64 {
 	return 0
 }
 
+func (x *RangeRequest) GetIncludeEstimates() bool {
+	if x != nil {
+		return x.IncludeEstimates
+	}
+	return false
+}
+
 type SalesBookRow struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	FiscalYear    string                 `protobuf:"bytes,1,opt,name=fiscal_year,json=fiscalYear,proto3" json:"fiscal_year,omitempty"`
-	Number        int32                  `protobuf:"varint,2,opt,name=number,proto3" json:"number,omitempty"`
-	Mode          string                 `protobuf:"bytes,3,opt,name=mode,proto3" json:"mode,omitempty"`
-	BsDate        string                 `protobuf:"bytes,4,opt,name=bs_date,json=bsDate,proto3" json:"bs_date,omitempty"`
-	BuyerName     string                 `protobuf:"bytes,5,opt,name=buyer_name,json=buyerName,proto3" json:"buyer_name,omitempty"`
-	BuyerPan      string                 `protobuf:"bytes,6,opt,name=buyer_pan,json=buyerPan,proto3" json:"buyer_pan,omitempty"`
-	SubtotalPaisa int64                  `protobuf:"varint,7,opt,name=subtotal_paisa,json=subtotalPaisa,proto3" json:"subtotal_paisa,omitempty"`
-	DiscountPaisa int64                  `protobuf:"varint,8,opt,name=discount_paisa,json=discountPaisa,proto3" json:"discount_paisa,omitempty"`
-	TaxablePaisa  int64                  `protobuf:"varint,9,opt,name=taxable_paisa,json=taxablePaisa,proto3" json:"taxable_paisa,omitempty"`
-	VatPaisa      int64                  `protobuf:"varint,10,opt,name=vat_paisa,json=vatPaisa,proto3" json:"vat_paisa,omitempty"`
-	TotalPaisa    int64                  `protobuf:"varint,11,opt,name=total_paisa,json=totalPaisa,proto3" json:"total_paisa,omitempty"`
-	Status        string                 `protobuf:"bytes,12,opt,name=status,proto3" json:"status,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	FiscalYear     string                 `protobuf:"bytes,1,opt,name=fiscal_year,json=fiscalYear,proto3" json:"fiscal_year,omitempty"`
+	Number         int32                  `protobuf:"varint,2,opt,name=number,proto3" json:"number,omitempty"`
+	Mode           string                 `protobuf:"bytes,3,opt,name=mode,proto3" json:"mode,omitempty"`
+	BsDate         string                 `protobuf:"bytes,4,opt,name=bs_date,json=bsDate,proto3" json:"bs_date,omitempty"`
+	BuyerName      string                 `protobuf:"bytes,5,opt,name=buyer_name,json=buyerName,proto3" json:"buyer_name,omitempty"`
+	BuyerPan       string                 `protobuf:"bytes,6,opt,name=buyer_pan,json=buyerPan,proto3" json:"buyer_pan,omitempty"`
+	SubtotalPaisa  int64                  `protobuf:"varint,7,opt,name=subtotal_paisa,json=subtotalPaisa,proto3" json:"subtotal_paisa,omitempty"`
+	DiscountPaisa  int64                  `protobuf:"varint,8,opt,name=discount_paisa,json=discountPaisa,proto3" json:"discount_paisa,omitempty"`
+	TaxablePaisa   int64                  `protobuf:"varint,9,opt,name=taxable_paisa,json=taxablePaisa,proto3" json:"taxable_paisa,omitempty"`
+	VatPaisa       int64                  `protobuf:"varint,10,opt,name=vat_paisa,json=vatPaisa,proto3" json:"vat_paisa,omitempty"`
+	TotalPaisa     int64                  `protobuf:"varint,11,opt,name=total_paisa,json=totalPaisa,proto3" json:"total_paisa,omitempty"`
+	Status         string                 `protobuf:"bytes,12,opt,name=status,proto3" json:"status,omitempty"`
+	DisplayNumber  string                 `protobuf:"bytes,13,opt,name=display_number,json=displayNumber,proto3" json:"display_number,omitempty"` // "2083/84-12", or "E-2083/84-12" for an estimate
+	InvoiceId      string                 `protobuf:"bytes,14,opt,name=invoice_id,json=invoiceId,proto3" json:"invoice_id,omitempty"`
+	EnteredByName  string                 `protobuf:"bytes,15,opt,name=entered_by_name,json=enteredByName,proto3" json:"entered_by_name,omitempty"` // who issued the bill
+	PrintCount     int32                  `protobuf:"varint,16,opt,name=print_count,json=printCount,proto3" json:"print_count,omitempty"`
+	AdDatetimeUnix int64                  `protobuf:"varint,17,opt,name=ad_datetime_unix,json=adDatetimeUnix,proto3" json:"ad_datetime_unix,omitempty"`
+	// The bill's most recent print (original or reprint), from the print log;
+	// 0 / "" when it was never printed.
+	LastPrintedAtUnix int64  `protobuf:"varint,18,opt,name=last_printed_at_unix,json=lastPrintedAtUnix,proto3" json:"last_printed_at_unix,omitempty"`
+	LastPrintedByName string `protobuf:"bytes,19,opt,name=last_printed_by_name,json=lastPrintedByName,proto3" json:"last_printed_by_name,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *SalesBookRow) Reset() {
@@ -393,6 +477,55 @@ func (x *SalesBookRow) GetStatus() string {
 	return ""
 }
 
+func (x *SalesBookRow) GetDisplayNumber() string {
+	if x != nil {
+		return x.DisplayNumber
+	}
+	return ""
+}
+
+func (x *SalesBookRow) GetInvoiceId() string {
+	if x != nil {
+		return x.InvoiceId
+	}
+	return ""
+}
+
+func (x *SalesBookRow) GetEnteredByName() string {
+	if x != nil {
+		return x.EnteredByName
+	}
+	return ""
+}
+
+func (x *SalesBookRow) GetPrintCount() int32 {
+	if x != nil {
+		return x.PrintCount
+	}
+	return 0
+}
+
+func (x *SalesBookRow) GetAdDatetimeUnix() int64 {
+	if x != nil {
+		return x.AdDatetimeUnix
+	}
+	return 0
+}
+
+func (x *SalesBookRow) GetLastPrintedAtUnix() int64 {
+	if x != nil {
+		return x.LastPrintedAtUnix
+	}
+	return 0
+}
+
+func (x *SalesBookRow) GetLastPrintedByName() string {
+	if x != nil {
+		return x.LastPrintedByName
+	}
+	return ""
+}
+
 type SalesBookResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Rows          []*SalesBookRow        `protobuf:"bytes,1,rep,name=rows,proto3" json:"rows,omitempty"`
@@ -438,14 +571,19 @@ func (x *SalesBookResponse) GetRows() []*SalesBookRow {
 }
 
 type DailySalesRow struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	BsDate        string                 `protobuf:"bytes,1,opt,name=bs_date,json=bsDate,proto3" json:"bs_date,omitempty"`
-	InvoiceCount  int32                  `protobuf:"varint,2,opt,name=invoice_count,json=invoiceCount,proto3" json:"invoice_count,omitempty"`
-	TotalPaisa    int64                  `protobuf:"varint,3,opt,name=total_paisa,json=totalPaisa,proto3" json:"total_paisa,omitempty"`
-	VatPaisa      int64                  `protobuf:"varint,4,opt,name=vat_paisa,json=vatPaisa,proto3" json:"vat_paisa,omitempty"`
-	TaxablePaisa  int64                  `protobuf:"varint,5,opt,name=taxable_paisa,json=taxablePaisa,proto3" json:"taxable_paisa,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	BsDate             string                 `protobuf:"bytes,1,opt,name=bs_date,json=bsDate,proto3" json:"bs_date,omitempty"`
+	InvoiceCount       int32                  `protobuf:"varint,2,opt,name=invoice_count,json=invoiceCount,proto3" json:"invoice_count,omitempty"`
+	TotalPaisa         int64                  `protobuf:"varint,3,opt,name=total_paisa,json=totalPaisa,proto3" json:"total_paisa,omitempty"`
+	VatPaisa           int64                  `protobuf:"varint,4,opt,name=vat_paisa,json=vatPaisa,proto3" json:"vat_paisa,omitempty"`
+	TaxablePaisa       int64                  `protobuf:"varint,5,opt,name=taxable_paisa,json=taxablePaisa,proto3" json:"taxable_paisa,omitempty"`
+	AdDate             string                 `protobuf:"bytes,6,opt,name=ad_date,json=adDate,proto3" json:"ad_date,omitempty"` // "YYYY-MM-DD", Kathmandu
+	DiscountPaisa      int64                  `protobuf:"varint,7,opt,name=discount_paisa,json=discountPaisa,proto3" json:"discount_paisa,omitempty"`
+	ServiceChargePaisa int64                  `protobuf:"varint,8,opt,name=service_charge_paisa,json=serviceChargePaisa,proto3" json:"service_charge_paisa,omitempty"`
+	ByMethod           []*MethodTotal         `protobuf:"bytes,9,rep,name=by_method,json=byMethod,proto3" json:"by_method,omitempty"`                     // confirmed payments on the day's issued bills
+	CancelledCount     int32                  `protobuf:"varint,10,opt,name=cancelled_count,json=cancelledCount,proto3" json:"cancelled_count,omitempty"` // bills issued that day and since cancelled
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *DailySalesRow) Reset() {
@@ -513,6 +651,41 @@ func (x *DailySalesRow) GetTaxablePaisa() int64 {
 	return 0
 }
 
+func (x *DailySalesRow) GetAdDate() string {
+	if x != nil {
+		return x.AdDate
+	}
+	return ""
+}
+
+func (x *DailySalesRow) GetDiscountPaisa() int64 {
+	if x != nil {
+		return x.DiscountPaisa
+	}
+	return 0
+}
+
+func (x *DailySalesRow) GetServiceChargePaisa() int64 {
+	if x != nil {
+		return x.ServiceChargePaisa
+	}
+	return 0
+}
+
+func (x *DailySalesRow) GetByMethod() []*MethodTotal {
+	if x != nil {
+		return x.ByMethod
+	}
+	return nil
+}
+
+func (x *DailySalesRow) GetCancelledCount() int32 {
+	if x != nil {
+		return x.CancelledCount
+	}
+	return 0
+}
+
 type DailySalesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Rows          []*DailySalesRow       `protobuf:"bytes,1,rep,name=rows,proto3" json:"rows,omitempty"`
@@ -566,6 +739,13 @@ type CancelledInvoiceRow struct {
 	Reason            string                 `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
 	CancelledByUserId string                 `protobuf:"bytes,6,opt,name=cancelled_by_user_id,json=cancelledByUserId,proto3" json:"cancelled_by_user_id,omitempty"`
 	CancelledAtUnix   int64                  `protobuf:"varint,7,opt,name=cancelled_at_unix,json=cancelledAtUnix,proto3" json:"cancelled_at_unix,omitempty"`
+	DisplayNumber     string                 `protobuf:"bytes,8,opt,name=display_number,json=displayNumber,proto3" json:"display_number,omitempty"`
+	InvoiceId         string                 `protobuf:"bytes,9,opt,name=invoice_id,json=invoiceId,proto3" json:"invoice_id,omitempty"`
+	IssuedByUserId    string                 `protobuf:"bytes,10,opt,name=issued_by_user_id,json=issuedByUserId,proto3" json:"issued_by_user_id,omitempty"`
+	IssuedByName      string                 `protobuf:"bytes,11,opt,name=issued_by_name,json=issuedByName,proto3" json:"issued_by_name,omitempty"`
+	CancelledByName   string                 `protobuf:"bytes,12,opt,name=cancelled_by_name,json=cancelledByName,proto3" json:"cancelled_by_name,omitempty"`
+	ApprovedByUserId  string                 `protobuf:"bytes,13,opt,name=approved_by_user_id,json=approvedByUserId,proto3" json:"approved_by_user_id,omitempty"`
+	ApprovedByName    string                 `protobuf:"bytes,14,opt,name=approved_by_name,json=approvedByName,proto3" json:"approved_by_name,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -649,6 +829,55 @@ func (x *CancelledInvoiceRow) GetCancelledAtUnix() int64 {
 	return 0
 }
 
+func (x *CancelledInvoiceRow) GetDisplayNumber() string {
+	if x != nil {
+		return x.DisplayNumber
+	}
+	return ""
+}
+
+func (x *CancelledInvoiceRow) GetInvoiceId() string {
+	if x != nil {
+		return x.InvoiceId
+	}
+	return ""
+}
+
+func (x *CancelledInvoiceRow) GetIssuedByUserId() string {
+	if x != nil {
+		return x.IssuedByUserId
+	}
+	return ""
+}
+
+func (x *CancelledInvoiceRow) GetIssuedByName() string {
+	if x != nil {
+		return x.IssuedByName
+	}
+	return ""
+}
+
+func (x *CancelledInvoiceRow) GetCancelledByName() string {
+	if x != nil {
+		return x.CancelledByName
+	}
+	return ""
+}
+
+func (x *CancelledInvoiceRow) GetApprovedByUserId() string {
+	if x != nil {
+		return x.ApprovedByUserId
+	}
+	return ""
+}
+
+func (x *CancelledInvoiceRow) GetApprovedByName() string {
+	if x != nil {
+		return x.ApprovedByName
+	}
+	return ""
+}
+
 type CancelledInvoicesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Rows          []*CancelledInvoiceRow `protobuf:"bytes,1,rep,name=rows,proto3" json:"rows,omitempty"`
@@ -697,8 +926,9 @@ type AuditLogRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	FromUnix      int64                  `protobuf:"varint,1,opt,name=from_unix,json=fromUnix,proto3" json:"from_unix,omitempty"`
 	ToUnix        int64                  `protobuf:"varint,2,opt,name=to_unix,json=toUnix,proto3" json:"to_unix,omitempty"`
-	Action        string                 `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"` // "" = any
-	Limit         int32                  `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`  // 0 -> default 200
+	Action        string                 `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`                  // "" = any
+	Limit         int32                  `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`                   // 0 -> default 200
+	ActorId       string                 `protobuf:"bytes,5,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"` // "" = anyone
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -761,6 +991,13 @@ func (x *AuditLogRequest) GetLimit() int32 {
 	return 0
 }
 
+func (x *AuditLogRequest) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
 type AuditEntry struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Id             int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -771,6 +1008,11 @@ type AuditEntry struct {
 	Reason         string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
 	ApproverUserId string                 `protobuf:"bytes,7,opt,name=approver_user_id,json=approverUserId,proto3" json:"approver_user_id,omitempty"`
 	CreatedAtUnix  int64                  `protobuf:"varint,8,opt,name=created_at_unix,json=createdAtUnix,proto3" json:"created_at_unix,omitempty"`
+	ActorName      string                 `protobuf:"bytes,9,opt,name=actor_name,json=actorName,proto3" json:"actor_name,omitempty"`
+	ApproverName   string                 `protobuf:"bytes,10,opt,name=approver_name,json=approverName,proto3" json:"approver_name,omitempty"`
+	Subject        string                 `protobuf:"bytes,11,opt,name=subject,proto3" json:"subject,omitempty"` // readable: "E-2083/84-3", "Chicken Momo", "T4", a staff name...
+	DeviceLabel    string                 `protobuf:"bytes,12,opt,name=device_label,json=deviceLabel,proto3" json:"device_label,omitempty"`
+	Detail         string                 `protobuf:"bytes,13,opt,name=detail,proto3" json:"detail,omitempty"` // readable: reason, amounts, counted cash...
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -859,6 +1101,41 @@ func (x *AuditEntry) GetCreatedAtUnix() int64 {
 		return x.CreatedAtUnix
 	}
 	return 0
+}
+
+func (x *AuditEntry) GetActorName() string {
+	if x != nil {
+		return x.ActorName
+	}
+	return ""
+}
+
+func (x *AuditEntry) GetApproverName() string {
+	if x != nil {
+		return x.ApproverName
+	}
+	return ""
+}
+
+func (x *AuditEntry) GetSubject() string {
+	if x != nil {
+		return x.Subject
+	}
+	return ""
+}
+
+func (x *AuditEntry) GetDeviceLabel() string {
+	if x != nil {
+		return x.DeviceLabel
+	}
+	return ""
+}
+
+func (x *AuditEntry) GetDetail() string {
+	if x != nil {
+		return x.Detail
+	}
+	return ""
 }
 
 type AuditLogResponse struct {
@@ -957,16 +1234,198 @@ func (x *CsvExport) GetFilename() string {
 	return ""
 }
 
+// Every credit account whose balance is not zero, oldest unpaid bill first
+// (accounts with none last), then by name.
+type CreditReportRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreditReportRequest) Reset() {
+	*x = CreditReportRequest{}
+	mi := &file_restaurant_v1_report_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreditReportRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreditReportRequest) ProtoMessage() {}
+
+func (x *CreditReportRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_report_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreditReportRequest.ProtoReflect.Descriptor instead.
+func (*CreditReportRequest) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_report_proto_rawDescGZIP(), []int{14}
+}
+
+type CreditReportRow struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	CustomerId          string                 `protobuf:"bytes,1,opt,name=customer_id,json=customerId,proto3" json:"customer_id,omitempty"`
+	Name                string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Phone               string                 `protobuf:"bytes,3,opt,name=phone,proto3" json:"phone,omitempty"`
+	Active              bool                   `protobuf:"varint,4,opt,name=active,proto3" json:"active,omitempty"`
+	BalancePaisa        int64                  `protobuf:"varint,5,opt,name=balance_paisa,json=balancePaisa,proto3" json:"balance_paisa,omitempty"`
+	CreditLimitPaisa    int64                  `protobuf:"varint,6,opt,name=credit_limit_paisa,json=creditLimitPaisa,proto3" json:"credit_limit_paisa,omitempty"`
+	OldestUnpaidAtUnix  int64                  `protobuf:"varint,7,opt,name=oldest_unpaid_at_unix,json=oldestUnpaidAtUnix,proto3" json:"oldest_unpaid_at_unix,omitempty"`    // issue time of the oldest bill not yet paid off; 0 = none
+	LastRepaymentAtUnix int64                  `protobuf:"varint,8,opt,name=last_repayment_at_unix,json=lastRepaymentAtUnix,proto3" json:"last_repayment_at_unix,omitempty"` // 0 = none
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *CreditReportRow) Reset() {
+	*x = CreditReportRow{}
+	mi := &file_restaurant_v1_report_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreditReportRow) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreditReportRow) ProtoMessage() {}
+
+func (x *CreditReportRow) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_report_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreditReportRow.ProtoReflect.Descriptor instead.
+func (*CreditReportRow) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_report_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *CreditReportRow) GetCustomerId() string {
+	if x != nil {
+		return x.CustomerId
+	}
+	return ""
+}
+
+func (x *CreditReportRow) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreditReportRow) GetPhone() string {
+	if x != nil {
+		return x.Phone
+	}
+	return ""
+}
+
+func (x *CreditReportRow) GetActive() bool {
+	if x != nil {
+		return x.Active
+	}
+	return false
+}
+
+func (x *CreditReportRow) GetBalancePaisa() int64 {
+	if x != nil {
+		return x.BalancePaisa
+	}
+	return 0
+}
+
+func (x *CreditReportRow) GetCreditLimitPaisa() int64 {
+	if x != nil {
+		return x.CreditLimitPaisa
+	}
+	return 0
+}
+
+func (x *CreditReportRow) GetOldestUnpaidAtUnix() int64 {
+	if x != nil {
+		return x.OldestUnpaidAtUnix
+	}
+	return 0
+}
+
+func (x *CreditReportRow) GetLastRepaymentAtUnix() int64 {
+	if x != nil {
+		return x.LastRepaymentAtUnix
+	}
+	return 0
+}
+
+type CreditReportResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rows          []*CreditReportRow     `protobuf:"bytes,1,rep,name=rows,proto3" json:"rows,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreditReportResponse) Reset() {
+	*x = CreditReportResponse{}
+	mi := &file_restaurant_v1_report_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreditReportResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreditReportResponse) ProtoMessage() {}
+
+func (x *CreditReportResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_report_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreditReportResponse.ProtoReflect.Descriptor instead.
+func (*CreditReportResponse) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_report_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *CreditReportResponse) GetRows() []*CreditReportRow {
+	if x != nil {
+		return x.Rows
+	}
+	return nil
+}
+
 var File_restaurant_v1_report_proto protoreflect.FileDescriptor
 
 const file_restaurant_v1_report_proto_rawDesc = "" +
 	"\n" +
-	"\x1arestaurant/v1/report.proto\x12\rrestaurant.v1\"\x12\n" +
+	"\x1arestaurant/v1/report.proto\x12\rrestaurant.v1\x1a\x19restaurant/v1/shift.proto\"\x12\n" +
 	"\x10DashboardRequest\"\\\n" +
 	"\aTopItem\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\bquantity\x18\x02 \x01(\x05R\bquantity\x12!\n" +
-	"\famount_paisa\x18\x03 \x01(\x03R\vamountPaisa\"\xac\x02\n" +
+	"\famount_paisa\x18\x03 \x01(\x03R\vamountPaisa\"\xae\x05\n" +
 	"\x11DashboardResponse\x12*\n" +
 	"\x11today_sales_paisa\x18\x01 \x01(\x03R\x0ftodaySalesPaisa\x12.\n" +
 	"\x13today_invoice_count\x18\x02 \x01(\x05R\x11todayInvoiceCount\x12\x1f\n" +
@@ -977,10 +1436,20 @@ const file_restaurant_v1_report_proto_rawDesc = "" +
 	"\n" +
 	"void_count\x18\x05 \x01(\x05R\tvoidCount\x12%\n" +
 	"\x0ediscount_count\x18\x06 \x01(\x05R\rdiscountCount\x123\n" +
-	"\ttop_items\x18\a \x03(\v2\x16.restaurant.v1.TopItemR\btopItems\"D\n" +
+	"\ttop_items\x18\a \x03(\v2\x16.restaurant.v1.TopItemR\btopItems\x127\n" +
+	"\tby_method\x18\b \x03(\v2\x1a.restaurant.v1.MethodTotalR\bbyMethod\x12%\n" +
+	"\x0ediscount_paisa\x18\t \x01(\x03R\rdiscountPaisa\x12(\n" +
+	"\x10void_value_paisa\x18\n" +
+	" \x01(\x03R\x0evoidValuePaisa\x12'\n" +
+	"\x0fcancelled_count\x18\v \x01(\x05R\x0ecancelledCount\x122\n" +
+	"\x15cancelled_value_paisa\x18\f \x01(\x03R\x13cancelledValuePaisa\x127\n" +
+	"\x18credit_given_today_paisa\x18\r \x01(\x03R\x15creditGivenTodayPaisa\x124\n" +
+	"\x16repayments_today_paisa\x18\x0e \x01(\x03R\x14repaymentsTodayPaisa\x12*\n" +
+	"\x11credit_owed_paisa\x18\x0f \x01(\x03R\x0fcreditOwedPaisa\"q\n" +
 	"\fRangeRequest\x12\x1b\n" +
 	"\tfrom_unix\x18\x01 \x01(\x03R\bfromUnix\x12\x17\n" +
-	"\ato_unix\x18\x02 \x01(\x03R\x06toUnix\"\xf9\x02\n" +
+	"\ato_unix\x18\x02 \x01(\x03R\x06toUnix\x12+\n" +
+	"\x11include_estimates\x18\x03 \x01(\bR\x10includeEstimates\"\x94\x05\n" +
 	"\fSalesBookRow\x12\x1f\n" +
 	"\vfiscal_year\x18\x01 \x01(\tR\n" +
 	"fiscalYear\x12\x16\n" +
@@ -997,18 +1466,33 @@ const file_restaurant_v1_report_proto_rawDesc = "" +
 	" \x01(\x03R\bvatPaisa\x12\x1f\n" +
 	"\vtotal_paisa\x18\v \x01(\x03R\n" +
 	"totalPaisa\x12\x16\n" +
-	"\x06status\x18\f \x01(\tR\x06status\"D\n" +
+	"\x06status\x18\f \x01(\tR\x06status\x12%\n" +
+	"\x0edisplay_number\x18\r \x01(\tR\rdisplayNumber\x12\x1d\n" +
+	"\n" +
+	"invoice_id\x18\x0e \x01(\tR\tinvoiceId\x12&\n" +
+	"\x0fentered_by_name\x18\x0f \x01(\tR\renteredByName\x12\x1f\n" +
+	"\vprint_count\x18\x10 \x01(\x05R\n" +
+	"printCount\x12(\n" +
+	"\x10ad_datetime_unix\x18\x11 \x01(\x03R\x0eadDatetimeUnix\x12/\n" +
+	"\x14last_printed_at_unix\x18\x12 \x01(\x03R\x11lastPrintedAtUnix\x12/\n" +
+	"\x14last_printed_by_name\x18\x13 \x01(\tR\x11lastPrintedByName\"D\n" +
 	"\x11SalesBookResponse\x12/\n" +
-	"\x04rows\x18\x01 \x03(\v2\x1b.restaurant.v1.SalesBookRowR\x04rows\"\xb0\x01\n" +
+	"\x04rows\x18\x01 \x03(\v2\x1b.restaurant.v1.SalesBookRowR\x04rows\"\x84\x03\n" +
 	"\rDailySalesRow\x12\x17\n" +
 	"\abs_date\x18\x01 \x01(\tR\x06bsDate\x12#\n" +
 	"\rinvoice_count\x18\x02 \x01(\x05R\finvoiceCount\x12\x1f\n" +
 	"\vtotal_paisa\x18\x03 \x01(\x03R\n" +
 	"totalPaisa\x12\x1b\n" +
 	"\tvat_paisa\x18\x04 \x01(\x03R\bvatPaisa\x12#\n" +
-	"\rtaxable_paisa\x18\x05 \x01(\x03R\ftaxablePaisa\"F\n" +
+	"\rtaxable_paisa\x18\x05 \x01(\x03R\ftaxablePaisa\x12\x17\n" +
+	"\aad_date\x18\x06 \x01(\tR\x06adDate\x12%\n" +
+	"\x0ediscount_paisa\x18\a \x01(\x03R\rdiscountPaisa\x120\n" +
+	"\x14service_charge_paisa\x18\b \x01(\x03R\x12serviceChargePaisa\x127\n" +
+	"\tby_method\x18\t \x03(\v2\x1a.restaurant.v1.MethodTotalR\bbyMethod\x12'\n" +
+	"\x0fcancelled_count\x18\n" +
+	" \x01(\x05R\x0ecancelledCount\"F\n" +
 	"\x12DailySalesResponse\x120\n" +
-	"\x04rows\x18\x01 \x03(\v2\x1c.restaurant.v1.DailySalesRowR\x04rows\"\xfd\x01\n" +
+	"\x04rows\x18\x01 \x03(\v2\x1c.restaurant.v1.DailySalesRowR\x04rows\"\x99\x04\n" +
 	"\x13CancelledInvoiceRow\x12\x16\n" +
 	"\x06number\x18\x01 \x01(\x05R\x06number\x12\x1f\n" +
 	"\vfiscal_year\x18\x02 \x01(\tR\n" +
@@ -1018,14 +1502,24 @@ const file_restaurant_v1_report_proto_rawDesc = "" +
 	"totalPaisa\x12\x16\n" +
 	"\x06reason\x18\x05 \x01(\tR\x06reason\x12/\n" +
 	"\x14cancelled_by_user_id\x18\x06 \x01(\tR\x11cancelledByUserId\x12*\n" +
-	"\x11cancelled_at_unix\x18\a \x01(\x03R\x0fcancelledAtUnix\"S\n" +
+	"\x11cancelled_at_unix\x18\a \x01(\x03R\x0fcancelledAtUnix\x12%\n" +
+	"\x0edisplay_number\x18\b \x01(\tR\rdisplayNumber\x12\x1d\n" +
+	"\n" +
+	"invoice_id\x18\t \x01(\tR\tinvoiceId\x12)\n" +
+	"\x11issued_by_user_id\x18\n" +
+	" \x01(\tR\x0eissuedByUserId\x12$\n" +
+	"\x0eissued_by_name\x18\v \x01(\tR\fissuedByName\x12*\n" +
+	"\x11cancelled_by_name\x18\f \x01(\tR\x0fcancelledByName\x12-\n" +
+	"\x13approved_by_user_id\x18\r \x01(\tR\x10approvedByUserId\x12(\n" +
+	"\x10approved_by_name\x18\x0e \x01(\tR\x0eapprovedByName\"S\n" +
 	"\x19CancelledInvoicesResponse\x126\n" +
-	"\x04rows\x18\x01 \x03(\v2\".restaurant.v1.CancelledInvoiceRowR\x04rows\"u\n" +
+	"\x04rows\x18\x01 \x03(\v2\".restaurant.v1.CancelledInvoiceRowR\x04rows\"\x90\x01\n" +
 	"\x0fAuditLogRequest\x12\x1b\n" +
 	"\tfrom_unix\x18\x01 \x01(\x03R\bfromUnix\x12\x17\n" +
 	"\ato_unix\x18\x02 \x01(\x03R\x06toUnix\x12\x16\n" +
 	"\x06action\x18\x03 \x01(\tR\x06action\x12\x14\n" +
-	"\x05limit\x18\x04 \x01(\x05R\x05limit\"\xf7\x01\n" +
+	"\x05limit\x18\x04 \x01(\x05R\x05limit\x12\x19\n" +
+	"\bactor_id\x18\x05 \x01(\tR\aactorId\"\x90\x03\n" +
 	"\n" +
 	"AuditEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\"\n" +
@@ -1035,12 +1529,32 @@ const file_restaurant_v1_report_proto_rawDesc = "" +
 	"\tentity_id\x18\x05 \x01(\tR\bentityId\x12\x16\n" +
 	"\x06reason\x18\x06 \x01(\tR\x06reason\x12(\n" +
 	"\x10approver_user_id\x18\a \x01(\tR\x0eapproverUserId\x12&\n" +
-	"\x0fcreated_at_unix\x18\b \x01(\x03R\rcreatedAtUnix\"G\n" +
+	"\x0fcreated_at_unix\x18\b \x01(\x03R\rcreatedAtUnix\x12\x1d\n" +
+	"\n" +
+	"actor_name\x18\t \x01(\tR\tactorName\x12#\n" +
+	"\rapprover_name\x18\n" +
+	" \x01(\tR\fapproverName\x12\x18\n" +
+	"\asubject\x18\v \x01(\tR\asubject\x12!\n" +
+	"\fdevice_label\x18\f \x01(\tR\vdeviceLabel\x12\x16\n" +
+	"\x06detail\x18\r \x01(\tR\x06detail\"G\n" +
 	"\x10AuditLogResponse\x123\n" +
 	"\aentries\x18\x01 \x03(\v2\x19.restaurant.v1.AuditEntryR\aentries\";\n" +
 	"\tCsvExport\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x12\x1a\n" +
-	"\bfilename\x18\x02 \x01(\tR\bfilename2\xef\x03\n" +
+	"\bfilename\x18\x02 \x01(\tR\bfilename\"\x15\n" +
+	"\x13CreditReportRequest\"\xaf\x02\n" +
+	"\x0fCreditReportRow\x12\x1f\n" +
+	"\vcustomer_id\x18\x01 \x01(\tR\n" +
+	"customerId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
+	"\x05phone\x18\x03 \x01(\tR\x05phone\x12\x16\n" +
+	"\x06active\x18\x04 \x01(\bR\x06active\x12#\n" +
+	"\rbalance_paisa\x18\x05 \x01(\x03R\fbalancePaisa\x12,\n" +
+	"\x12credit_limit_paisa\x18\x06 \x01(\x03R\x10creditLimitPaisa\x121\n" +
+	"\x15oldest_unpaid_at_unix\x18\a \x01(\x03R\x12oldestUnpaidAtUnix\x123\n" +
+	"\x16last_repayment_at_unix\x18\b \x01(\x03R\x13lastRepaymentAtUnix\"J\n" +
+	"\x14CreditReportResponse\x122\n" +
+	"\x04rows\x18\x01 \x03(\v2\x1e.restaurant.v1.CreditReportRowR\x04rows2\xc8\x04\n" +
 	"\rReportService\x12N\n" +
 	"\tDashboard\x12\x1f.restaurant.v1.DashboardRequest\x1a .restaurant.v1.DashboardResponse\x12J\n" +
 	"\tSalesBook\x12\x1b.restaurant.v1.RangeRequest\x1a .restaurant.v1.SalesBookResponse\x12K\n" +
@@ -1048,7 +1562,8 @@ const file_restaurant_v1_report_proto_rawDesc = "" +
 	"\n" +
 	"DailySales\x12\x1b.restaurant.v1.RangeRequest\x1a!.restaurant.v1.DailySalesResponse\x12Z\n" +
 	"\x11CancelledInvoices\x12\x1b.restaurant.v1.RangeRequest\x1a(.restaurant.v1.CancelledInvoicesResponse\x12K\n" +
-	"\bAuditLog\x12\x1e.restaurant.v1.AuditLogRequest\x1a\x1f.restaurant.v1.AuditLogResponseB\xb5\x01\n" +
+	"\bAuditLog\x12\x1e.restaurant.v1.AuditLogRequest\x1a\x1f.restaurant.v1.AuditLogResponse\x12W\n" +
+	"\fCreditReport\x12\".restaurant.v1.CreditReportRequest\x1a#.restaurant.v1.CreditReportResponseB\xb5\x01\n" +
 	"\x11com.restaurant.v1B\vReportProtoP\x01Z>github.com/oneaccord/restro/api/gen/restaurant/v1;restaurantv1\xa2\x02\x03RXX\xaa\x02\rRestaurant.V1\xca\x02\rRestaurant\\V1\xe2\x02\x19Restaurant\\V1\\GPBMetadata\xea\x02\x0eRestaurant::V1b\x06proto3"
 
 var (
@@ -1063,7 +1578,7 @@ func file_restaurant_v1_report_proto_rawDescGZIP() []byte {
 	return file_restaurant_v1_report_proto_rawDescData
 }
 
-var file_restaurant_v1_report_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_restaurant_v1_report_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_restaurant_v1_report_proto_goTypes = []any{
 	(*DashboardRequest)(nil),          // 0: restaurant.v1.DashboardRequest
 	(*TopItem)(nil),                   // 1: restaurant.v1.TopItem
@@ -1079,30 +1594,39 @@ var file_restaurant_v1_report_proto_goTypes = []any{
 	(*AuditEntry)(nil),                // 11: restaurant.v1.AuditEntry
 	(*AuditLogResponse)(nil),          // 12: restaurant.v1.AuditLogResponse
 	(*CsvExport)(nil),                 // 13: restaurant.v1.CsvExport
+	(*CreditReportRequest)(nil),       // 14: restaurant.v1.CreditReportRequest
+	(*CreditReportRow)(nil),           // 15: restaurant.v1.CreditReportRow
+	(*CreditReportResponse)(nil),      // 16: restaurant.v1.CreditReportResponse
+	(*MethodTotal)(nil),               // 17: restaurant.v1.MethodTotal
 }
 var file_restaurant_v1_report_proto_depIdxs = []int32{
 	1,  // 0: restaurant.v1.DashboardResponse.top_items:type_name -> restaurant.v1.TopItem
-	4,  // 1: restaurant.v1.SalesBookResponse.rows:type_name -> restaurant.v1.SalesBookRow
-	6,  // 2: restaurant.v1.DailySalesResponse.rows:type_name -> restaurant.v1.DailySalesRow
-	8,  // 3: restaurant.v1.CancelledInvoicesResponse.rows:type_name -> restaurant.v1.CancelledInvoiceRow
-	11, // 4: restaurant.v1.AuditLogResponse.entries:type_name -> restaurant.v1.AuditEntry
-	0,  // 5: restaurant.v1.ReportService.Dashboard:input_type -> restaurant.v1.DashboardRequest
-	3,  // 6: restaurant.v1.ReportService.SalesBook:input_type -> restaurant.v1.RangeRequest
-	3,  // 7: restaurant.v1.ReportService.ExportSalesBookCsv:input_type -> restaurant.v1.RangeRequest
-	3,  // 8: restaurant.v1.ReportService.DailySales:input_type -> restaurant.v1.RangeRequest
-	3,  // 9: restaurant.v1.ReportService.CancelledInvoices:input_type -> restaurant.v1.RangeRequest
-	10, // 10: restaurant.v1.ReportService.AuditLog:input_type -> restaurant.v1.AuditLogRequest
-	2,  // 11: restaurant.v1.ReportService.Dashboard:output_type -> restaurant.v1.DashboardResponse
-	5,  // 12: restaurant.v1.ReportService.SalesBook:output_type -> restaurant.v1.SalesBookResponse
-	13, // 13: restaurant.v1.ReportService.ExportSalesBookCsv:output_type -> restaurant.v1.CsvExport
-	7,  // 14: restaurant.v1.ReportService.DailySales:output_type -> restaurant.v1.DailySalesResponse
-	9,  // 15: restaurant.v1.ReportService.CancelledInvoices:output_type -> restaurant.v1.CancelledInvoicesResponse
-	12, // 16: restaurant.v1.ReportService.AuditLog:output_type -> restaurant.v1.AuditLogResponse
-	11, // [11:17] is the sub-list for method output_type
-	5,  // [5:11] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	17, // 1: restaurant.v1.DashboardResponse.by_method:type_name -> restaurant.v1.MethodTotal
+	4,  // 2: restaurant.v1.SalesBookResponse.rows:type_name -> restaurant.v1.SalesBookRow
+	17, // 3: restaurant.v1.DailySalesRow.by_method:type_name -> restaurant.v1.MethodTotal
+	6,  // 4: restaurant.v1.DailySalesResponse.rows:type_name -> restaurant.v1.DailySalesRow
+	8,  // 5: restaurant.v1.CancelledInvoicesResponse.rows:type_name -> restaurant.v1.CancelledInvoiceRow
+	11, // 6: restaurant.v1.AuditLogResponse.entries:type_name -> restaurant.v1.AuditEntry
+	15, // 7: restaurant.v1.CreditReportResponse.rows:type_name -> restaurant.v1.CreditReportRow
+	0,  // 8: restaurant.v1.ReportService.Dashboard:input_type -> restaurant.v1.DashboardRequest
+	3,  // 9: restaurant.v1.ReportService.SalesBook:input_type -> restaurant.v1.RangeRequest
+	3,  // 10: restaurant.v1.ReportService.ExportSalesBookCsv:input_type -> restaurant.v1.RangeRequest
+	3,  // 11: restaurant.v1.ReportService.DailySales:input_type -> restaurant.v1.RangeRequest
+	3,  // 12: restaurant.v1.ReportService.CancelledInvoices:input_type -> restaurant.v1.RangeRequest
+	10, // 13: restaurant.v1.ReportService.AuditLog:input_type -> restaurant.v1.AuditLogRequest
+	14, // 14: restaurant.v1.ReportService.CreditReport:input_type -> restaurant.v1.CreditReportRequest
+	2,  // 15: restaurant.v1.ReportService.Dashboard:output_type -> restaurant.v1.DashboardResponse
+	5,  // 16: restaurant.v1.ReportService.SalesBook:output_type -> restaurant.v1.SalesBookResponse
+	13, // 17: restaurant.v1.ReportService.ExportSalesBookCsv:output_type -> restaurant.v1.CsvExport
+	7,  // 18: restaurant.v1.ReportService.DailySales:output_type -> restaurant.v1.DailySalesResponse
+	9,  // 19: restaurant.v1.ReportService.CancelledInvoices:output_type -> restaurant.v1.CancelledInvoicesResponse
+	12, // 20: restaurant.v1.ReportService.AuditLog:output_type -> restaurant.v1.AuditLogResponse
+	16, // 21: restaurant.v1.ReportService.CreditReport:output_type -> restaurant.v1.CreditReportResponse
+	15, // [15:22] is the sub-list for method output_type
+	8,  // [8:15] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_restaurant_v1_report_proto_init() }
@@ -1110,13 +1634,14 @@ func file_restaurant_v1_report_proto_init() {
 	if File_restaurant_v1_report_proto != nil {
 		return
 	}
+	file_restaurant_v1_shift_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_restaurant_v1_report_proto_rawDesc), len(file_restaurant_v1_report_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

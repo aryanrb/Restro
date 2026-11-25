@@ -1,0 +1,175 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+import "buf/validate/validate.proto";
+import "restaurant/v1/common.proto";
+import "restaurant/v1/order.proto";
+import "restaurant/v1/report.proto";
+import "restaurant/v1/shift.proto";
+
+// ---------------------------------------------------------------------------
+// LiveService — the owner's read-only live view of the floor, kitchen and till
+// (web: live-api.ts). Owner and manager only (NOT_ALLOWED otherwise). Nothing here
+// changes anything. Built on each call from open orders, open shifts and today's
+// audit log; clients refetch on the existing realtime events (throttled) and poll
+// every 30 s as a backup. Minute counters tick on the client from the timestamps.
+// ---------------------------------------------------------------------------
+
+// Table / order state, most urgent first (the web's STATE_PRIORITY). BILL_REQUESTED
+// needs an Order.bill_requested_at the backend doesn't have yet: it never appears.
+enum LiveState {
+  LIVE_STATE_UNSPECIFIED = 0;
+  LIVE_STATE_BILL_REQUESTED = 1;
+  LIVE_STATE_READY = 2;    // an item is ready and not served
+  LIVE_STATE_COOKING = 3;  // an item is PREPARING
+  LIVE_STATE_ORDERED = 4;  // items SENT, kitchen not started
+  LIVE_STATE_SERVED = 5;   // every live item served, not all billed
+  LIVE_STATE_SEATED = 6;   // order open, nothing sent (or all voided)
+  LIVE_STATE_BILLED = 7;   // every live item served and on an issued bill, order not closed
+  LIVE_STATE_FREE = 8;     // tables only: no open order
+}
+
+// Items of an order by status (DRAFT lines are not counted: not sent yet).
+message LiveItemCounts {
+  int32 sent = 1;
+  int32 preparing = 2;
+  int32 ready = 3;
+  int32 served = 4;
+  int32 voided = 5;
+}
+
+message LiveOrder {
+  string id = 1;
+  OrderType type = 2;
+  string place = 3;                    // table name, else the order label
+  string table_id = 4;                 // "" for takeaway
+  string waiter_name = 5;
+  int32 guest_count = 6;
+  int64 created_at_unix = 7;
+  int64 last_sent_at_unix = 8;         // latest send to the kitchen; 0 = nothing sent
+  int64 bill_requested_at_unix = 9;    // always 0 for now (see LiveState)
+  LiveState state = 10;
+  // Live (non-voided) lines at their snapshotted prices, before service charge and
+  // VAT ("approx."); billed_total is the part already on issued bills.
+  int64 running_total_paisa = 11;
+  int64 billed_total_paisa = 12;
+  LiveItemCounts item_counts = 13;
+  // Oldest item still waiting for the kitchen (SENT or PREPARING); absent when none.
+  optional int32 oldest_waiting_minutes = 14;
+  bool late = 15;                      // that wait reached the KDS red threshold
+}
+
+message LiveTable {
+  string table_id = 1;
+  string area_id = 2;
+  string name = 3;
+  int32 seats = 4;
+  LiveState state = 5;                 // the most urgent of its orders; FREE when none
+  repeated LiveOrder orders = 6;
+}
+
+message LiveArea {
+  string id = 1;
+  LocalText name = 2;
+}
+
+message LiveLateItem {
+  string order_id = 1;
+  string place = 2;
+  LocalText name = 3;
+  int32 quantity = 4;
+  int32 minutes = 5;
+}
+
+// One KDS station, with the KDS's ticket grouping (order + station + send time)
+// and thresholds. Only active tickets count (something still SENT or PREPARING).
+message LiveStation {
+  string station_id = 1;
+  LocalText name = 2;
+  int32 tickets = 3;
+  int32 items_sent = 4;
+  int32 items_preparing = 5;
+  int32 items_ready = 6;
+  optional int32 oldest_minutes = 7;   // oldest active ticket; absent when none
+  int32 slow = 8;                      // at or past yellow, not red
+  int32 late = 9;                      // at or past red
+  repeated LiveLateItem late_items = 10;
+}
+
+// An open shift. takings/expected cash are the shift report's (ShiftReport) figures.
+message LiveTill {
+  string shift_id = 1;
+  string user_name = 2;
+  int64 opened_at_unix = 3;
+  int64 opening_float_paisa = 4;
+  repeated MethodTotal takings = 5;    // CASH, QR_FONEPAY, QR_OTHER, CARD (all four, in that order)
+  int64 paid_out_paisa = 6;            // supplier paid-outs: always 0 until purchases exist
+  int64 expected_cash_paisa = 7;
+}
+
+// A void, discount, bill cancellation, reprint, 86 or shift close from today's
+// audit log. entry.action is the backend action ("order.void", "invoice.cancel",
+// "invoice.reprint", "menu.item.86", "shift.close"); a discounted bill appears as
+// its "invoice.issue" entry (detail carries the discount), plain bills don't.
+message LiveException {
+  AuditEntry entry = 1;
+  string alert_id = 2;                 // "" until alerts link to audit entries
+}
+
+message LiveToday {
+  int64 sales_paisa = 1;               // ISSUED bills today (the dashboard's definition)
+  int32 bills = 2;
+  int32 covers = 3;                    // guests of today's dine-in orders (not cancelled)
+  repeated MethodTotal by_method = 4;  // money taken: CASH, QR_FONEPAY, QR_OTHER, CARD
+  optional int32 alerts_open = 5;      // absent until alerts are wired in
+}
+
+message GetLiveSnapshotRequest {}
+
+message LiveSnapshot {
+  int64 at_unix = 1;
+  int32 yellow_minutes = 2;            // settings.kds_yellow_minutes
+  int32 red_minutes = 3;               // settings.kds_red_minutes
+  LiveToday today = 4;
+  repeated LiveTable tables = 5;       // active tables, floor order
+  repeated LiveArea areas = 6;
+  repeated LiveOrder takeaway = 7;     // takeaway orders and orders without a table
+  repeated LiveStation stations = 8;
+  repeated LocalText items_86 = 9;
+  repeated LiveTill tills = 10;
+  int64 money_on_tables_paisa = 11;    // unbilled part of open orders
+  optional int64 credit_today_paisa = 12; // on-account amounts on today's issued bills
+  repeated LiveException exceptions = 13; // today, newest first, at most 50
+}
+
+message GetLiveOrderRequest {
+  string order_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message LiveOrderLine {
+  string id = 1;
+  LocalText name = 2;
+  optional LocalText variant_name = 3;
+  repeated LocalText modifiers = 4;
+  int32 quantity = 5;
+  int64 unit_price_paisa = 6;
+  OrderItemStatus status = 7;
+  int64 sent_at_unix = 8;              // 0 for a DRAFT line
+  string note = 9;
+  string void_reason = 10;
+  string voided_by_name = 11;
+  string void_approved_by_name = 12;
+  string bill_number = 13;             // display number of its issued bill; "" when unbilled
+}
+
+message LiveOrderCard {
+  LiveOrder order = 1;
+  repeated LiveOrderLine lines = 2;
+}
+
+service LiveService {
+  rpc GetSnapshot(GetLiveSnapshotRequest) returns (LiveSnapshot);
+  // Any order (open or not): the read-only order card. Unknown id -> NOT_FOUND.
+  rpc GetOrder(GetLiveOrderRequest) returns (LiveOrderCard);
+}

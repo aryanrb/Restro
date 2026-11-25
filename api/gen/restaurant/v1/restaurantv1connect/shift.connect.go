@@ -46,6 +46,8 @@ const (
 	// ShiftServiceGetShiftReportProcedure is the fully-qualified name of the ShiftService's
 	// GetShiftReport RPC.
 	ShiftServiceGetShiftReportProcedure = "/restaurant.v1.ShiftService/GetShiftReport"
+	// ShiftServiceListShiftsProcedure is the fully-qualified name of the ShiftService's ListShifts RPC.
+	ShiftServiceListShiftsProcedure = "/restaurant.v1.ShiftService/ListShifts"
 )
 
 // ShiftServiceClient is a client for the restaurant.v1.ShiftService service.
@@ -55,6 +57,9 @@ type ShiftServiceClient interface {
 	ListOpenShifts(context.Context, *connect.Request[v1.ListOpenShiftsRequest]) (*connect.Response[v1.ListOpenShiftsResponse], error)
 	CloseShift(context.Context, *connect.Request[v1.CloseShiftRequest]) (*connect.Response[v1.ShiftReport], error)
 	GetShiftReport(context.Context, *connect.Request[v1.GetShiftReportRequest]) (*connect.Response[v1.ShiftReport], error)
+	// Recent shifts (open and closed), newest first, each with its report.
+	// Cashiers see their own; managers and owners see everyone's.
+	ListShifts(context.Context, *connect.Request[v1.ListShiftsRequest]) (*connect.Response[v1.ListShiftsResponse], error)
 }
 
 // NewShiftServiceClient constructs a client for the restaurant.v1.ShiftService service. By default,
@@ -98,6 +103,12 @@ func NewShiftServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(shiftServiceMethods.ByName("GetShiftReport")),
 			connect.WithClientOptions(opts...),
 		),
+		listShifts: connect.NewClient[v1.ListShiftsRequest, v1.ListShiftsResponse](
+			httpClient,
+			baseURL+ShiftServiceListShiftsProcedure,
+			connect.WithSchema(shiftServiceMethods.ByName("ListShifts")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -108,6 +119,7 @@ type shiftServiceClient struct {
 	listOpenShifts *connect.Client[v1.ListOpenShiftsRequest, v1.ListOpenShiftsResponse]
 	closeShift     *connect.Client[v1.CloseShiftRequest, v1.ShiftReport]
 	getShiftReport *connect.Client[v1.GetShiftReportRequest, v1.ShiftReport]
+	listShifts     *connect.Client[v1.ListShiftsRequest, v1.ListShiftsResponse]
 }
 
 // OpenShift calls restaurant.v1.ShiftService.OpenShift.
@@ -135,6 +147,11 @@ func (c *shiftServiceClient) GetShiftReport(ctx context.Context, req *connect.Re
 	return c.getShiftReport.CallUnary(ctx, req)
 }
 
+// ListShifts calls restaurant.v1.ShiftService.ListShifts.
+func (c *shiftServiceClient) ListShifts(ctx context.Context, req *connect.Request[v1.ListShiftsRequest]) (*connect.Response[v1.ListShiftsResponse], error) {
+	return c.listShifts.CallUnary(ctx, req)
+}
+
 // ShiftServiceHandler is an implementation of the restaurant.v1.ShiftService service.
 type ShiftServiceHandler interface {
 	OpenShift(context.Context, *connect.Request[v1.OpenShiftRequest]) (*connect.Response[v1.Shift], error)
@@ -142,6 +159,9 @@ type ShiftServiceHandler interface {
 	ListOpenShifts(context.Context, *connect.Request[v1.ListOpenShiftsRequest]) (*connect.Response[v1.ListOpenShiftsResponse], error)
 	CloseShift(context.Context, *connect.Request[v1.CloseShiftRequest]) (*connect.Response[v1.ShiftReport], error)
 	GetShiftReport(context.Context, *connect.Request[v1.GetShiftReportRequest]) (*connect.Response[v1.ShiftReport], error)
+	// Recent shifts (open and closed), newest first, each with its report.
+	// Cashiers see their own; managers and owners see everyone's.
+	ListShifts(context.Context, *connect.Request[v1.ListShiftsRequest]) (*connect.Response[v1.ListShiftsResponse], error)
 }
 
 // NewShiftServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -181,6 +201,12 @@ func NewShiftServiceHandler(svc ShiftServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(shiftServiceMethods.ByName("GetShiftReport")),
 		connect.WithHandlerOptions(opts...),
 	)
+	shiftServiceListShiftsHandler := connect.NewUnaryHandler(
+		ShiftServiceListShiftsProcedure,
+		svc.ListShifts,
+		connect.WithSchema(shiftServiceMethods.ByName("ListShifts")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/restaurant.v1.ShiftService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ShiftServiceOpenShiftProcedure:
@@ -193,6 +219,8 @@ func NewShiftServiceHandler(svc ShiftServiceHandler, opts ...connect.HandlerOpti
 			shiftServiceCloseShiftHandler.ServeHTTP(w, r)
 		case ShiftServiceGetShiftReportProcedure:
 			shiftServiceGetShiftReportHandler.ServeHTTP(w, r)
+		case ShiftServiceListShiftsProcedure:
+			shiftServiceListShiftsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -220,4 +248,8 @@ func (UnimplementedShiftServiceHandler) CloseShift(context.Context, *connect.Req
 
 func (UnimplementedShiftServiceHandler) GetShiftReport(context.Context, *connect.Request[v1.GetShiftReportRequest]) (*connect.Response[v1.ShiftReport], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.ShiftService.GetShiftReport is not implemented"))
+}
+
+func (UnimplementedShiftServiceHandler) ListShifts(context.Context, *connect.Request[v1.ListShiftsRequest]) (*connect.Response[v1.ListShiftsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.ShiftService.ListShifts is not implemented"))
 }

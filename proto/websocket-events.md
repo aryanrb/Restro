@@ -6,7 +6,8 @@ depend on it. **Draft — agree with the frontends before the hub is built.**
 ## Transport
 
 - One endpoint: `GET /api/ws` on the same origin as the Connect API (upgrade to WebSocket).
-- Auth: the same session (web cookie / mobile bearer). Unauthenticated upgrades are rejected.
+- Auth: the same session as Connect — web `rm_session` cookie, or mobile `Authorization: Bearer <token>`.
+  An upgrade without a valid session is rejected with HTTP 401 before the socket opens.
 - Server library: `coder/websocket`. One in-process hub per deployment (one process = one restaurant).
 - **Server → client only.** No mutations over the socket. Every mutation is a Connect RPC.
 
@@ -20,8 +21,9 @@ JSON text frames. This matches the web's assumption
 ```
 
 - `type` (string, required) — the event name below.
-- `id` (string) — the primary entity id the change is about. Omitted for broadcast-only events.
+- `id` (string, always present) — the primary entity id the change is about; `""` for broadcast-only events.
 - `version` (int, optional) — the aggregate version after the change, when the entity has one.
+  Every `order.updated` carries it (order commands and kitchen actions alike).
 
 Events are **"something changed" pokes, not state.** Clients refetch the affected
 query via Connect; a missed or out-of-order event can only delay state, never corrupt it.
@@ -38,7 +40,7 @@ query via Connect; a missed or out-of-order event can only delay state, never co
 
 | `type`             | `id` is…            | Emitted when                                               | Primary audience |
 |--------------------|---------------------|-----------------------------------------------------------|------------------|
-| `order.updated`    | order id            | create / add items / void / transfer / merge / status flow| waiter, cashier  |
+| `order.updated`    | order id            | create / add items / send / void / serve / transfer / merge (both orders) / guest count / kitchen start, ready, bump | waiter, cashier  |
 | `ticket.created`   | order id            | items sent to a station (`SendItems`)                     | kitchen (station)|
 | `item.ready`       | order item id       | KDS marks an item READY                                    | waiter           |
 | `item.86d`         | menu item id        | an item is 86'd or un-86'd (`Set86`)                      | everyone         |
@@ -46,6 +48,32 @@ query via Connect; a missed or out-of-order event can only delay state, never co
 | `menu.updated`     | — (broadcast)       | any menu/category/variant/modifier change                 | admin, waiter    |
 | `settings.updated` | — (broadcast)       | settings saved                                            | admin            |
 | `station.updated`  | station id          | station added/renamed/removed                             | admin, kitchen   |
+| `invoice.issued`   | invoice id          | `IssueBill` / `CounterSale` issued (and paid) an invoice  | cashier, owner   |
+| `customer.updated` | customer id         | credit account created/edited/limit/(de)activated; its balance changed (on-account bill issued or cancelled, repayment taken or voided) | cashier, owner |
+
+### Inventory (InventoryService, recipes on MenuService)
+
+| `type`             | `id` is…                 | Emitted when                                                                 | Primary audience |
+|--------------------|--------------------------|------------------------------------------------------------------------------|------------------|
+| `stock.updated`    | `"stock"`                | any stock movement was written (send, void before cooking, counter sale, waste, count post, tracking on) | admin inventory |
+| `stock.low`        | inventory item id        | a tracked item's on hand crossed down to its low-stock level (once per crossing) | owner, manager (toast) |
+| `stock.86suggest`  | menu item id             | a dish can no longer be made from what is on hand (once per crossing; never auto-86) | KDS, manager |
+| `inventory.updated`| inventory item id        | a stock item was saved or tracking turned on/off (`version` = item version)  | admin            |
+| `count.updated`    | count id, or `"lists"`   | a stock count started / counted / submitted / recount / posted / discarded; a count list saved | counters, manager |
+| `waste.logged`     | waste entry id           | waste was logged                                                             | manager          |
+
+Stock events from order commands and counter sales are sent only after the
+request's transaction committed (server-side `inventory.EventsInterceptor`).
+
+### Alerts (AlertService)
+
+| `type`          | `id` is…  | When                                                                 | Who listens |
+|-----------------|-----------|----------------------------------------------------------------------|-------------|
+| `alert.created` | alert id  | an audited write fired a rule and opened a new alert (`version` = alert version) | owner, manager recipients |
+| `alert.updated` | alert id  | a repeat firing grouped into the open alert, or it was resolved      | owner, manager recipients |
+
+`settings.updated` with id `alerts` when the alert config changes. Like every event
+these are broadcast to all sessions (see Scoping); the alert RPCs enforce who may read.
 
 ### Later plans (reserved names — do not reuse)
 

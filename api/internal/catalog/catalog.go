@@ -4,7 +4,14 @@
 package catalog
 
 import (
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 
@@ -41,36 +48,96 @@ func (s *Service) emit(ev realtime.Event) {
 	}
 }
 
-// --- move helper (sort swapping) ---
+// --- move helper ---
 
 type sortable struct {
 	ID   uuid.UUID
 	Sort int32
 }
 
-// neighborSwap returns the two rows whose sort values must be swapped to move
-// target up/down, or ok=false at the ends.
-func neighborSwap(items []sortable, target uuid.UUID, up bool) (a, b sortable, ok bool) {
+// moveWithin moves target one step up/down among its siblings (already in display
+// order) and renumbers them 1..n, so duplicate or gapped sort values heal. It
+// returns the rows whose sort changed (none at the ends) and whether target is
+// among the siblings.
+func moveWithin(siblings []sortable, target uuid.UUID, up bool) (changed []sortable, found bool) {
 	pos := -1
-	for i, it := range items {
+	for i, it := range siblings {
 		if it.ID == target {
 			pos = i
 			break
 		}
 	}
 	if pos < 0 {
-		return a, b, false
+		return nil, false
 	}
 	n := pos + 1
 	if up {
 		n = pos - 1
 	}
-	if n < 0 || n >= len(items) {
-		return a, b, false
+	if n < 0 || n >= len(siblings) {
+		return nil, true
 	}
-	a, b = items[pos], items[n]
-	a.Sort, b.Sort = b.Sort, a.Sort
-	return a, b, true
+	order := append([]sortable(nil), siblings...)
+	order[pos], order[n] = order[n], order[pos]
+	for i, it := range order {
+		if want := int32(i + 1); it.Sort != want {
+			changed = append(changed, sortable{ID: it.ID, Sort: want})
+		}
+	}
+	return changed, true
+}
+
+// --- shared checks ---
+
+// requireName rejects a blank English name (the Nepali one is optional).
+func requireName(name *restaurantv1.LocalText) *connecterr.Error {
+	if strings.TrimSpace(name.GetEn()) == "" {
+		return connecterr.Invalid("name", "English name is required")
+	}
+	return nil
+}
+
+// itemColors mirrors the web palette (web/src/lib/admin/colors.ts ITEM_COLORS):
+// each keeps white tile text readable.
+var itemColors = []string{
+	"#b91c1c", "#c2410c", "#a16207", "#15803d", "#0f766e",
+	"#0369a1", "#1d4ed8", "#6d28d9", "#be185d", "#44403c",
+}
+
+// paletteColor returns the canonical (lower-case) palette colour, or ok=false.
+func paletteColor(c string) (string, bool) {
+	c = strings.ToLower(strings.TrimSpace(c))
+	if slices.Contains(itemColors, c) {
+		return c, true
+	}
+	return "", false
+}
+
+const maxImageBytes = 1 << 20 // 1 MB
+
+// imageDataURL validates an uploaded image (item or settings) and returns it as a
+// data URL; an empty image returns "" (clear).
+func imageDataURL(image []byte, contentType string) (string, *connecterr.Error) {
+	if len(image) == 0 {
+		return "", nil
+	}
+	if len(image) > maxImageBytes {
+		return "", connecterr.Invalid("image", "image must be 1 MB or smaller")
+	}
+	switch contentType {
+	case "image/jpeg", "image/png", "image/webp":
+	default:
+		return "", connecterr.Invalid("image", "image must be JPEG, PNG or WebP")
+	}
+	return fmt.Sprintf("data:%s;base64,%s", contentType, base64.StdEncoding.EncodeToString(image)), nil
+}
+
+// notFound maps pgx.ErrNoRows to NOT_FOUND and anything else to Internal.
+func notFound(err error, what string) *connecterr.Error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return connecterr.NotFound(what + " not found")
+	}
+	return connecterr.Internal(err)
 }
 
 func moveUp(m restaurantv1.Move) bool { return m == restaurantv1.Move_MOVE_UP }
@@ -87,7 +154,20 @@ func toSettings(s sqlc.Setting) *restaurantv1.Settings {
 		BillingMode: billingModeEnum(s.BillingMode), ReceiptWidth: receiptWidthEnum(s.ReceiptWidth),
 		RoundTotalToRupee: s.RoundTotalToRupee, DefaultLanguage: langEnum(s.DefaultLanguage),
 		KdsYellowMinutes: s.KdsYellowMinutes, KdsRedMinutes: s.KdsRedMinutes, LogoUrl: s.LogoUrl,
+		QrImages: qrImages(s), GuestOrdering: s.GuestOrdering,
 	}
+}
+
+// qrImages lists the configured payment QRs, Fonepay first.
+func qrImages(s sqlc.Setting) []*restaurantv1.QrImage {
+	out := []*restaurantv1.QrImage{}
+	if s.QrFonepayUrl != "" {
+		out = append(out, &restaurantv1.QrImage{Provider: restaurantv1.QrProvider_QR_PROVIDER_FONEPAY, Url: s.QrFonepayUrl})
+	}
+	if s.QrOtherUrl != "" {
+		out = append(out, &restaurantv1.QrImage{Provider: restaurantv1.QrProvider_QR_PROVIDER_OTHER, Url: s.QrOtherUrl})
+	}
+	return out
 }
 
 func toArea(a sqlc.Area) *restaurantv1.Area {

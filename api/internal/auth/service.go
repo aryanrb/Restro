@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 
+	"github.com/oneaccord/restro/api/internal/audit/hook"
 	"github.com/oneaccord/restro/api/internal/connecterr"
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
 )
@@ -25,16 +27,52 @@ const (
 	pinLockAfter = 5 // failed PIN attempts
 )
 
+// pinLockDurations is the progressive PIN lockout: the 1st lock lasts 2 min, the
+// 2nd 5 min, the 3rd and later 30 min. A correct PIN or an owner/manager reset
+// clears the escalation; an expired lock gives a fresh pinLockAfter attempts.
+var pinLockDurations = []time.Duration{2 * time.Minute, 5 * time.Minute, 30 * time.Minute}
+
+func pinLockSecs() []int32 {
+	out := make([]int32, len(pinLockDurations))
+	for i, d := range pinLockDurations {
+		out[i] = int32(d / time.Second)
+	}
+	return out
+}
+
+// pinLocked reports whether u's PIN is locked at now. A row at the attempt limit
+// with no expiry is treated as locked (fail closed).
+func pinLocked(u sqlc.User, now time.Time) bool {
+	if u.PinLockedUntil.Valid {
+		return u.PinLockedUntil.Time.After(now)
+	}
+	return u.FailedPinAttempts >= pinLockAfter
+}
+
+// pinLockedErr is PIN_LOCKED with the remaining wait (rounded up to a minute).
+func pinLockedErr(u sqlc.User, now time.Time) *connecterr.Error {
+	e := connecterr.PinLocked()
+	if u.PinLockedUntil.Valid {
+		mins := int((u.PinLockedUntil.Time.Sub(now) + time.Minute - 1) / time.Minute)
+		if mins < 1 {
+			mins = 1
+		}
+		e.Message = fmt.Sprintf("PIN locked, try again in %d min", mins)
+	}
+	return e
+}
+
 // Service holds the connection pool (for transactions) and a non-tx Queries for
 // reads.
 type Service struct {
 	pool *pgxpool.Pool
 	q    *sqlc.Queries
 	log  *zap.Logger
+	now  func() time.Time // PIN lockout clock; injectable for tests
 }
 
 func NewService(pool *pgxpool.Pool, log *zap.Logger) *Service {
-	return &Service{pool: pool, q: sqlc.New(pool), log: log}
+	return &Service{pool: pool, q: sqlc.New(pool), log: log, now: time.Now}
 }
 
 // ManagerApproval is an inline manager-PIN override carried by privileged commands.
@@ -45,8 +83,13 @@ type ManagerApproval struct {
 
 // --- pgtype helpers ---
 
-func ptext(s string) pgtype.Text    { return pgtype.Text{String: s, Valid: true} }
-func ptextOpt(s string) pgtype.Text { if s == "" { return pgtype.Text{} }; return ptext(s) }
+func ptext(s string) pgtype.Text { return pgtype.Text{String: s, Valid: true} }
+func ptextOpt(s string) pgtype.Text {
+	if s == "" {
+		return pgtype.Text{}
+	}
+	return ptext(s)
+}
 func puuid(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
 
 func auditJSON(v any) []byte { b, _ := json.Marshal(v); return b }
@@ -100,8 +143,8 @@ func (s *Service) issueSession(ctx context.Context, userID uuid.UUID, deviceID p
 	if err := q.ResetPinFailures(ctx, userID); err != nil {
 		return "", s.internal("reset pin failures", err)
 	}
-	if err := q.InsertAudit(ctx, sqlc.InsertAuditParams{
-		ActorUserID: puuid(userID), Action: "login", Entity: "user", EntityID: ptext(userID.String()),
+	if err := hook.Insert(ctx, q, sqlc.InsertAuditParams{
+		ActorUserID: puuid(userID), Action: "login", Entity: "user", EntityID: ptext(userID.String()), DeviceLabel: ptextOpt(DeviceLabel(ctx)),
 	}); err != nil {
 		return "", s.internal("audit login", err)
 	}
@@ -149,31 +192,82 @@ func (s *Service) PinLogin(ctx context.Context, userID uuid.UUID, pin string, de
 	if err != nil {
 		return sqlc.User{}, "", s.internal("get user by id", err)
 	}
-	if u.FailedPinAttempts >= pinLockAfter {
-		return sqlc.User{}, "", connecterr.PinLocked()
+	if now := s.now(); pinLocked(u, now) {
+		return sqlc.User{}, "", pinLockedErr(u, now)
 	}
 	if !u.Active || !u.PinHash.Valid {
 		return sqlc.User{}, "", connecterr.InvalidCredentials()
 	}
-	ok, err := VerifySecret(pin, u.PinHash.String)
-	if err != nil {
-		return sqlc.User{}, "", s.internal("verify pin", err)
-	}
-	if !ok {
-		updated, err := s.q.IncrementPinFailure(ctx, userID)
-		if err != nil {
-			return sqlc.User{}, "", s.internal("increment pin failure", err)
-		}
-		if updated.FailedPinAttempts >= pinLockAfter {
-			return sqlc.User{}, "", connecterr.PinLocked()
-		}
-		return sqlc.User{}, "", connecterr.InvalidCredentials()
+	if cerr := s.checkPin(ctx, u, pin, connecterr.InvalidCredentials()); cerr != nil {
+		return sqlc.User{}, "", cerr
 	}
 	token, cerr := s.issueSession(ctx, u.ID, puuid(device.ID))
 	if cerr != nil {
 		return sqlc.User{}, "", cerr
 	}
 	return u, token, nil
+}
+
+// checkPin verifies pin against u's PIN hash under the shared lockout used by PIN
+// login and manager approval. The attempt is counted atomically BEFORE the
+// (slow) hash check, so parallel guesses can't each slip under the limit; the
+// attempt reaching the limit sets a progressive, auto-expiring lock in the same
+// statement, and a correct PIN clears the counter, lock and escalation. Returns
+// nil on success, PinLocked (with the remaining wait) once locked, otherwise
+// wrongPin. Runs on the pool (not a caller's tx) so failures persist even if the
+// surrounding command rolls back.
+func (s *Service) checkPin(ctx context.Context, u sqlc.User, pin string, wrongPin *connecterr.Error) *connecterr.Error {
+	now := s.now()
+	reserved, err := s.q.ReservePinAttempt(ctx, sqlc.ReservePinAttemptParams{
+		ID: u.ID, LockAfter: pinLockAfter, Now: now, LockSecs: pinLockSecs(),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Locked by a concurrent attempt since u was read: report the live lock.
+		cur, gerr := s.q.GetUserByID(ctx, u.ID)
+		if gerr != nil {
+			return connecterr.PinLocked()
+		}
+		return pinLockedErr(cur, now)
+	}
+	if err != nil {
+		return s.internal("reserve pin attempt", err)
+	}
+	ok, err := VerifySecret(pin, u.PinHash.String)
+	if err != nil {
+		return s.internal("verify pin", err)
+	}
+	if !ok {
+		if pinLocked(reserved, now) {
+			// This attempt set the lock (an already-locked PIN gets ErrNoRows above).
+			s.auditPinLocked(ctx, reserved)
+			return pinLockedErr(reserved, now)
+		}
+		return wrongPin
+	}
+	if err := s.q.ResetPinFailures(ctx, u.ID); err != nil {
+		return s.internal("reset pin failures", err)
+	}
+	return nil
+}
+
+// auditPinLocked records an owner's or manager's PIN getting locked out
+// ("manager_pin.locked": actor = whoever was trying, "" on a PIN-login screen;
+// entity = the locked user). It runs on the pool like the attempt counter, so it
+// stays even though the request fails. Best-effort: a failure is only logged.
+func (s *Service) auditPinLocked(ctx context.Context, u sqlc.User) {
+	if !isPrivileged(u.Role) {
+		return
+	}
+	var actor pgtype.UUID
+	if a := ActorFrom(ctx); a.LoggedIn() {
+		actor = puuid(a.User.ID)
+	}
+	if err := hook.Insert(ctx, s.q, sqlc.InsertAuditParams{
+		ActorUserID: actor, Action: "manager_pin.locked", Entity: "user", EntityID: ptext(u.ID.String()),
+		DeviceLabel: ptextOpt(DeviceLabel(ctx)),
+	}); err != nil {
+		s.log.Error("audit pin lock", zap.Error(err))
+	}
 }
 
 // EnrollDevice marks the caller's device as a shared PIN-login device.
@@ -199,7 +293,7 @@ func (s *Service) EnrollDevice(ctx context.Context, actor *Actor, label string) 
 	if err != nil {
 		return sqlc.Device{}, "", s.internal("create device", err)
 	}
-	if err := q.InsertAudit(ctx, sqlc.InsertAuditParams{
+	if err := hook.Insert(ctx, q, sqlc.InsertAuditParams{
 		ActorUserID: puuid(actor.User.ID), Action: "device.enroll", Entity: "device",
 		EntityID: ptext(d.ID.String()), After: auditJSON(map[string]any{"label": label}), DeviceLabel: ptext(label),
 	}); err != nil {
@@ -225,8 +319,8 @@ func (s *Service) Logout(ctx context.Context, actor *Actor) error {
 	if err := q.RevokeSession(ctx, hashToken(actor.Token)); err != nil {
 		return s.internal("revoke session", err)
 	}
-	if err := q.InsertAudit(ctx, sqlc.InsertAuditParams{
-		ActorUserID: puuid(actor.User.ID), Action: "logout", Entity: "user", EntityID: ptext(actor.User.ID.String()),
+	if err := hook.Insert(ctx, q, sqlc.InsertAuditParams{
+		ActorUserID: puuid(actor.User.ID), Action: "logout", Entity: "user", EntityID: ptext(actor.User.ID.String()), DeviceLabel: ptextOpt(DeviceLabel(ctx)),
 	}); err != nil {
 		return s.internal("audit logout", err)
 	}
@@ -351,6 +445,10 @@ func (s *Service) SaveStaff(ctx context.Context, actor *Actor, in StaffInput) (s
 		username = ""
 		passwordHash = pgtype.Text{}
 	}
+	phone := existing.Phone // "" for a new account
+	if in.Phone != nil {
+		phone, _ = NormalisePhone(*in.Phone) // validated above
+	}
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -365,12 +463,12 @@ func (s *Service) SaveStaff(ctx context.Context, actor *Actor, in StaffInput) (s
 		action = "staff.update"
 		saved, err = q.UpdateUser(ctx, sqlc.UpdateUserParams{
 			ID: existing.ID, Name: in.Name, Role: in.Role, Username: ptextOpt(username),
-			PasswordHash: passwordHash, PinHash: pinHash, Active: in.Active,
+			PasswordHash: passwordHash, PinHash: pinHash, Active: in.Active, Phone: phone,
 		})
 	} else {
 		saved, err = q.CreateUser(ctx, sqlc.CreateUserParams{
 			Name: in.Name, Role: in.Role, Username: ptextOpt(username),
-			PasswordHash: passwordHash, PinHash: pinHash, Language: "en", Active: in.Active,
+			PasswordHash: passwordHash, PinHash: pinHash, Language: "en", Active: in.Active, Phone: phone,
 		})
 	}
 	if err != nil {
@@ -381,9 +479,9 @@ func (s *Service) SaveStaff(ctx context.Context, actor *Actor, in StaffInput) (s
 	if editing {
 		before = auditJSON(map[string]any{"name": existing.Name, "role": existing.Role, "active": existing.Active})
 	}
-	if err := q.InsertAudit(ctx, sqlc.InsertAuditParams{
+	if err := hook.Insert(ctx, q, sqlc.InsertAuditParams{
 		ActorUserID: puuid(actor.User.ID), Action: action, Entity: "user", EntityID: ptext(saved.ID.String()),
-		Before: before, After: auditJSON(map[string]any{"name": saved.Name, "role": saved.Role, "active": saved.Active}),
+		Before: before, After: auditJSON(map[string]any{"name": saved.Name, "role": saved.Role, "active": saved.Active}), DeviceLabel: ptextOpt(DeviceLabel(ctx)),
 	}); err != nil {
 		return sqlc.User{}, s.internal("audit staff save", err)
 	}
@@ -393,13 +491,27 @@ func (s *Service) SaveStaff(ctx context.Context, actor *Actor, in StaffInput) (s
 	return saved, nil
 }
 
-// ResetPin sets a new PIN and clears any lock (owner/manager only).
+// ResetPin sets a new PIN, unlocks immediately and clears the lockout escalation
+// (owner/manager only).
 func (s *Service) ResetPin(ctx context.Context, actor *Actor, userID uuid.UUID, pin string) error {
 	if !actor.LoggedIn() || !isPrivileged(actor.User.Role) {
 		return connecterr.NotAllowed("only owners and managers can reset PINs")
 	}
 	if !pinRe.MatchString(pin) {
 		return connecterr.Invalid("pin", "PIN must be 4–6 digits")
+	}
+	target, err := s.q.GetUserByID(ctx, userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return connecterr.NotFound("staff not found")
+	}
+	if err != nil {
+		return s.internal("get user by id", err)
+	}
+	// Same hierarchy as SaveStaff: a manager may not touch owner/manager accounts,
+	// which includes their own (otherwise a locked manager could unlock themselves).
+	// Owners may reset anyone.
+	if actor.User.Role == RoleManager && isPrivileged(target.Role) {
+		return connecterr.NotAllowed("managers can only reset PINs of cashier, waiter or kitchen staff")
 	}
 	h, err := HashSecret(pin)
 	if err != nil {
@@ -411,11 +523,11 @@ func (s *Service) ResetPin(ctx context.Context, actor *Actor, userID uuid.UUID, 
 	}
 	defer tx.Rollback(ctx)
 	q := s.q.WithTx(tx)
-	if err := q.SetUserPin(ctx, sqlc.SetUserPinParams{ID: userID, PinHash: ptext(h)}); err != nil {
+	if err := q.SetUserPin(ctx, sqlc.SetUserPinParams{ID: target.ID, PinHash: ptext(h)}); err != nil {
 		return s.internal("set pin", err)
 	}
-	if err := q.InsertAudit(ctx, sqlc.InsertAuditParams{
-		ActorUserID: puuid(actor.User.ID), Action: "staff.reset_pin", Entity: "user", EntityID: ptext(userID.String()),
+	if err := hook.Insert(ctx, q, sqlc.InsertAuditParams{
+		ActorUserID: puuid(actor.User.ID), Action: "staff.reset_pin", Entity: "user", EntityID: ptext(userID.String()), DeviceLabel: ptextOpt(DeviceLabel(ctx)),
 	}); err != nil {
 		return s.internal("audit reset pin", err)
 	}
@@ -423,7 +535,10 @@ func (s *Service) ResetPin(ctx context.Context, actor *Actor, userID uuid.UUID, 
 }
 
 // VerifyManagerApproval checks an inline manager override. Returns the approving
-// manager, or ManagerApprovalInvalid. Used by privileged commands in later steps.
+// manager, ManagerApprovalInvalid, or PinLocked. Wrong PINs share the PIN-login
+// failure counter and progressive lockout (pinLockAfter, pinLockDurations), so an
+// approval PIN cannot be brute-forced; a correct PIN clears the counter. The counter updates run on the
+// pool, not the caller's transaction, so a rolled-back command still counts.
 func (s *Service) VerifyManagerApproval(ctx context.Context, a ManagerApproval) (sqlc.User, error) {
 	id, err := uuid.Parse(a.ManagerUserID)
 	if err != nil {
@@ -439,12 +554,11 @@ func (s *Service) VerifyManagerApproval(ctx context.Context, a ManagerApproval) 
 	if !u.Active || !isPrivileged(u.Role) || !u.PinHash.Valid {
 		return sqlc.User{}, connecterr.ManagerApprovalInvalid()
 	}
-	ok, err := VerifySecret(a.Pin, u.PinHash.String)
-	if err != nil {
-		return sqlc.User{}, s.internal("verify manager pin", err)
+	if now := s.now(); pinLocked(u, now) {
+		return sqlc.User{}, pinLockedErr(u, now)
 	}
-	if !ok {
-		return sqlc.User{}, connecterr.ManagerApprovalInvalid()
+	if cerr := s.checkPin(ctx, u, a.Pin, connecterr.ManagerApprovalInvalid()); cerr != nil {
+		return sqlc.User{}, cerr
 	}
 	return u, nil
 }

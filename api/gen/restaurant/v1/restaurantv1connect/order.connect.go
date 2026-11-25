@@ -55,6 +55,9 @@ const (
 	// OrderServiceMergeTablesProcedure is the fully-qualified name of the OrderService's MergeTables
 	// RPC.
 	OrderServiceMergeTablesProcedure = "/restaurant.v1.OrderService/MergeTables"
+	// OrderServiceSetGuestCountProcedure is the fully-qualified name of the OrderService's
+	// SetGuestCount RPC.
+	OrderServiceSetGuestCountProcedure = "/restaurant.v1.OrderService/SetGuestCount"
 )
 
 // OrderServiceClient is a client for the restaurant.v1.OrderService service.
@@ -68,6 +71,7 @@ type OrderServiceClient interface {
 	MarkServed(context.Context, *connect.Request[v1.MarkServedRequest]) (*connect.Response[v1.OrderResult], error)
 	TransferTable(context.Context, *connect.Request[v1.TransferTableRequest]) (*connect.Response[v1.OrderResult], error)
 	MergeTables(context.Context, *connect.Request[v1.MergeTablesRequest]) (*connect.Response[v1.OrderResult], error)
+	SetGuestCount(context.Context, *connect.Request[v1.SetGuestCountRequest]) (*connect.Response[v1.OrderResult], error)
 }
 
 // NewOrderServiceClient constructs a client for the restaurant.v1.OrderService service. By default,
@@ -135,6 +139,12 @@ func NewOrderServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(orderServiceMethods.ByName("MergeTables")),
 			connect.WithClientOptions(opts...),
 		),
+		setGuestCount: connect.NewClient[v1.SetGuestCountRequest, v1.OrderResult](
+			httpClient,
+			baseURL+OrderServiceSetGuestCountProcedure,
+			connect.WithSchema(orderServiceMethods.ByName("SetGuestCount")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -149,6 +159,7 @@ type orderServiceClient struct {
 	markServed     *connect.Client[v1.MarkServedRequest, v1.OrderResult]
 	transferTable  *connect.Client[v1.TransferTableRequest, v1.OrderResult]
 	mergeTables    *connect.Client[v1.MergeTablesRequest, v1.OrderResult]
+	setGuestCount  *connect.Client[v1.SetGuestCountRequest, v1.OrderResult]
 }
 
 // ListOpenOrders calls restaurant.v1.OrderService.ListOpenOrders.
@@ -196,6 +207,11 @@ func (c *orderServiceClient) MergeTables(ctx context.Context, req *connect.Reque
 	return c.mergeTables.CallUnary(ctx, req)
 }
 
+// SetGuestCount calls restaurant.v1.OrderService.SetGuestCount.
+func (c *orderServiceClient) SetGuestCount(ctx context.Context, req *connect.Request[v1.SetGuestCountRequest]) (*connect.Response[v1.OrderResult], error) {
+	return c.setGuestCount.CallUnary(ctx, req)
+}
+
 // OrderServiceHandler is an implementation of the restaurant.v1.OrderService service.
 type OrderServiceHandler interface {
 	ListOpenOrders(context.Context, *connect.Request[v1.ListOpenOrdersRequest]) (*connect.Response[v1.ListOpenOrdersResponse], error)
@@ -207,6 +223,7 @@ type OrderServiceHandler interface {
 	MarkServed(context.Context, *connect.Request[v1.MarkServedRequest]) (*connect.Response[v1.OrderResult], error)
 	TransferTable(context.Context, *connect.Request[v1.TransferTableRequest]) (*connect.Response[v1.OrderResult], error)
 	MergeTables(context.Context, *connect.Request[v1.MergeTablesRequest]) (*connect.Response[v1.OrderResult], error)
+	SetGuestCount(context.Context, *connect.Request[v1.SetGuestCountRequest]) (*connect.Response[v1.OrderResult], error)
 }
 
 // NewOrderServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -270,6 +287,12 @@ func NewOrderServiceHandler(svc OrderServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(orderServiceMethods.ByName("MergeTables")),
 		connect.WithHandlerOptions(opts...),
 	)
+	orderServiceSetGuestCountHandler := connect.NewUnaryHandler(
+		OrderServiceSetGuestCountProcedure,
+		svc.SetGuestCount,
+		connect.WithSchema(orderServiceMethods.ByName("SetGuestCount")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/restaurant.v1.OrderService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case OrderServiceListOpenOrdersProcedure:
@@ -290,6 +313,8 @@ func NewOrderServiceHandler(svc OrderServiceHandler, opts ...connect.HandlerOpti
 			orderServiceTransferTableHandler.ServeHTTP(w, r)
 		case OrderServiceMergeTablesProcedure:
 			orderServiceMergeTablesHandler.ServeHTTP(w, r)
+		case OrderServiceSetGuestCountProcedure:
+			orderServiceSetGuestCountHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -333,4 +358,8 @@ func (UnimplementedOrderServiceHandler) TransferTable(context.Context, *connect.
 
 func (UnimplementedOrderServiceHandler) MergeTables(context.Context, *connect.Request[v1.MergeTablesRequest]) (*connect.Response[v1.OrderResult], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.OrderService.MergeTables is not implemented"))
+}
+
+func (UnimplementedOrderServiceHandler) SetGuestCount(context.Context, *connect.Request[v1.SetGuestCountRequest]) (*connect.Response[v1.OrderResult], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.OrderService.SetGuestCount is not implemented"))
 }

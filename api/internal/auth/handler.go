@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -140,7 +141,7 @@ func (h *Handler) SaveStaff(ctx context.Context, req *connect.Request[restaurant
 	m := req.Msg.GetInput()
 	in := StaffInput{
 		ID: m.GetId(), Name: m.GetName(), Role: roleString(m.GetRole()), Active: m.GetActive(),
-		Username: m.GetUsername(), Password: m.GetPassword(), Pin: m.GetPin(),
+		Username: m.GetUsername(), Password: m.GetPassword(), Pin: m.GetPin(), Phone: m.Phone,
 	}
 	saved, err := h.svc.SaveStaff(ctx, ActorFrom(ctx), in)
 	if err != nil {
@@ -169,11 +170,15 @@ func toProtoUser(u sqlc.User) *restaurantv1.User {
 func toProtoStaff(u sqlc.User) *restaurantv1.StaffMember {
 	sm := &restaurantv1.StaffMember{
 		Id: u.ID.String(), Name: u.Name, Role: protoRole(u.Role), Active: u.Active,
-		PinLocked: u.FailedPinAttempts >= pinLockAfter,
+		PinLocked: pinLocked(u, time.Now()), HasPassword: u.PasswordHash.Valid && u.PasswordHash.String != "",
 	}
 	if u.Username.Valid {
 		v := u.Username.String
 		sm.Username = &v
+	}
+	if u.Phone != "" {
+		v := u.Phone
+		sm.Phone = &v
 	}
 	return sm
 }

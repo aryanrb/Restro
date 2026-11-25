@@ -11,6 +11,75 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Alert struct {
+	ID               uuid.UUID          `json:"id"`
+	Seq              int64              `json:"seq"`
+	Rule             string             `json:"rule"`
+	Severity         string             `json:"severity"`
+	Status           string             `json:"status"`
+	SubjectUserID    pgtype.UUID        `json:"subject_user_id"`
+	ApproverIds      []uuid.UUID        `json:"approver_ids"`
+	InvolvedIds      []uuid.UUID        `json:"involved_ids"`
+	Subject          string             `json:"subject"`
+	NumParams        []byte             `json:"num_params"`
+	TextParams       []byte             `json:"text_params"`
+	Count            int32              `json:"count"`
+	BusinessDate     pgtype.Date        `json:"business_date"`
+	FirstAt          time.Time          `json:"first_at"`
+	LastAt           time.Time          `json:"last_at"`
+	ShiftID          pgtype.UUID        `json:"shift_id"`
+	InvoiceID        pgtype.UUID        `json:"invoice_id"`
+	AuditIds         []int64            `json:"audit_ids"`
+	GroupKey         string             `json:"group_key"`
+	DedupKey         pgtype.Text        `json:"dedup_key"`
+	ResolvedByUserID pgtype.UUID        `json:"resolved_by_user_id"`
+	ResolvedAt       pgtype.Timestamptz `json:"resolved_at"`
+	Note             string             `json:"note"`
+	Version          int64              `json:"version"`
+}
+
+type AlertConfig struct {
+	ID                     int32       `json:"id"`
+	Overrides              []byte      `json:"overrides"`
+	OpeningHours           []byte      `json:"opening_hours"`
+	AfterHoursGraceMinutes int32       `json:"after_hours_grace_minutes"`
+	QuietFrom              pgtype.Text `json:"quiet_from"`
+	QuietTo                pgtype.Text `json:"quiet_to"`
+	DailyPushCap           int32       `json:"daily_push_cap"`
+	RecipientIds           []uuid.UUID `json:"recipient_ids"`
+	UpdatedAt              time.Time   `json:"updated_at"`
+}
+
+type AlertPush struct {
+	ID           uuid.UUID   `json:"id"`
+	At           time.Time   `json:"at"`
+	BusinessDate pgtype.Date `json:"business_date"`
+	Kind         string      `json:"kind"`
+	Rule         string      `json:"rule"`
+	AmountPaisa  pgtype.Int8 `json:"amount_paisa"`
+	Count        pgtype.Int4 `json:"count"`
+	AlertID      pgtype.UUID `json:"alert_id"`
+	ExcludeIds   []uuid.UUID `json:"exclude_ids"`
+}
+
+type AnalyticsDay struct {
+	Day     pgtype.Date `json:"day"`
+	Summary []byte      `json:"summary"`
+	BuiltAt time.Time   `json:"built_at"`
+}
+
+type AnalyticsDirtyDay struct {
+	Day      pgtype.Date `json:"day"`
+	MarkedAt time.Time   `json:"marked_at"`
+}
+
+type AnalyticsSetting struct {
+	ID               bool        `json:"id"`
+	ManagersSeeStaff []uuid.UUID `json:"managers_see_staff"`
+	HighlightRules   bool        `json:"highlight_rules"`
+	UpdatedAt        time.Time   `json:"updated_at"`
+}
+
 type Area struct {
 	ID     uuid.UUID `json:"id"`
 	NameEn string    `json:"name_en"`
@@ -32,6 +101,21 @@ type AuditLog struct {
 	CreatedAt      time.Time   `json:"created_at"`
 }
 
+type CalendarEvent struct {
+	ID              uuid.UUID   `json:"id"`
+	NameEn          string      `json:"name_en"`
+	NameNe          string      `json:"name_ne"`
+	FromDate        pgtype.Date `json:"from_date"`
+	ToDate          pgtype.Date `json:"to_date"`
+	Kind            string      `json:"kind"`
+	BuiltIn         bool        `json:"built_in"`
+	CreatedByUserID pgtype.UUID `json:"created_by_user_id"`
+	Key             pgtype.Text `json:"key"`
+	Approximate     bool        `json:"approximate"`
+	CreatedAt       time.Time   `json:"created_at"`
+	UpdatedAt       time.Time   `json:"updated_at"`
+}
+
 type CbmsOutbox struct {
 	ID        uuid.UUID `json:"id"`
 	InvoiceID uuid.UUID `json:"invoice_id"`
@@ -41,6 +125,33 @@ type CbmsOutbox struct {
 	Attempts  int32     `json:"attempts"`
 	LastError string    `json:"last_error"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type CountList struct {
+	ID               uuid.UUID   `json:"id"`
+	Name             string      `json:"name"`
+	InventoryItemIds []uuid.UUID `json:"inventory_item_ids"`
+	CreatedAt        time.Time   `json:"created_at"`
+}
+
+type Customer struct {
+	ID               uuid.UUID   `json:"id"`
+	Name             string      `json:"name"`
+	Phone            string      `json:"phone"`
+	Notes            string      `json:"notes"`
+	CreditLimitPaisa int64       `json:"credit_limit_paisa"`
+	Active           bool        `json:"active"`
+	Pan              string      `json:"pan"`
+	Address          string      `json:"address"`
+	ContactPerson    string      `json:"contact_person"`
+	CreatedByUserID  pgtype.UUID `json:"created_by_user_id"`
+	CreatedAt        time.Time   `json:"created_at"`
+	UpdatedAt        time.Time   `json:"updated_at"`
+}
+
+type CustomerBalance struct {
+	CustomerID   uuid.UUID `json:"customer_id"`
+	BalancePaisa int64     `json:"balance_paisa"`
 }
 
 type Device struct {
@@ -58,6 +169,23 @@ type DiningTable struct {
 	Seats  int32     `json:"seats"`
 	Sort   int32     `json:"sort"`
 	Active bool      `json:"active"`
+}
+
+type InventoryItem struct {
+	ID            uuid.UUID `json:"id"`
+	Version       int64     `json:"version"`
+	NameEn        string    `json:"name_en"`
+	NameNe        string    `json:"name_ne"`
+	Unit          string    `json:"unit"`
+	Tracked       bool      `json:"tracked"`
+	LowStockMilli int64     `json:"low_stock_milli"`
+	Active        bool      `json:"active"`
+	UnitCostE4    int64     `json:"unit_cost_e4"`
+	Packs         []byte    `json:"packs"`
+	Sort          int32     `json:"sort"`
+	OnHandMilli   int64     `json:"on_hand_milli"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type Invoice struct {
@@ -90,6 +218,17 @@ type Invoice struct {
 	PrintCount               int32              `json:"print_count"`
 	CreatedByUserID          pgtype.UUID        `json:"created_by_user_id"`
 	CreatedAt                time.Time          `json:"created_at"`
+	DisplayNumber            string             `json:"display_number"`
+	SellerNameEn             string             `json:"seller_name_en"`
+	SellerNameNe             string             `json:"seller_name_ne"`
+	SellerAddress            string             `json:"seller_address"`
+	SellerPanNumber          string             `json:"seller_pan_number"`
+	SellerVatRateBp          int32              `json:"seller_vat_rate_bp"`
+	SellerVatRegistered      bool               `json:"seller_vat_registered"`
+	SellerLogoUrl            string             `json:"seller_logo_url"`
+	IssuedByName             string             `json:"issued_by_name"`
+	Place                    string             `json:"place"`
+	OrderClientID            pgtype.UUID        `json:"order_client_id"`
 }
 
 type InvoiceCounter struct {
@@ -99,16 +238,25 @@ type InvoiceCounter struct {
 }
 
 type InvoiceLine struct {
-	ID             uuid.UUID   `json:"id"`
-	InvoiceID      uuid.UUID   `json:"invoice_id"`
-	OrderItemID    pgtype.UUID `json:"order_item_id"`
-	NameEn         string      `json:"name_en"`
-	NameNe         string      `json:"name_ne"`
-	VariantName    string      `json:"variant_name"`
-	Quantity       int32       `json:"quantity"`
-	UnitPricePaisa int64       `json:"unit_price_paisa"`
-	ModifiersJson  []byte      `json:"modifiers_json"`
-	LineTotalPaisa int64       `json:"line_total_paisa"`
+	ID                uuid.UUID   `json:"id"`
+	InvoiceID         uuid.UUID   `json:"invoice_id"`
+	OrderItemID       pgtype.UUID `json:"order_item_id"`
+	NameEn            string      `json:"name_en"`
+	NameNe            string      `json:"name_ne"`
+	VariantName       string      `json:"variant_name"`
+	Quantity          int32       `json:"quantity"`
+	UnitPricePaisa    int64       `json:"unit_price_paisa"`
+	ModifiersJson     []byte      `json:"modifiers_json"`
+	LineTotalPaisa    int64       `json:"line_total_paisa"`
+	OrderItemClientID pgtype.UUID `json:"order_item_client_id"`
+	VariantNameNe     string      `json:"variant_name_ne"`
+}
+
+type InvoicePrint struct {
+	ID              uuid.UUID `json:"id"`
+	InvoiceID       uuid.UUID `json:"invoice_id"`
+	PrintedAt       time.Time `json:"printed_at"`
+	PrintedByUserID uuid.UUID `json:"printed_by_user_id"`
 }
 
 type ItemModifierGroup struct {
@@ -150,6 +298,13 @@ type MenuItem struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
+type MenuItemRecipeLine struct {
+	MenuItemID      uuid.UUID `json:"menu_item_id"`
+	InventoryItemID uuid.UUID `json:"inventory_item_id"`
+	QuantityMilli   int64     `json:"quantity_milli"`
+	Sort            int32     `json:"sort"`
+}
+
 type Modifier struct {
 	ID              uuid.UUID `json:"id"`
 	GroupID         uuid.UUID `json:"group_id"`
@@ -168,6 +323,13 @@ type ModifierGroup struct {
 	MaxSelect int32     `json:"max_select"`
 }
 
+type ModifierRecipeLine struct {
+	ModifierID      uuid.UUID `json:"modifier_id"`
+	InventoryItemID uuid.UUID `json:"inventory_item_id"`
+	QuantityMilli   int64     `json:"quantity_milli"`
+	Sort            int32     `json:"sort"`
+}
+
 type Order struct {
 	ID           uuid.UUID   `json:"id"`
 	ClientID     uuid.UUID   `json:"client_id"`
@@ -179,28 +341,33 @@ type Order struct {
 	Version      int64       `json:"version"`
 	CreatedAt    time.Time   `json:"created_at"`
 	UpdatedAt    time.Time   `json:"updated_at"`
+	Label        string      `json:"label"`
 }
 
 type OrderItem struct {
-	ID                   uuid.UUID   `json:"id"`
-	OrderID              uuid.UUID   `json:"order_id"`
-	ClientID             uuid.UUID   `json:"client_id"`
-	MenuItemID           uuid.UUID   `json:"menu_item_id"`
-	NameEn               string      `json:"name_en"`
-	NameNe               string      `json:"name_ne"`
-	VariantNameEn        string      `json:"variant_name_en"`
-	VariantNameNe        string      `json:"variant_name_ne"`
-	HasVariant           bool        `json:"has_variant"`
-	UnitPricePaisa       int64       `json:"unit_price_paisa"`
-	Quantity             int32       `json:"quantity"`
-	Note                 string      `json:"note"`
-	StationID            uuid.UUID   `json:"station_id"`
-	Status               string      `json:"status"`
-	VoidReason           string      `json:"void_reason"`
-	VoidedByUserID       pgtype.UUID `json:"voided_by_user_id"`
-	VoidApprovedByUserID pgtype.UUID `json:"void_approved_by_user_id"`
-	CreatedAt            time.Time   `json:"created_at"`
-	InvoiceID            pgtype.UUID `json:"invoice_id"`
+	ID                   uuid.UUID          `json:"id"`
+	OrderID              uuid.UUID          `json:"order_id"`
+	ClientID             uuid.UUID          `json:"client_id"`
+	MenuItemID           uuid.UUID          `json:"menu_item_id"`
+	NameEn               string             `json:"name_en"`
+	NameNe               string             `json:"name_ne"`
+	VariantNameEn        string             `json:"variant_name_en"`
+	VariantNameNe        string             `json:"variant_name_ne"`
+	HasVariant           bool               `json:"has_variant"`
+	UnitPricePaisa       int64              `json:"unit_price_paisa"`
+	Quantity             int32              `json:"quantity"`
+	Note                 string             `json:"note"`
+	StationID            uuid.UUID          `json:"station_id"`
+	Status               string             `json:"status"`
+	VoidReason           string             `json:"void_reason"`
+	VoidedByUserID       pgtype.UUID        `json:"voided_by_user_id"`
+	VoidApprovedByUserID pgtype.UUID        `json:"void_approved_by_user_id"`
+	CreatedAt            time.Time          `json:"created_at"`
+	InvoiceID            pgtype.UUID        `json:"invoice_id"`
+	SentAt               pgtype.Timestamptz `json:"sent_at"`
+	AddedByUserID        pgtype.UUID        `json:"added_by_user_id"`
+	VariantID            pgtype.UUID        `json:"variant_id"`
+	ModifierIds          []uuid.UUID        `json:"modifier_ids"`
 }
 
 type OrderItemModifier struct {
@@ -212,15 +379,19 @@ type OrderItemModifier struct {
 }
 
 type Payment struct {
-	ID                uuid.UUID `json:"id"`
-	InvoiceID         uuid.UUID `json:"invoice_id"`
-	Method            string    `json:"method"`
-	AmountPaisa       int64     `json:"amount_paisa"`
-	Reference         string    `json:"reference"`
-	ConfirmedByUserID uuid.UUID `json:"confirmed_by_user_id"`
-	ShiftID           uuid.UUID `json:"shift_id"`
-	Status            string    `json:"status"`
-	CreatedAt         time.Time `json:"created_at"`
+	ID                     uuid.UUID   `json:"id"`
+	InvoiceID              uuid.UUID   `json:"invoice_id"`
+	Method                 string      `json:"method"`
+	AmountPaisa            int64       `json:"amount_paisa"`
+	Reference              string      `json:"reference"`
+	ConfirmedByUserID      uuid.UUID   `json:"confirmed_by_user_id"`
+	ShiftID                uuid.UUID   `json:"shift_id"`
+	Status                 string      `json:"status"`
+	CreatedAt              time.Time   `json:"created_at"`
+	CustomerID             pgtype.UUID `json:"customer_id"`
+	CustomerName           string      `json:"customer_name"`
+	BalanceAfterPaisa      int64       `json:"balance_after_paisa"`
+	CreditApprovedByUserID pgtype.UUID `json:"credit_approved_by_user_id"`
 }
 
 type ProcessedCommand struct {
@@ -228,6 +399,29 @@ type ProcessedCommand struct {
 	UserID    pgtype.UUID `json:"user_id"`
 	Response  []byte      `json:"response"`
 	CreatedAt time.Time   `json:"created_at"`
+}
+
+type Repayment struct {
+	ID                uuid.UUID          `json:"id"`
+	Number            int32              `json:"number"`
+	CustomerID        uuid.UUID          `json:"customer_id"`
+	AmountPaisa       int64              `json:"amount_paisa"`
+	Method            string             `json:"method"`
+	Reference         string             `json:"reference"`
+	Note              string             `json:"note"`
+	ShiftID           uuid.UUID          `json:"shift_id"`
+	TakenByUserID     uuid.UUID          `json:"taken_by_user_id"`
+	BsDate            string             `json:"bs_date"`
+	BalanceAfterPaisa int64              `json:"balance_after_paisa"`
+	CreatedAt         time.Time          `json:"created_at"`
+	VoidedAt          pgtype.Timestamptz `json:"voided_at"`
+	VoidedByUserID    pgtype.UUID        `json:"voided_by_user_id"`
+	VoidReason        string             `json:"void_reason"`
+}
+
+type RepaymentCounter struct {
+	ID         bool  `json:"id"`
+	NextNumber int32 `json:"next_number"`
 }
 
 type SchemaBaseline struct {
@@ -266,6 +460,9 @@ type Setting struct {
 	KdsRedMinutes        int32     `json:"kds_red_minutes"`
 	LogoUrl              string    `json:"logo_url"`
 	UpdatedAt            time.Time `json:"updated_at"`
+	QrFonepayUrl         string    `json:"qr_fonepay_url"`
+	QrOtherUrl           string    `json:"qr_other_url"`
+	GuestOrdering        bool      `json:"guest_ordering"`
 }
 
 type Shift struct {
@@ -277,6 +474,20 @@ type Shift struct {
 	CountedCashPaisa  pgtype.Int8        `json:"counted_cash_paisa"`
 	Note              string             `json:"note"`
 	Status            string             `json:"status"`
+	ClosingNote       string             `json:"closing_note"`
+}
+
+type ShiftAdjustment struct {
+	ID              uuid.UUID   `json:"id"`
+	ShiftID         uuid.UUID   `json:"shift_id"`
+	OriginalShiftID uuid.UUID   `json:"original_shift_id"`
+	InvoiceID       pgtype.UUID `json:"invoice_id"`
+	PaymentID       pgtype.UUID `json:"payment_id"`
+	Method          string      `json:"method"`
+	AmountPaisa     int64       `json:"amount_paisa"`
+	CreatedByUserID pgtype.UUID `json:"created_by_user_id"`
+	CreatedAt       time.Time   `json:"created_at"`
+	RepaymentID     pgtype.UUID `json:"repayment_id"`
 }
 
 type Station struct {
@@ -286,16 +497,94 @@ type Station struct {
 	Sort   int32     `json:"sort"`
 }
 
+type StockCount struct {
+	ID                uuid.UUID          `json:"id"`
+	Number            int32              `json:"number"`
+	Status            string             `json:"status"`
+	ListID            pgtype.UUID        `json:"list_id"`
+	Label             string             `json:"label"`
+	StartedByUserID   uuid.UUID          `json:"started_by_user_id"`
+	StartedAt         time.Time          `json:"started_at"`
+	SubmittedByUserID pgtype.UUID        `json:"submitted_by_user_id"`
+	SubmittedAt       pgtype.Timestamptz `json:"submitted_at"`
+	PostedByUserID    pgtype.UUID        `json:"posted_by_user_id"`
+	PostedAt          pgtype.Timestamptz `json:"posted_at"`
+	DiscardedReason   string             `json:"discarded_reason"`
+	DiscardedAt       pgtype.Timestamptz `json:"discarded_at"`
+	TotalValuePaisa   pgtype.Int8        `json:"total_value_paisa"`
+}
+
+type StockCountLine struct {
+	CountID         uuid.UUID          `json:"count_id"`
+	InventoryItemID uuid.UUID          `json:"inventory_item_id"`
+	Sort            int32              `json:"sort"`
+	CountedMilli    pgtype.Int8        `json:"counted_milli"`
+	CountedAt       pgtype.Timestamptz `json:"counted_at"`
+	CountedSeq      pgtype.Int8        `json:"counted_seq"`
+	CountedByUserID pgtype.UUID        `json:"counted_by_user_id"`
+	Recount         bool               `json:"recount"`
+	ExpectedMilli   pgtype.Int8        `json:"expected_milli"`
+	VarianceMilli   pgtype.Int8        `json:"variance_milli"`
+	ValuePaisa      pgtype.Int8        `json:"value_paisa"`
+}
+
+type StockMovement struct {
+	ID              uuid.UUID   `json:"id"`
+	Seq             int64       `json:"seq"`
+	InventoryItemID uuid.UUID   `json:"inventory_item_id"`
+	QuantityMilli   int64       `json:"quantity_milli"`
+	Type            string      `json:"type"`
+	RefID           uuid.UUID   `json:"ref_id"`
+	Reason          string      `json:"reason"`
+	ByUserID        pgtype.UUID `json:"by_user_id"`
+	At              time.Time   `json:"at"`
+	UnitCostE4      int64       `json:"unit_cost_e4"`
+	CreatedAt       time.Time   `json:"created_at"`
+}
+
 type User struct {
-	ID                uuid.UUID   `json:"id"`
-	Name              string      `json:"name"`
-	Role              string      `json:"role"`
-	Username          pgtype.Text `json:"username"`
-	PasswordHash      pgtype.Text `json:"password_hash"`
-	PinHash           pgtype.Text `json:"pin_hash"`
-	Language          string      `json:"language"`
-	Active            bool        `json:"active"`
-	FailedPinAttempts int32       `json:"failed_pin_attempts"`
-	CreatedAt         time.Time   `json:"created_at"`
-	UpdatedAt         time.Time   `json:"updated_at"`
+	ID                uuid.UUID          `json:"id"`
+	Name              string             `json:"name"`
+	Role              string             `json:"role"`
+	Username          pgtype.Text        `json:"username"`
+	PasswordHash      pgtype.Text        `json:"password_hash"`
+	PinHash           pgtype.Text        `json:"pin_hash"`
+	Language          string             `json:"language"`
+	Active            bool               `json:"active"`
+	FailedPinAttempts int32              `json:"failed_pin_attempts"`
+	CreatedAt         time.Time          `json:"created_at"`
+	UpdatedAt         time.Time          `json:"updated_at"`
+	PinLockedUntil    pgtype.Timestamptz `json:"pin_locked_until"`
+	PinLockoutCount   int32              `json:"pin_lockout_count"`
+	Phone             string             `json:"phone"`
+}
+
+type VariantRecipe struct {
+	VariantID uuid.UUID `json:"variant_id"`
+}
+
+type VariantRecipeLine struct {
+	VariantID       uuid.UUID `json:"variant_id"`
+	InventoryItemID uuid.UUID `json:"inventory_item_id"`
+	QuantityMilli   int64     `json:"quantity_milli"`
+	Sort            int32     `json:"sort"`
+}
+
+type WasteEntry struct {
+	ID               uuid.UUID   `json:"id"`
+	RequestID        uuid.UUID   `json:"request_id"`
+	InventoryItemID  pgtype.UUID `json:"inventory_item_id"`
+	MenuItemID       pgtype.UUID `json:"menu_item_id"`
+	VariantID        pgtype.UUID `json:"variant_id"`
+	ModifierIds      []uuid.UUID `json:"modifier_ids"`
+	NameEn           string      `json:"name_en"`
+	NameNe           string      `json:"name_ne"`
+	Unit             string      `json:"unit"`
+	QuantityMilli    int64       `json:"quantity_milli"`
+	Reason           string      `json:"reason"`
+	Note             string      `json:"note"`
+	ByUserID         uuid.UUID   `json:"by_user_id"`
+	ApprovedByUserID pgtype.UUID `json:"approved_by_user_id"`
+	At               time.Time   `json:"at"`
+	ValuePaisa       int64       `json:"value_paisa"`
 }

@@ -76,9 +76,10 @@ type OrderStatus int32
 const (
 	OrderStatus_ORDER_STATUS_UNSPECIFIED OrderStatus = 0
 	OrderStatus_ORDER_STATUS_OPEN        OrderStatus = 1
-	OrderStatus_ORDER_STATUS_BILLED      OrderStatus = 2 // fully invoiced (set by the billing plan)
-	OrderStatus_ORDER_STATUS_CLOSED      OrderStatus = 3 // billed and paid
-	OrderStatus_ORDER_STATUS_CANCELLED   OrderStatus = 4
+	OrderStatus_ORDER_STATUS_BILLED      OrderStatus = 2 // every live line invoiced, not all handed over yet (still servable)
+	OrderStatus_ORDER_STATUS_CLOSED      OrderStatus = 3 // every live line on an issued invoice AND handed over
+	// (SERVED, or READY for takeaway); payment is not part of the rule
+	OrderStatus_ORDER_STATUS_CANCELLED OrderStatus = 4
 )
 
 // Enum value maps for OrderStatus.
@@ -248,7 +249,7 @@ type OrderItem struct {
 	Name           *LocalText             `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`                                              // snapshot
 	VariantName    *LocalText             `protobuf:"bytes,5,opt,name=variant_name,json=variantName,proto3,oneof" json:"variant_name,omitempty"`       // snapshot (unset if no variant)
 	Modifiers      []*OrderItemModifier   `protobuf:"bytes,6,rep,name=modifiers,proto3" json:"modifiers,omitempty"`                                    // snapshot
-	UnitPricePaisa int64                  `protobuf:"varint,7,opt,name=unit_price_paisa,json=unitPricePaisa,proto3" json:"unit_price_paisa,omitempty"` // snapshot (server price at add time)
+	UnitPricePaisa int64                  `protobuf:"varint,7,opt,name=unit_price_paisa,json=unitPricePaisa,proto3" json:"unit_price_paisa,omitempty"` // snapshot (server price at add time): variant (or item)
 	Quantity       int32                  `protobuf:"varint,8,opt,name=quantity,proto3" json:"quantity,omitempty"`
 	Note           string                 `protobuf:"bytes,9,opt,name=note,proto3" json:"note,omitempty"`
 	StationId      string                 `protobuf:"bytes,10,opt,name=station_id,json=stationId,proto3" json:"station_id,omitempty"`
@@ -257,8 +258,13 @@ type OrderItem struct {
 	VoidReason           string `protobuf:"bytes,12,opt,name=void_reason,json=voidReason,proto3" json:"void_reason,omitempty"`
 	VoidedByUserId       string `protobuf:"bytes,13,opt,name=voided_by_user_id,json=voidedByUserId,proto3" json:"voided_by_user_id,omitempty"`
 	VoidApprovedByUserId string `protobuf:"bytes,14,opt,name=void_approved_by_user_id,json=voidApprovedByUserId,proto3" json:"void_approved_by_user_id,omitempty"` // manager approver, if one was required
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	SentAtUnix           int64  `protobuf:"varint,15,opt,name=sent_at_unix,json=sentAtUnix,proto3" json:"sent_at_unix,omitempty"`                                  // when the line became SENT; 0 while DRAFT
+	AddedByUserId        string `protobuf:"bytes,16,opt,name=added_by_user_id,json=addedByUserId,proto3" json:"added_by_user_id,omitempty"`                        // who added the line ("" when unknown)
+	InvoiceId            string `protobuf:"bytes,17,opt,name=invoice_id,json=invoiceId,proto3" json:"invoice_id,omitempty"`                                        // invoice the line is billed on; "" when unbilled
+	// (cleared again when that invoice is cancelled)
+	Billed        bool `protobuf:"varint,18,opt,name=billed,proto3" json:"billed,omitempty"` // invoice_id != ""
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *OrderItem) Reset() {
@@ -389,6 +395,34 @@ func (x *OrderItem) GetVoidApprovedByUserId() string {
 	return ""
 }
 
+func (x *OrderItem) GetSentAtUnix() int64 {
+	if x != nil {
+		return x.SentAtUnix
+	}
+	return 0
+}
+
+func (x *OrderItem) GetAddedByUserId() string {
+	if x != nil {
+		return x.AddedByUserId
+	}
+	return ""
+}
+
+func (x *OrderItem) GetInvoiceId() string {
+	if x != nil {
+		return x.InvoiceId
+	}
+	return ""
+}
+
+func (x *OrderItem) GetBilled() bool {
+	if x != nil {
+		return x.Billed
+	}
+	return false
+}
+
 type Order struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -399,7 +433,10 @@ type Order struct {
 	Status        OrderStatus            `protobuf:"varint,6,opt,name=status,proto3,enum=restaurant.v1.OrderStatus" json:"status,omitempty"`
 	GuestCount    int32                  `protobuf:"varint,7,opt,name=guest_count,json=guestCount,proto3" json:"guest_count,omitempty"`
 	Version       int64                  `protobuf:"varint,8,opt,name=version,proto3" json:"version,omitempty"`
-	Items         []*OrderItem           `protobuf:"bytes,9,rep,name=items,proto3" json:"items,omitempty"` // includes voided lines (append-only history)
+	Items         []*OrderItem           `protobuf:"bytes,9,rep,name=items,proto3" json:"items,omitempty"`                              // includes voided lines (append-only history)
+	Label         string                 `protobuf:"bytes,10,opt,name=label,proto3" json:"label,omitempty"`                             // free text, e.g. a takeaway customer name; "" when none
+	WaiterName    string                 `protobuf:"bytes,11,opt,name=waiter_name,json=waiterName,proto3" json:"waiter_name,omitempty"` // display name of waiter_user_id
+	CreatedAtUnix int64                  `protobuf:"varint,12,opt,name=created_at_unix,json=createdAtUnix,proto3" json:"created_at_unix,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -495,6 +532,27 @@ func (x *Order) GetItems() []*OrderItem {
 		return x.Items
 	}
 	return nil
+}
+
+func (x *Order) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *Order) GetWaiterName() string {
+	if x != nil {
+		return x.WaiterName
+	}
+	return ""
+}
+
+func (x *Order) GetCreatedAtUnix() int64 {
+	if x != nil {
+		return x.CreatedAtUnix
+	}
+	return 0
 }
 
 type ListOpenOrdersRequest struct {
@@ -741,6 +799,8 @@ type CreateOrderRequest struct {
 	Type          OrderType              `protobuf:"varint,3,opt,name=type,proto3,enum=restaurant.v1.OrderType" json:"type,omitempty"`
 	TableId       *string                `protobuf:"bytes,4,opt,name=table_id,json=tableId,proto3,oneof" json:"table_id,omitempty"` // required for DINE_IN, unset for TAKEAWAY
 	GuestCount    int32                  `protobuf:"varint,5,opt,name=guest_count,json=guestCount,proto3" json:"guest_count,omitempty"`
+	Label         string                 `protobuf:"bytes,6,opt,name=label,proto3" json:"label,omitempty"`                       // becomes Order.label
+	UserId        *string                `protobuf:"bytes,7,opt,name=user_id,json=userId,proto3,oneof" json:"user_id,omitempty"` // see WRONG USER above
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -808,6 +868,20 @@ func (x *CreateOrderRequest) GetGuestCount() int32 {
 		return x.GuestCount
 	}
 	return 0
+}
+
+func (x *CreateOrderRequest) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *CreateOrderRequest) GetUserId() string {
+	if x != nil && x.UserId != nil {
+		return *x.UserId
+	}
+	return ""
 }
 
 type NewItem struct {
@@ -899,6 +973,11 @@ type AddItemsRequest struct {
 	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	OrderClientId string                 `protobuf:"bytes,2,opt,name=order_client_id,json=orderClientId,proto3" json:"order_client_id,omitempty"`
 	Items         []*NewItem             `protobuf:"bytes,3,rep,name=items,proto3" json:"items,omitempty"`
+	// When true the accepted lines are created already SENT (same effects as a
+	// SendItems of exactly those lines, in the same transaction), so one queued
+	// client command is one atomic call. Default false: lines are created DRAFT.
+	Send          bool    `protobuf:"varint,4,opt,name=send,proto3" json:"send,omitempty"`
+	UserId        *string `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3,oneof" json:"user_id,omitempty"` // see WRONG USER above
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -954,10 +1033,29 @@ func (x *AddItemsRequest) GetItems() []*NewItem {
 	return nil
 }
 
+func (x *AddItemsRequest) GetSend() bool {
+	if x != nil {
+		return x.Send
+	}
+	return false
+}
+
+func (x *AddItemsRequest) GetUserId() string {
+	if x != nil && x.UserId != nil {
+		return *x.UserId
+	}
+	return ""
+}
+
 type AddItemsResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Order         *Order                 `protobuf:"bytes,1,opt,name=order,proto3" json:"order,omitempty"`
-	Rejected      []*RejectedLine        `protobuf:"bytes,2,rep,name=rejected,proto3" json:"rejected,omitempty"` // 86'd lines; the rest were applied
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Order *Order                 `protobuf:"bytes,1,opt,name=order,proto3" json:"order,omitempty"`
+	// Lines that were not applied (the rest were): ITEM_86D for an out-of-stock
+	// item; INVALID for an unknown/inactive item, a variant or modifier that does
+	// not belong to the item, a modifier-group min/max violation, or a line
+	// client_id already used on another order. A line whose client_id already
+	// exists on this order is a no-op (per-line idempotency), not a rejection.
+	Rejected      []*RejectedLine `protobuf:"bytes,2,rep,name=rejected,proto3" json:"rejected,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1010,7 +1108,8 @@ type SendItemsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	OrderClientId string                 `protobuf:"bytes,2,opt,name=order_client_id,json=orderClientId,proto3" json:"order_client_id,omitempty"`
-	ItemIds       []string               `protobuf:"bytes,3,rep,name=item_ids,json=itemIds,proto3" json:"item_ids,omitempty"` // DRAFT lines to send; empty = all DRAFT lines
+	ItemIds       []string               `protobuf:"bytes,3,rep,name=item_ids,json=itemIds,proto3" json:"item_ids,omitempty"`    // DRAFT lines to send; empty = all DRAFT lines
+	UserId        *string                `protobuf:"bytes,4,opt,name=user_id,json=userId,proto3,oneof" json:"user_id,omitempty"` // see WRONG USER above
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1066,14 +1165,22 @@ func (x *SendItemsRequest) GetItemIds() []string {
 	return nil
 }
 
+func (x *SendItemsRequest) GetUserId() string {
+	if x != nil && x.UserId != nil {
+		return *x.UserId
+	}
+	return ""
+}
+
 type VoidItemRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	OrderClientId string                 `protobuf:"bytes,2,opt,name=order_client_id,json=orderClientId,proto3" json:"order_client_id,omitempty"`
 	BaseVersion   int64                  `protobuf:"varint,3,opt,name=base_version,json=baseVersion,proto3" json:"base_version,omitempty"`
 	ItemId        string                 `protobuf:"bytes,4,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
-	Reason        string                 `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`           // required once the line is SENT or later
-	Approval      *ManagerApproval       `protobuf:"bytes,6,opt,name=approval,proto3,oneof" json:"approval,omitempty"` // required once the line is PREPARING or later
+	Reason        string                 `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`                     // required once the line is SENT or later
+	Approval      *ManagerApproval       `protobuf:"bytes,6,opt,name=approval,proto3,oneof" json:"approval,omitempty"`           // required once the line is PREPARING or later
+	UserId        *string                `protobuf:"bytes,7,opt,name=user_id,json=userId,proto3,oneof" json:"user_id,omitempty"` // see WRONG USER above
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1150,11 +1257,19 @@ func (x *VoidItemRequest) GetApproval() *ManagerApproval {
 	return nil
 }
 
+func (x *VoidItemRequest) GetUserId() string {
+	if x != nil && x.UserId != nil {
+		return *x.UserId
+	}
+	return ""
+}
+
 type MarkServedRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	OrderClientId string                 `protobuf:"bytes,2,opt,name=order_client_id,json=orderClientId,proto3" json:"order_client_id,omitempty"`
 	ItemIds       []string               `protobuf:"bytes,3,rep,name=item_ids,json=itemIds,proto3" json:"item_ids,omitempty"`
+	UserId        *string                `protobuf:"bytes,4,opt,name=user_id,json=userId,proto3,oneof" json:"user_id,omitempty"` // see WRONG USER above
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1210,12 +1325,22 @@ func (x *MarkServedRequest) GetItemIds() []string {
 	return nil
 }
 
+func (x *MarkServedRequest) GetUserId() string {
+	if x != nil && x.UserId != nil {
+		return *x.UserId
+	}
+	return ""
+}
+
+// Move an order to another table. An empty new_table_id moves it off the floor:
+// the order becomes TAKEAWAY with no table. Moving to a table makes it DINE_IN.
 type TransferTableRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	OrderClientId string                 `protobuf:"bytes,2,opt,name=order_client_id,json=orderClientId,proto3" json:"order_client_id,omitempty"`
 	BaseVersion   int64                  `protobuf:"varint,3,opt,name=base_version,json=baseVersion,proto3" json:"base_version,omitempty"`
-	NewTableId    string                 `protobuf:"bytes,4,opt,name=new_table_id,json=newTableId,proto3" json:"new_table_id,omitempty"`
+	NewTableId    string                 `protobuf:"bytes,4,opt,name=new_table_id,json=newTableId,proto3" json:"new_table_id,omitempty"` // "" = no table (-> TAKEAWAY)
+	UserId        *string                `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3,oneof" json:"user_id,omitempty"`         // see WRONG USER above
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1278,8 +1403,16 @@ func (x *TransferTableRequest) GetNewTableId() string {
 	return ""
 }
 
+func (x *TransferTableRequest) GetUserId() string {
+	if x != nil && x.UserId != nil {
+		return *x.UserId
+	}
+	return ""
+}
+
 // Merge source into target: source's live items move to target (append-only),
-// then source is CLOSED. Both versions are checked.
+// source's guest count is added to target's, then source is CANCELLED. Both
+// versions are checked.
 type MergeTablesRequest struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	CommandId           string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
@@ -1287,6 +1420,7 @@ type MergeTablesRequest struct {
 	SourceBaseVersion   int64                  `protobuf:"varint,3,opt,name=source_base_version,json=sourceBaseVersion,proto3" json:"source_base_version,omitempty"`
 	TargetOrderClientId string                 `protobuf:"bytes,4,opt,name=target_order_client_id,json=targetOrderClientId,proto3" json:"target_order_client_id,omitempty"`
 	TargetBaseVersion   int64                  `protobuf:"varint,5,opt,name=target_base_version,json=targetBaseVersion,proto3" json:"target_base_version,omitempty"`
+	UserId              *string                `protobuf:"bytes,6,opt,name=user_id,json=userId,proto3,oneof" json:"user_id,omitempty"` // see WRONG USER above
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -1356,6 +1490,90 @@ func (x *MergeTablesRequest) GetTargetBaseVersion() int64 {
 	return 0
 }
 
+func (x *MergeTablesRequest) GetUserId() string {
+	if x != nil && x.UserId != nil {
+		return *x.UserId
+	}
+	return ""
+}
+
+// Change an OPEN order's guest count. STALE_VERSION on a base_version mismatch.
+type SetGuestCountRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	OrderClientId string                 `protobuf:"bytes,2,opt,name=order_client_id,json=orderClientId,proto3" json:"order_client_id,omitempty"`
+	BaseVersion   int64                  `protobuf:"varint,3,opt,name=base_version,json=baseVersion,proto3" json:"base_version,omitempty"`
+	GuestCount    int32                  `protobuf:"varint,4,opt,name=guest_count,json=guestCount,proto3" json:"guest_count,omitempty"`
+	UserId        *string                `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3,oneof" json:"user_id,omitempty"` // see WRONG USER above
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetGuestCountRequest) Reset() {
+	*x = SetGuestCountRequest{}
+	mi := &file_restaurant_v1_order_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetGuestCountRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetGuestCountRequest) ProtoMessage() {}
+
+func (x *SetGuestCountRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_order_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetGuestCountRequest.ProtoReflect.Descriptor instead.
+func (*SetGuestCountRequest) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_order_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *SetGuestCountRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *SetGuestCountRequest) GetOrderClientId() string {
+	if x != nil {
+		return x.OrderClientId
+	}
+	return ""
+}
+
+func (x *SetGuestCountRequest) GetBaseVersion() int64 {
+	if x != nil {
+		return x.BaseVersion
+	}
+	return 0
+}
+
+func (x *SetGuestCountRequest) GetGuestCount() int32 {
+	if x != nil {
+		return x.GuestCount
+	}
+	return 0
+}
+
+func (x *SetGuestCountRequest) GetUserId() string {
+	if x != nil && x.UserId != nil {
+		return *x.UserId
+	}
+	return ""
+}
+
 var File_restaurant_v1_order_proto protoreflect.FileDescriptor
 
 const file_restaurant_v1_order_proto_rawDesc = "" +
@@ -1363,7 +1581,7 @@ const file_restaurant_v1_order_proto_rawDesc = "" +
 	"\x19restaurant/v1/order.proto\x12\rrestaurant.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1arestaurant/v1/common.proto\"m\n" +
 	"\x11OrderItemModifier\x12,\n" +
 	"\x04name\x18\x01 \x01(\v2\x18.restaurant.v1.LocalTextR\x04name\x12*\n" +
-	"\x11price_delta_paisa\x18\x02 \x01(\x03R\x0fpriceDeltaPaisa\"\xd0\x04\n" +
+	"\x11price_delta_paisa\x18\x02 \x01(\x03R\x0fpriceDeltaPaisa\"\xd2\x05\n" +
 	"\tOrderItem\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tclient_id\x18\x02 \x01(\tR\bclientId\x12 \n" +
@@ -1382,8 +1600,14 @@ const file_restaurant_v1_order_proto_rawDesc = "" +
 	"\vvoid_reason\x18\f \x01(\tR\n" +
 	"voidReason\x12)\n" +
 	"\x11voided_by_user_id\x18\r \x01(\tR\x0evoidedByUserId\x126\n" +
-	"\x18void_approved_by_user_id\x18\x0e \x01(\tR\x14voidApprovedByUserIdB\x0f\n" +
-	"\r_variant_name\"\xd4\x02\n" +
+	"\x18void_approved_by_user_id\x18\x0e \x01(\tR\x14voidApprovedByUserId\x12 \n" +
+	"\fsent_at_unix\x18\x0f \x01(\x03R\n" +
+	"sentAtUnix\x12'\n" +
+	"\x10added_by_user_id\x18\x10 \x01(\tR\raddedByUserId\x12\x1d\n" +
+	"\n" +
+	"invoice_id\x18\x11 \x01(\tR\tinvoiceId\x12\x16\n" +
+	"\x06billed\x18\x12 \x01(\bR\x06billedB\x0f\n" +
+	"\r_variant_name\"\xb3\x03\n" +
 	"\x05Order\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tclient_id\x18\x02 \x01(\tR\bclientId\x12,\n" +
@@ -1394,7 +1618,12 @@ const file_restaurant_v1_order_proto_rawDesc = "" +
 	"\vguest_count\x18\a \x01(\x05R\n" +
 	"guestCount\x12\x18\n" +
 	"\aversion\x18\b \x01(\x03R\aversion\x12.\n" +
-	"\x05items\x18\t \x03(\v2\x18.restaurant.v1.OrderItemR\x05itemsB\v\n" +
+	"\x05items\x18\t \x03(\v2\x18.restaurant.v1.OrderItemR\x05items\x12\x14\n" +
+	"\x05label\x18\n" +
+	" \x01(\tR\x05label\x12\x1f\n" +
+	"\vwaiter_name\x18\v \x01(\tR\n" +
+	"waiterName\x12&\n" +
+	"\x0fcreated_at_unix\x18\f \x01(\x03R\rcreatedAtUnixB\v\n" +
 	"\t_table_id\"\x17\n" +
 	"\x15ListOpenOrdersRequest\"F\n" +
 	"\x16ListOpenOrdersResponse\x12,\n" +
@@ -1410,7 +1639,7 @@ const file_restaurant_v1_order_proto_rawDesc = "" +
 	"\x06reason\x18\x02 \x01(\x0e2\x1a.restaurant.v1.ErrorReasonR\x06reason\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\"9\n" +
 	"\vOrderResult\x12*\n" +
-	"\x05order\x18\x01 \x01(\v2\x14.restaurant.v1.OrderR\x05order\"\xfe\x01\n" +
+	"\x05order\x18\x01 \x01(\v2\x14.restaurant.v1.OrderR\x05order\"\xc7\x02\n" +
 	"\x12CreateOrderRequest\x12&\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tcommandId\x12/\n" +
@@ -1419,8 +1648,12 @@ const file_restaurant_v1_order_proto_rawDesc = "" +
 	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\x04type\x12\x1e\n" +
 	"\btable_id\x18\x04 \x01(\tH\x00R\atableId\x88\x01\x01\x12(\n" +
 	"\vguest_count\x18\x05 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\n" +
-	"guestCountB\v\n" +
-	"\t_table_id\"\xe9\x01\n" +
+	"guestCount\x12\x1d\n" +
+	"\x05label\x18\x06 \x01(\tB\a\xbaH\x04r\x02\x18PR\x05label\x12\x1c\n" +
+	"\auser_id\x18\a \x01(\tH\x01R\x06userId\x88\x01\x01B\v\n" +
+	"\t_table_idB\n" +
+	"\n" +
+	"\b_user_id\"\xe9\x01\n" +
 	"\aNewItem\x12$\n" +
 	"\tclient_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bclientId\x12)\n" +
 	"\fmenu_item_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
@@ -1430,20 +1663,27 @@ const file_restaurant_v1_order_proto_rawDesc = "" +
 	"\fmodifier_ids\x18\x04 \x03(\tR\vmodifierIds\x12#\n" +
 	"\bquantity\x18\x05 \x01(\x05B\a\xbaH\x04\x1a\x02(\x01R\bquantity\x12\x12\n" +
 	"\x04note\x18\x06 \x01(\tR\x04noteB\r\n" +
-	"\v_variant_id\"\xa2\x01\n" +
+	"\v_variant_id\"\xe0\x01\n" +
 	"\x0fAddItemsRequest\x12&\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tcommandId\x12/\n" +
 	"\x0forder_client_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\rorderClientId\x126\n" +
-	"\x05items\x18\x03 \x03(\v2\x16.restaurant.v1.NewItemB\b\xbaH\x05\x92\x01\x02\b\x01R\x05items\"u\n" +
+	"\x05items\x18\x03 \x03(\v2\x16.restaurant.v1.NewItemB\b\xbaH\x05\x92\x01\x02\b\x01R\x05items\x12\x12\n" +
+	"\x04send\x18\x04 \x01(\bR\x04send\x12\x1c\n" +
+	"\auser_id\x18\x05 \x01(\tH\x00R\x06userId\x88\x01\x01B\n" +
+	"\n" +
+	"\b_user_id\"u\n" +
 	"\x0eAddItemsResult\x12*\n" +
 	"\x05order\x18\x01 \x01(\v2\x14.restaurant.v1.OrderR\x05order\x127\n" +
-	"\brejected\x18\x02 \x03(\v2\x1b.restaurant.v1.RejectedLineR\brejected\"\x86\x01\n" +
+	"\brejected\x18\x02 \x03(\v2\x1b.restaurant.v1.RejectedLineR\brejected\"\xb0\x01\n" +
 	"\x10SendItemsRequest\x12&\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tcommandId\x12/\n" +
 	"\x0forder_client_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\rorderClientId\x12\x19\n" +
-	"\bitem_ids\x18\x03 \x03(\tR\aitemIds\"\x95\x02\n" +
+	"\bitem_ids\x18\x03 \x03(\tR\aitemIds\x12\x1c\n" +
+	"\auser_id\x18\x04 \x01(\tH\x00R\x06userId\x88\x01\x01B\n" +
+	"\n" +
+	"\b_user_id\"\xbf\x02\n" +
 	"\x0fVoidItemRequest\x12&\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tcommandId\x12/\n" +
@@ -1451,27 +1691,49 @@ const file_restaurant_v1_order_proto_rawDesc = "" +
 	"\fbase_version\x18\x03 \x01(\x03R\vbaseVersion\x12 \n" +
 	"\aitem_id\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x06itemId\x12\x16\n" +
 	"\x06reason\x18\x05 \x01(\tR\x06reason\x12?\n" +
-	"\bapproval\x18\x06 \x01(\v2\x1e.restaurant.v1.ManagerApprovalH\x00R\bapproval\x88\x01\x01B\v\n" +
-	"\t_approval\"\x91\x01\n" +
+	"\bapproval\x18\x06 \x01(\v2\x1e.restaurant.v1.ManagerApprovalH\x00R\bapproval\x88\x01\x01\x12\x1c\n" +
+	"\auser_id\x18\a \x01(\tH\x01R\x06userId\x88\x01\x01B\v\n" +
+	"\t_approvalB\n" +
+	"\n" +
+	"\b_user_id\"\xbb\x01\n" +
 	"\x11MarkServedRequest\x12&\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tcommandId\x12/\n" +
 	"\x0forder_client_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\rorderClientId\x12#\n" +
-	"\bitem_ids\x18\x03 \x03(\tB\b\xbaH\x05\x92\x01\x02\b\x01R\aitemIds\"\xbd\x01\n" +
+	"\bitem_ids\x18\x03 \x03(\tB\b\xbaH\x05\x92\x01\x02\b\x01R\aitemIds\x12\x1c\n" +
+	"\auser_id\x18\x04 \x01(\tH\x00R\x06userId\x88\x01\x01B\n" +
+	"\n" +
+	"\b_user_id\"\xde\x01\n" +
 	"\x14TransferTableRequest\x12&\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tcommandId\x12/\n" +
 	"\x0forder_client_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\rorderClientId\x12!\n" +
-	"\fbase_version\x18\x03 \x01(\x03R\vbaseVersion\x12)\n" +
-	"\fnew_table_id\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
-	"newTableId\"\x98\x02\n" +
+	"\fbase_version\x18\x03 \x01(\x03R\vbaseVersion\x12 \n" +
+	"\fnew_table_id\x18\x04 \x01(\tR\n" +
+	"newTableId\x12\x1c\n" +
+	"\auser_id\x18\x05 \x01(\tH\x00R\x06userId\x88\x01\x01B\n" +
+	"\n" +
+	"\b_user_id\"\xc2\x02\n" +
 	"\x12MergeTablesRequest\x12&\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tcommandId\x12<\n" +
 	"\x16source_order_client_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x13sourceOrderClientId\x12.\n" +
 	"\x13source_base_version\x18\x03 \x01(\x03R\x11sourceBaseVersion\x12<\n" +
 	"\x16target_order_client_id\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x13targetOrderClientId\x12.\n" +
-	"\x13target_base_version\x18\x05 \x01(\x03R\x11targetBaseVersion*X\n" +
+	"\x13target_base_version\x18\x05 \x01(\x03R\x11targetBaseVersion\x12\x1c\n" +
+	"\auser_id\x18\x06 \x01(\tH\x00R\x06userId\x88\x01\x01B\n" +
+	"\n" +
+	"\b_user_id\"\xe8\x01\n" +
+	"\x14SetGuestCountRequest\x12&\n" +
+	"\n" +
+	"command_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tcommandId\x12/\n" +
+	"\x0forder_client_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\rorderClientId\x12!\n" +
+	"\fbase_version\x18\x03 \x01(\x03R\vbaseVersion\x12*\n" +
+	"\vguest_count\x18\x04 \x01(\x05B\t\xbaH\x06\x1a\x04\x18c(\x00R\n" +
+	"guestCount\x12\x1c\n" +
+	"\auser_id\x18\x05 \x01(\tH\x00R\x06userId\x88\x01\x01B\n" +
+	"\n" +
+	"\b_user_id*X\n" +
 	"\tOrderType\x12\x1a\n" +
 	"\x16ORDER_TYPE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12ORDER_TYPE_DINE_IN\x10\x01\x12\x17\n" +
@@ -1489,7 +1751,7 @@ const file_restaurant_v1_order_proto_rawDesc = "" +
 	"\x1bORDER_ITEM_STATUS_PREPARING\x10\x03\x12\x1b\n" +
 	"\x17ORDER_ITEM_STATUS_READY\x10\x04\x12\x1c\n" +
 	"\x18ORDER_ITEM_STATUS_SERVED\x10\x05\x12\x1c\n" +
-	"\x18ORDER_ITEM_STATUS_VOIDED\x10\x062\xc6\x05\n" +
+	"\x18ORDER_ITEM_STATUS_VOIDED\x10\x062\x98\x06\n" +
 	"\fOrderService\x12]\n" +
 	"\x0eListOpenOrders\x12$.restaurant.v1.ListOpenOrdersRequest\x1a%.restaurant.v1.ListOpenOrdersResponse\x12@\n" +
 	"\bGetOrder\x12\x1e.restaurant.v1.GetOrderRequest\x1a\x14.restaurant.v1.Order\x12L\n" +
@@ -1500,7 +1762,8 @@ const file_restaurant_v1_order_proto_rawDesc = "" +
 	"\n" +
 	"MarkServed\x12 .restaurant.v1.MarkServedRequest\x1a\x1a.restaurant.v1.OrderResult\x12P\n" +
 	"\rTransferTable\x12#.restaurant.v1.TransferTableRequest\x1a\x1a.restaurant.v1.OrderResult\x12L\n" +
-	"\vMergeTables\x12!.restaurant.v1.MergeTablesRequest\x1a\x1a.restaurant.v1.OrderResultB\xb4\x01\n" +
+	"\vMergeTables\x12!.restaurant.v1.MergeTablesRequest\x1a\x1a.restaurant.v1.OrderResult\x12P\n" +
+	"\rSetGuestCount\x12#.restaurant.v1.SetGuestCountRequest\x1a\x1a.restaurant.v1.OrderResultB\xb4\x01\n" +
 	"\x11com.restaurant.v1B\n" +
 	"OrderProtoP\x01Z>github.com/oneaccord/restro/api/gen/restaurant/v1;restaurantv1\xa2\x02\x03RXX\xaa\x02\rRestaurant.V1\xca\x02\rRestaurant\\V1\xe2\x02\x19Restaurant\\V1\\GPBMetadata\xea\x02\x0eRestaurant::V1b\x06proto3"
 
@@ -1517,7 +1780,7 @@ func file_restaurant_v1_order_proto_rawDescGZIP() []byte {
 }
 
 var file_restaurant_v1_order_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_restaurant_v1_order_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_restaurant_v1_order_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_restaurant_v1_order_proto_goTypes = []any{
 	(OrderType)(0),                 // 0: restaurant.v1.OrderType
 	(OrderStatus)(0),               // 1: restaurant.v1.OrderStatus
@@ -1539,27 +1802,28 @@ var file_restaurant_v1_order_proto_goTypes = []any{
 	(*MarkServedRequest)(nil),      // 17: restaurant.v1.MarkServedRequest
 	(*TransferTableRequest)(nil),   // 18: restaurant.v1.TransferTableRequest
 	(*MergeTablesRequest)(nil),     // 19: restaurant.v1.MergeTablesRequest
-	(*LocalText)(nil),              // 20: restaurant.v1.LocalText
-	(ErrorReason)(0),               // 21: restaurant.v1.ErrorReason
-	(*ManagerApproval)(nil),        // 22: restaurant.v1.ManagerApproval
+	(*SetGuestCountRequest)(nil),   // 20: restaurant.v1.SetGuestCountRequest
+	(*LocalText)(nil),              // 21: restaurant.v1.LocalText
+	(ErrorReason)(0),               // 22: restaurant.v1.ErrorReason
+	(*ManagerApproval)(nil),        // 23: restaurant.v1.ManagerApproval
 }
 var file_restaurant_v1_order_proto_depIdxs = []int32{
-	20, // 0: restaurant.v1.OrderItemModifier.name:type_name -> restaurant.v1.LocalText
-	20, // 1: restaurant.v1.OrderItem.name:type_name -> restaurant.v1.LocalText
-	20, // 2: restaurant.v1.OrderItem.variant_name:type_name -> restaurant.v1.LocalText
+	21, // 0: restaurant.v1.OrderItemModifier.name:type_name -> restaurant.v1.LocalText
+	21, // 1: restaurant.v1.OrderItem.name:type_name -> restaurant.v1.LocalText
+	21, // 2: restaurant.v1.OrderItem.variant_name:type_name -> restaurant.v1.LocalText
 	3,  // 3: restaurant.v1.OrderItem.modifiers:type_name -> restaurant.v1.OrderItemModifier
 	2,  // 4: restaurant.v1.OrderItem.status:type_name -> restaurant.v1.OrderItemStatus
 	0,  // 5: restaurant.v1.Order.type:type_name -> restaurant.v1.OrderType
 	1,  // 6: restaurant.v1.Order.status:type_name -> restaurant.v1.OrderStatus
 	4,  // 7: restaurant.v1.Order.items:type_name -> restaurant.v1.OrderItem
 	5,  // 8: restaurant.v1.ListOpenOrdersResponse.orders:type_name -> restaurant.v1.Order
-	21, // 9: restaurant.v1.RejectedLine.reason:type_name -> restaurant.v1.ErrorReason
+	22, // 9: restaurant.v1.RejectedLine.reason:type_name -> restaurant.v1.ErrorReason
 	5,  // 10: restaurant.v1.OrderResult.order:type_name -> restaurant.v1.Order
 	0,  // 11: restaurant.v1.CreateOrderRequest.type:type_name -> restaurant.v1.OrderType
 	12, // 12: restaurant.v1.AddItemsRequest.items:type_name -> restaurant.v1.NewItem
 	5,  // 13: restaurant.v1.AddItemsResult.order:type_name -> restaurant.v1.Order
 	9,  // 14: restaurant.v1.AddItemsResult.rejected:type_name -> restaurant.v1.RejectedLine
-	22, // 15: restaurant.v1.VoidItemRequest.approval:type_name -> restaurant.v1.ManagerApproval
+	23, // 15: restaurant.v1.VoidItemRequest.approval:type_name -> restaurant.v1.ManagerApproval
 	6,  // 16: restaurant.v1.OrderService.ListOpenOrders:input_type -> restaurant.v1.ListOpenOrdersRequest
 	8,  // 17: restaurant.v1.OrderService.GetOrder:input_type -> restaurant.v1.GetOrderRequest
 	11, // 18: restaurant.v1.OrderService.CreateOrder:input_type -> restaurant.v1.CreateOrderRequest
@@ -1569,17 +1833,19 @@ var file_restaurant_v1_order_proto_depIdxs = []int32{
 	17, // 22: restaurant.v1.OrderService.MarkServed:input_type -> restaurant.v1.MarkServedRequest
 	18, // 23: restaurant.v1.OrderService.TransferTable:input_type -> restaurant.v1.TransferTableRequest
 	19, // 24: restaurant.v1.OrderService.MergeTables:input_type -> restaurant.v1.MergeTablesRequest
-	7,  // 25: restaurant.v1.OrderService.ListOpenOrders:output_type -> restaurant.v1.ListOpenOrdersResponse
-	5,  // 26: restaurant.v1.OrderService.GetOrder:output_type -> restaurant.v1.Order
-	10, // 27: restaurant.v1.OrderService.CreateOrder:output_type -> restaurant.v1.OrderResult
-	14, // 28: restaurant.v1.OrderService.AddItems:output_type -> restaurant.v1.AddItemsResult
-	10, // 29: restaurant.v1.OrderService.SendItems:output_type -> restaurant.v1.OrderResult
-	10, // 30: restaurant.v1.OrderService.VoidItem:output_type -> restaurant.v1.OrderResult
-	10, // 31: restaurant.v1.OrderService.MarkServed:output_type -> restaurant.v1.OrderResult
-	10, // 32: restaurant.v1.OrderService.TransferTable:output_type -> restaurant.v1.OrderResult
-	10, // 33: restaurant.v1.OrderService.MergeTables:output_type -> restaurant.v1.OrderResult
-	25, // [25:34] is the sub-list for method output_type
-	16, // [16:25] is the sub-list for method input_type
+	20, // 25: restaurant.v1.OrderService.SetGuestCount:input_type -> restaurant.v1.SetGuestCountRequest
+	7,  // 26: restaurant.v1.OrderService.ListOpenOrders:output_type -> restaurant.v1.ListOpenOrdersResponse
+	5,  // 27: restaurant.v1.OrderService.GetOrder:output_type -> restaurant.v1.Order
+	10, // 28: restaurant.v1.OrderService.CreateOrder:output_type -> restaurant.v1.OrderResult
+	14, // 29: restaurant.v1.OrderService.AddItems:output_type -> restaurant.v1.AddItemsResult
+	10, // 30: restaurant.v1.OrderService.SendItems:output_type -> restaurant.v1.OrderResult
+	10, // 31: restaurant.v1.OrderService.VoidItem:output_type -> restaurant.v1.OrderResult
+	10, // 32: restaurant.v1.OrderService.MarkServed:output_type -> restaurant.v1.OrderResult
+	10, // 33: restaurant.v1.OrderService.TransferTable:output_type -> restaurant.v1.OrderResult
+	10, // 34: restaurant.v1.OrderService.MergeTables:output_type -> restaurant.v1.OrderResult
+	10, // 35: restaurant.v1.OrderService.SetGuestCount:output_type -> restaurant.v1.OrderResult
+	26, // [26:36] is the sub-list for method output_type
+	16, // [16:26] is the sub-list for method input_type
 	16, // [16:16] is the sub-list for extension type_name
 	16, // [16:16] is the sub-list for extension extendee
 	0,  // [0:16] is the sub-list for field type_name
@@ -1596,14 +1862,20 @@ func file_restaurant_v1_order_proto_init() {
 	file_restaurant_v1_order_proto_msgTypes[5].OneofWrappers = []any{}
 	file_restaurant_v1_order_proto_msgTypes[8].OneofWrappers = []any{}
 	file_restaurant_v1_order_proto_msgTypes[9].OneofWrappers = []any{}
+	file_restaurant_v1_order_proto_msgTypes[10].OneofWrappers = []any{}
+	file_restaurant_v1_order_proto_msgTypes[12].OneofWrappers = []any{}
 	file_restaurant_v1_order_proto_msgTypes[13].OneofWrappers = []any{}
+	file_restaurant_v1_order_proto_msgTypes[14].OneofWrappers = []any{}
+	file_restaurant_v1_order_proto_msgTypes[15].OneofWrappers = []any{}
+	file_restaurant_v1_order_proto_msgTypes[16].OneofWrappers = []any{}
+	file_restaurant_v1_order_proto_msgTypes[17].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_restaurant_v1_order_proto_rawDesc), len(file_restaurant_v1_order_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   17,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

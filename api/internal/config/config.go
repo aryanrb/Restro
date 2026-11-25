@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -14,6 +15,10 @@ type Config struct {
 	Port        string
 	DatabaseURL string
 	Env         string // dev | prod
+	// CORSOrigins is the browser origins allowed to call the API. Must be an
+	// explicit list (not "*") because auth rides on session cookies, and the
+	// CORS spec forbids a wildcard origin with credentials.
+	CORSOrigins []string
 }
 
 // Load reads config from the environment. A local .env is loaded if present, but
@@ -25,11 +30,23 @@ func Load() (*Config, error) {
 		Port:        getenv("PORT", "8080"),
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		Env:         getenv("RUNTIME_ENV", "dev"),
+		CORSOrigins: splitList(getenv("CORS_ORIGINS", "http://localhost:5173")),
 	}
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
 	}
 	return cfg, nil
+}
+
+// splitList parses a comma-separated env value into trimmed, non-empty entries.
+func splitList(s string) []string {
+	var out []string
+	for p := range strings.SplitSeq(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func getenv(key, def string) string {

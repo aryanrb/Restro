@@ -169,7 +169,7 @@ func (x *Table) GetActive() bool {
 type Floor struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Areas         []*Area                `protobuf:"bytes,1,rep,name=areas,proto3" json:"areas,omitempty"`   // sorted by sort
-	Tables        []*Table               `protobuf:"bytes,2,rep,name=tables,proto3" json:"tables,omitempty"` // sorted by sort
+	Tables        []*Table               `protobuf:"bytes,2,rep,name=tables,proto3" json:"tables,omitempty"` // sorted by sort (sort is per area)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -610,6 +610,7 @@ func (x *SaveTableRequest) GetActive() bool {
 	return false
 }
 
+// Moves within the table's area. Changing area on SaveTable puts the table last there.
 type MoveTableRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`

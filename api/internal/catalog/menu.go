@@ -2,9 +2,9 @@ package catalog
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -17,8 +17,6 @@ import (
 	"github.com/oneaccord/restro/api/internal/dbx"
 	"github.com/oneaccord/restro/api/internal/realtime"
 )
-
-const maxImageBytes = 1 << 20 // 1 MB
 
 func (s *Service) GetMenu(ctx context.Context) (*restaurantv1.Menu, error) {
 	if _, err := auth.RequireActor(ctx); err != nil {
@@ -72,6 +70,9 @@ func (s *Service) GetMenu(ctx context.Context) (*restaurantv1.Menu, error) {
 	for _, g := range groups {
 		out.ModifierGroups = append(out.ModifierGroups, toModifierGroup(g, modsByGroup[g.ID]))
 	}
+	if err := attachRecipes(ctx, s.q, out.Items, out.ModifierGroups); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -82,11 +83,17 @@ func (s *Service) SaveCategory(ctx context.Context, id string, name *restaurantv
 	if err != nil {
 		return nil, err
 	}
+	if verr := requireName(name); verr != nil {
+		return nil, verr
+	}
 	var saved sqlc.MenuCategory
 	err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
 		var e error
 		if id == "" {
-			sort, _ := q.NextCategorySort(ctx)
+			sort, se := q.NextCategorySort(ctx)
+			if se != nil {
+				return connecterr.Internal(se)
+			}
 			saved, e = q.CreateCategory(ctx, sqlc.CreateCategoryParams{NameEn: name.GetEn(), NameNe: name.GetNe(), Active: active, Sort: sort})
 		} else {
 			cid, perr := parseID("id", id)
@@ -96,7 +103,7 @@ func (s *Service) SaveCategory(ctx context.Context, id string, name *restaurantv
 			saved, e = q.UpdateCategory(ctx, sqlc.UpdateCategoryParams{ID: cid, NameEn: name.GetEn(), NameNe: name.GetNe(), Active: active})
 		}
 		if e != nil {
-			return connecterr.Internal(e)
+			return notFound(e, "category")
 		}
 		return audit.Write(ctx, q, audit.Entry{ActorID: actor.User.ID, Action: "menu.category.save", Entity: "menu_category", EntityID: saved.ID.String(), After: audit.JSON(saved)})
 	})
@@ -115,6 +122,9 @@ func (s *Service) DeleteCategory(ctx context.Context, id string) error {
 	cid, err := parseID("id", id)
 	if err != nil {
 		return err
+	}
+	if _, err := s.q.GetCategory(ctx, cid); err != nil {
+		return notFound(err, "category")
 	}
 	n, err := s.q.CountItemsInCategory(ctx, cid)
 	if err != nil {
@@ -152,15 +162,20 @@ func (s *Service) MoveCategory(ctx context.Context, id string, move restaurantv1
 	for i, c := range cats {
 		items[i] = sortable{ID: c.ID, Sort: c.Sort}
 	}
-	a, b, ok := neighborSwap(items, cid, moveUp(move))
-	if !ok {
+	changed, found := moveWithin(items, cid, moveUp(move))
+	if !found {
+		return connecterr.NotFound("category not found")
+	}
+	if len(changed) == 0 {
 		return nil
 	}
 	err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
-		if e := q.UpdateCategorySort(ctx, sqlc.UpdateCategorySortParams{ID: a.ID, Sort: a.Sort}); e != nil {
-			return connecterr.Internal(e)
+		for _, c := range changed {
+			if e := q.UpdateCategorySort(ctx, sqlc.UpdateCategorySortParams{ID: c.ID, Sort: c.Sort}); e != nil {
+				return connecterr.Internal(e)
+			}
 		}
-		return q.UpdateCategorySort(ctx, sqlc.UpdateCategorySortParams{ID: b.ID, Sort: b.Sort})
+		return nil
 	})
 	if err != nil {
 		return err
@@ -179,6 +194,7 @@ func (s *Service) SaveItem(ctx context.Context, in *restaurantv1.MenuItemInput, 
 	if verr := validateItem(in); verr != nil {
 		return nil, verr
 	}
+	color, _ := paletteColor(in.GetColor()) // validated above
 	catID, err := parseID("category_id", in.GetCategoryId())
 	if err != nil {
 		return nil, err
@@ -187,15 +203,38 @@ func (s *Service) SaveItem(ctx context.Context, in *restaurantv1.MenuItemInput, 
 	if err != nil {
 		return nil, err
 	}
+	groupIDs := make([]uuid.UUID, 0, len(in.GetModifierGroupIds()))
+	for _, gid := range in.GetModifierGroupIds() {
+		g, perr := parseID("modifier_group_ids", gid)
+		if perr != nil {
+			return nil, perr
+		}
+		groupIDs = append(groupIDs, g)
+	}
 
 	var result *restaurantv1.MenuItem
 	err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
+		if _, e := q.GetCategory(ctx, catID); e != nil {
+			return notFound(e, "category")
+		}
+		if _, e := q.GetStation(ctx, stationID); e != nil {
+			return notFound(e, "station")
+		}
+		for _, g := range groupIDs {
+			if _, e := q.GetModifierGroup(ctx, g); e != nil {
+				return notFound(e, "modifier group")
+			}
+		}
+
 		var itemID uuid.UUID
 		if in.GetId() == "" {
-			sort, _ := q.NextItemSort(ctx, catID)
+			sort, e := q.NextItemSort(ctx, catID)
+			if e != nil {
+				return connecterr.Internal(e)
+			}
 			created, e := q.CreateItem(ctx, sqlc.CreateItemParams{
 				CategoryID: catID, NameEn: in.GetName().GetEn(), NameNe: in.GetName().GetNe(),
-				PricePaisa: in.GetPricePaisa(), Color: in.GetColor(), StationID: stationID, Active: in.GetActive(), Sort: sort,
+				PricePaisa: in.GetPricePaisa(), Color: color, StationID: stationID, Active: in.GetActive(), Sort: sort,
 			})
 			if e != nil {
 				return connecterr.Internal(e)
@@ -209,9 +248,19 @@ func (s *Service) SaveItem(ctx context.Context, in *restaurantv1.MenuItemInput, 
 			if version == nil {
 				return connecterr.Invalid("version", "version is required when editing")
 			}
-			_, e := q.UpdateItem(ctx, sqlc.UpdateItemParams{
+			cur, e := q.GetItem(ctx, id)
+			if e != nil {
+				return notFound(e, "item")
+			}
+			sort := cur.Sort
+			if cur.CategoryID != catID { // moved to another category: last there
+				if sort, e = q.NextItemSort(ctx, catID); e != nil {
+					return connecterr.Internal(e)
+				}
+			}
+			_, e = q.UpdateItem(ctx, sqlc.UpdateItemParams{
 				ID: id, Version: *version, CategoryID: catID, NameEn: in.GetName().GetEn(), NameNe: in.GetName().GetNe(),
-				PricePaisa: in.GetPricePaisa(), Color: in.GetColor(), StationID: stationID, Active: in.GetActive(),
+				PricePaisa: in.GetPricePaisa(), Color: color, StationID: stationID, Active: in.GetActive(), Sort: sort,
 			})
 			if errors.Is(e, pgx.ErrNoRows) {
 				return connecterr.StaleVersion("this item was changed by someone else; reload")
@@ -222,25 +271,13 @@ func (s *Service) SaveItem(ctx context.Context, in *restaurantv1.MenuItemInput, 
 			itemID = id
 		}
 
-		// Replace variants and modifier links (append-only is only for ORDER items).
-		if e := q.DeleteItemVariants(ctx, itemID); e != nil {
-			return connecterr.Internal(e)
-		}
-		for i, v := range in.GetVariants() {
-			if _, e := q.CreateVariant(ctx, sqlc.CreateVariantParams{
-				ItemID: itemID, NameEn: v.GetName().GetEn(), NameNe: v.GetName().GetNe(), PricePaisa: v.GetPricePaisa(), Sort: int32(i),
-			}); e != nil {
-				return connecterr.Internal(e)
-			}
+		if e := upsertVariants(ctx, q, itemID, in.GetVariants()); e != nil {
+			return e
 		}
 		if e := q.DeleteItemModifierLinks(ctx, itemID); e != nil {
 			return connecterr.Internal(e)
 		}
-		for _, gid := range in.GetModifierGroupIds() {
-			g, perr := parseID("modifier_group_ids", gid)
-			if perr != nil {
-				return perr
-			}
+		for _, g := range groupIDs {
 			if e := q.CreateItemModifierLink(ctx, sqlc.CreateItemModifierLinkParams{ItemID: itemID, GroupID: g}); e != nil {
 				return connecterr.Internal(e)
 			}
@@ -260,20 +297,55 @@ func (s *Service) SaveItem(ctx context.Context, in *restaurantv1.MenuItemInput, 
 	return result, nil
 }
 
+// upsertVariants saves an item's variants by id: a given id updates that variant in
+// place (so recipes/analytics keyed on it keep working), no id creates one, and
+// variants left out are deleted. Sort follows input order.
+func upsertVariants(ctx context.Context, q *sqlc.Queries, itemID uuid.UUID, in []*restaurantv1.VariantInput) error {
+	keep := make([]uuid.UUID, 0, len(in))
+	for i, v := range in {
+		if v.GetId() == "" {
+			continue
+		}
+		id, err := uuid.Parse(v.GetId())
+		if err != nil || slices.Contains(keep, id) {
+			return connecterr.Invalid(fmt.Sprintf("variants.%d.id", i), "invalid variant id")
+		}
+		keep = append(keep, id)
+	}
+	if err := q.DeleteItemVariantsExcept(ctx, sqlc.DeleteItemVariantsExceptParams{ItemID: itemID, Keep: keep}); err != nil {
+		return connecterr.Internal(err)
+	}
+	for i, v := range in {
+		name := v.GetName()
+		if v.GetId() == "" {
+			if _, err := q.CreateVariant(ctx, sqlc.CreateVariantParams{
+				ItemID: itemID, NameEn: name.GetEn(), NameNe: name.GetNe(), PricePaisa: v.GetPricePaisa(), Sort: int32(i),
+			}); err != nil {
+				return connecterr.Internal(err)
+			}
+			continue
+		}
+		_, err := q.UpdateVariant(ctx, sqlc.UpdateVariantParams{
+			ID: uuid.MustParse(v.GetId()), ItemID: itemID, NameEn: name.GetEn(), NameNe: name.GetNe(), PricePaisa: v.GetPricePaisa(), Sort: int32(i),
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return connecterr.Invalid(fmt.Sprintf("variants.%d.id", i), "variant does not belong to this item")
+		}
+		if err != nil {
+			return connecterr.Internal(err)
+		}
+	}
+	return nil
+}
+
 func (s *Service) assembleItem(ctx context.Context, q *sqlc.Queries, itemID uuid.UUID) (*restaurantv1.MenuItem, error) {
 	it, err := q.GetItem(ctx, itemID)
 	if err != nil {
-		return nil, connecterr.Internal(err)
+		return nil, notFound(err, "item")
 	}
-	allV, err := q.ListVariants(ctx)
+	vs, err := q.ListVariantsForItem(ctx, itemID)
 	if err != nil {
 		return nil, connecterr.Internal(err)
-	}
-	var vs []sqlc.ItemVariant
-	for _, v := range allV {
-		if v.ItemID == itemID {
-			vs = append(vs, v)
-		}
 	}
 	links, err := q.ListItemModifierGroups(ctx)
 	if err != nil {
@@ -285,9 +357,14 @@ func (s *Service) assembleItem(ctx context.Context, q *sqlc.Queries, itemID uuid
 			gids = append(gids, l.GroupID.String())
 		}
 	}
-	return toMenuItem(it, vs, gids), nil
+	out := toMenuItem(it, vs, gids)
+	if err := attachRecipes(ctx, q, []*restaurantv1.MenuItem{out}, nil); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
+// MoveItem moves an item up/down within its own category.
 func (s *Service) MoveItem(ctx context.Context, id string, move restaurantv1.Move) error {
 	if _, err := auth.RequireManager(ctx); err != nil {
 		return err
@@ -296,7 +373,11 @@ func (s *Service) MoveItem(ctx context.Context, id string, move restaurantv1.Mov
 	if err != nil {
 		return err
 	}
-	items, err := s.q.ListItems(ctx)
+	item, err := s.q.GetItem(ctx, iid)
+	if err != nil {
+		return notFound(err, "item")
+	}
+	items, err := s.q.ListItemsInCategory(ctx, item.CategoryID)
 	if err != nil {
 		return connecterr.Internal(err)
 	}
@@ -304,15 +385,17 @@ func (s *Service) MoveItem(ctx context.Context, id string, move restaurantv1.Mov
 	for i, it := range items {
 		ss[i] = sortable{ID: it.ID, Sort: it.Sort}
 	}
-	a, b, ok := neighborSwap(ss, iid, moveUp(move))
-	if !ok {
+	changed, _ := moveWithin(ss, iid, moveUp(move))
+	if len(changed) == 0 {
 		return nil
 	}
 	err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
-		if e := q.UpdateItemSort(ctx, sqlc.UpdateItemSortParams{ID: a.ID, Sort: a.Sort}); e != nil {
-			return connecterr.Internal(e)
+		for _, c := range changed {
+			if e := q.UpdateItemSort(ctx, sqlc.UpdateItemSortParams{ID: c.ID, Sort: c.Sort}); e != nil {
+				return connecterr.Internal(e)
+			}
 		}
-		return q.UpdateItemSort(ctx, sqlc.UpdateItemSortParams{ID: b.ID, Sort: b.Sort})
+		return nil
 	})
 	if err != nil {
 		return err
@@ -330,25 +413,14 @@ func (s *Service) SetItemImage(ctx context.Context, id string, image []byte, con
 	if err != nil {
 		return nil, err
 	}
-	url := ""
-	if len(image) > 0 {
-		if len(image) > maxImageBytes {
-			return nil, connecterr.Invalid("image", "image must be 1 MB or smaller")
-		}
-		switch contentType {
-		case "image/jpeg", "image/png", "image/webp":
-		default:
-			return nil, connecterr.Invalid("image", "image must be JPEG, PNG or WebP")
-		}
-		url = fmt.Sprintf("data:%s;base64,%s", contentType, base64.StdEncoding.EncodeToString(image))
+	url, verr := imageDataURL(image, contentType)
+	if verr != nil {
+		return nil, verr
 	}
 	var result *restaurantv1.MenuItem
 	err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
 		if _, e := q.SetItemImage(ctx, sqlc.SetItemImageParams{ID: iid, ImageUrl: url}); e != nil {
-			if errors.Is(e, pgx.ErrNoRows) {
-				return connecterr.NotFound("item not found")
-			}
-			return connecterr.Internal(e)
+			return notFound(e, "item")
 		}
 		assembled, e := s.assembleItem(ctx, q, iid)
 		if e != nil {
@@ -424,6 +496,9 @@ func (s *Service) SaveModifierGroup(ctx context.Context, in *restaurantv1.Modifi
 			if version == nil {
 				return connecterr.Invalid("version", "version is required when editing")
 			}
+			if _, e := q.GetModifierGroup(ctx, id); e != nil {
+				return notFound(e, "modifier group")
+			}
 			_, e := q.UpdateModifierGroup(ctx, sqlc.UpdateModifierGroupParams{
 				ID: id, Version: *version, NameEn: in.GetName().GetEn(), NameNe: in.GetName().GetNe(), MinSelect: in.GetMin(), MaxSelect: in.GetMax(),
 			})
@@ -435,15 +510,8 @@ func (s *Service) SaveModifierGroup(ctx context.Context, in *restaurantv1.Modifi
 			}
 			groupID = id
 		}
-		if e := q.DeleteGroupModifiers(ctx, groupID); e != nil {
-			return connecterr.Internal(e)
-		}
-		for i, m := range in.GetModifiers() {
-			if _, e := q.CreateModifier(ctx, sqlc.CreateModifierParams{
-				GroupID: groupID, NameEn: m.GetName().GetEn(), NameNe: m.GetName().GetNe(), PriceDeltaPaisa: m.GetPriceDeltaPaisa(), Sort: int32(i),
-			}); e != nil {
-				return connecterr.Internal(e)
-			}
+		if e := upsertModifiers(ctx, q, groupID, in.GetModifiers()); e != nil {
+			return e
 		}
 		g, e := q.GetModifierGroup(ctx, groupID)
 		if e != nil {
@@ -460,6 +528,9 @@ func (s *Service) SaveModifierGroup(ctx context.Context, in *restaurantv1.Modifi
 			}
 		}
 		result = toModifierGroup(g, gm)
+		if e := attachRecipes(ctx, q, nil, []*restaurantv1.ModifierGroup{result}); e != nil {
+			return e
+		}
 		return audit.Write(ctx, q, audit.Entry{ActorID: actor.User.ID, Action: "menu.modifier_group.save", Entity: "modifier_group", EntityID: groupID.String(), After: audit.JSON(result)})
 	})
 	if err != nil {
@@ -467,6 +538,45 @@ func (s *Service) SaveModifierGroup(ctx context.Context, in *restaurantv1.Modifi
 	}
 	s.emit(realtime.Event{Type: "menu.updated"})
 	return result, nil
+}
+
+// upsertModifiers saves a group's modifiers by id, like upsertVariants.
+func upsertModifiers(ctx context.Context, q *sqlc.Queries, groupID uuid.UUID, in []*restaurantv1.ModifierInput) error {
+	keep := make([]uuid.UUID, 0, len(in))
+	for i, m := range in {
+		if m.GetId() == "" {
+			continue
+		}
+		id, err := uuid.Parse(m.GetId())
+		if err != nil || slices.Contains(keep, id) {
+			return connecterr.Invalid(fmt.Sprintf("modifiers.%d.id", i), "invalid modifier id")
+		}
+		keep = append(keep, id)
+	}
+	if err := q.DeleteGroupModifiersExcept(ctx, sqlc.DeleteGroupModifiersExceptParams{GroupID: groupID, Keep: keep}); err != nil {
+		return connecterr.Internal(err)
+	}
+	for i, m := range in {
+		name := m.GetName()
+		if m.GetId() == "" {
+			if _, err := q.CreateModifier(ctx, sqlc.CreateModifierParams{
+				GroupID: groupID, NameEn: name.GetEn(), NameNe: name.GetNe(), PriceDeltaPaisa: m.GetPriceDeltaPaisa(), Sort: int32(i),
+			}); err != nil {
+				return connecterr.Internal(err)
+			}
+			continue
+		}
+		_, err := q.UpdateModifier(ctx, sqlc.UpdateModifierParams{
+			ID: uuid.MustParse(m.GetId()), GroupID: groupID, NameEn: name.GetEn(), NameNe: name.GetNe(), PriceDeltaPaisa: m.GetPriceDeltaPaisa(), Sort: int32(i),
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return connecterr.Invalid(fmt.Sprintf("modifiers.%d.id", i), "modifier does not belong to this group")
+		}
+		if err != nil {
+			return connecterr.Internal(err)
+		}
+	}
+	return nil
 }
 
 func (s *Service) DeleteModifierGroup(ctx context.Context, id string) error {
@@ -477,6 +587,9 @@ func (s *Service) DeleteModifierGroup(ctx context.Context, id string) error {
 	gid, err := parseID("id", id)
 	if err != nil {
 		return err
+	}
+	if _, err := s.q.GetModifierGroup(ctx, gid); err != nil {
+		return notFound(err, "modifier group")
 	}
 	n, err := s.q.CountItemsUsingModifierGroup(ctx, gid)
 	if err != nil {
@@ -501,8 +614,11 @@ func (s *Service) DeleteModifierGroup(ctx context.Context, id string) error {
 // --- validation ---
 
 func validateItem(in *restaurantv1.MenuItemInput) *connecterr.Error {
-	if in.GetName().GetEn() == "" {
-		return connecterr.Invalid("name", "English name is required")
+	if verr := requireName(in.GetName()); verr != nil {
+		return verr
+	}
+	if _, ok := paletteColor(in.GetColor()); !ok {
+		return connecterr.Invalid("color", "choose a colour from the palette")
 	}
 	if len(in.GetVariants()) == 0 {
 		if in.GetPricePaisa() <= 0 {
@@ -522,8 +638,8 @@ func validateItem(in *restaurantv1.MenuItemInput) *connecterr.Error {
 }
 
 func validateModifierGroup(in *restaurantv1.ModifierGroupInput) *connecterr.Error {
-	if in.GetName().GetEn() == "" {
-		return connecterr.Invalid("name", "English name is required")
+	if verr := requireName(in.GetName()); verr != nil {
+		return verr
 	}
 	mods := in.GetModifiers()
 	if len(mods) == 0 {

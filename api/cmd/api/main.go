@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 
+	"github.com/oneaccord/restro/api/internal/alerts"
 	"github.com/oneaccord/restro/api/internal/auth"
 	"github.com/oneaccord/restro/api/internal/config"
 	"github.com/oneaccord/restro/api/internal/db"
@@ -46,6 +47,11 @@ func main() {
 
 	hub := realtime.NewHub()
 	e := server.New(server.Deps{Cfg: cfg, Log: log, Pool: pool, Hub: hub})
+
+	// Daily summary push at closing + 30 min (catches up a missed one on restart).
+	timerCtx, stopTimer := context.WithCancel(ctx)
+	defer stopTimer()
+	go alerts.NewService(pool, hub, log).RunSummaryTimer(timerCtx, 5*time.Minute)
 
 	go func() {
 		if err := e.Start(":" + cfg.Port); err != nil && !errors.Is(err, http.ErrServerClosed) {

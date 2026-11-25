@@ -6,6 +6,8 @@ package shift
 import (
 	"context"
 	"errors"
+	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -117,8 +119,13 @@ func (s *Service) CloseShift(ctx context.Context, shiftID string, countedCash in
 	}
 	var closed sqlc.Shift
 	err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
+		// Count back any bill cancelled during this shift whose payment was taken
+		// in an earlier, already-closed shift, so the close-out includes it.
+		if _, e := q.RecordCancelAdjustments(ctx, pgtype.UUID{}); e != nil {
+			return connecterr.Internal(e)
+		}
 		var e error
-		closed, e = q.CloseShift(ctx, sqlc.CloseShiftParams{ID: id, CountedCashPaisa: pgtype.Int8{Int64: countedCash, Valid: true}, Note: note})
+		closed, e = q.CloseShift(ctx, sqlc.CloseShiftParams{ID: id, CountedCashPaisa: pgtype.Int8{Int64: countedCash, Valid: true}, ClosingNote: note})
 		if errors.Is(e, pgx.ErrNoRows) {
 			return connecterr.Invalid("shift_id", "shift is already closed")
 		}
@@ -131,11 +138,81 @@ func (s *Service) CloseShift(ctx context.Context, shiftID string, countedCash in
 		return nil, err
 	}
 	s.emit(realtime.Event{Type: "shift.updated", ID: id.String()})
-	return s.buildReport(ctx, closed)
+	return s.buildReport(ctx, closed, nil)
+}
+
+// ListShifts returns recent shifts (open and closed), newest first, each with its
+// report. Cashiers see their own; managers and owners see everyone's.
+func (s *Service) ListShifts(ctx context.Context, limit int32) ([]*restaurantv1.ShiftReport, error) {
+	actor, err := auth.RequireRole(ctx, auth.RoleOwner, auth.RoleManager, auth.RoleCashier)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	var who pgtype.UUID
+	if actor.User.Role == auth.RoleCashier {
+		who = dbx.UUID(actor.User.ID)
+	}
+	if err := s.syncAdjustments(ctx); err != nil {
+		return nil, err
+	}
+	rows, err := s.q.ListShifts(ctx, sqlc.ListShiftsParams{CashierUserID: who, RowLimit: limit})
+	if err != nil {
+		return nil, connecterr.Internal(err)
+	}
+	names := map[uuid.UUID]string{}
+	out := make([]*restaurantv1.ShiftReport, 0, len(rows))
+	for _, sh := range rows {
+		r, err := s.buildReport(ctx, sh, names)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+// RecordCancelAdjustments counts a just-cancelled invoice back in the canceller's
+// open shift for every payment that was taken in a shift that had already closed.
+// Billing's CancelInvoice calls it with its transaction's queries, after the
+// status->CANCELLED update, so the adjustment commits with the cancel. It returns
+// SHIFT_NOT_OPEN when an adjustment is owed but the canceller has no shift open
+// (the cancel is then refused). Idempotent.
+//
+// The shift service also records the same adjustments lazily (on every report /
+// list / close) as a catch-up, from the invoices' cancel data.
+func RecordCancelAdjustments(ctx context.Context, q *sqlc.Queries, invoiceID uuid.UUID) error {
+	if _, err := q.RecordCancelAdjustments(ctx, dbx.UUID(invoiceID)); err != nil {
+		return connecterr.Internal(err)
+	}
+	n, err := q.CountUnplacedCancelAdjustments(ctx, invoiceID)
+	if err != nil {
+		return connecterr.Internal(err)
+	}
+	if n > 0 {
+		return connecterr.ShiftNotOpen("open a shift before cancelling a bill from a closed shift")
+	}
+	return nil
+}
+
+// syncAdjustments records any adjustments owed by cancelled bills (idempotent).
+func (s *Service) syncAdjustments(ctx context.Context) error {
+	if _, err := s.q.RecordCancelAdjustments(ctx, pgtype.UUID{}); err != nil {
+		return connecterr.Internal(err)
+	}
+	return nil
 }
 
 func (s *Service) GetShiftReport(ctx context.Context, shiftID string) (*restaurantv1.ShiftReport, error) {
 	if _, err := auth.RequireActor(ctx); err != nil {
+		return nil, err
+	}
+	if err := s.syncAdjustments(ctx); err != nil {
 		return nil, err
 	}
 	id, err := parseID("shift_id", shiftID)
@@ -149,38 +226,160 @@ func (s *Service) GetShiftReport(ctx context.Context, shiftID string) (*restaura
 	if err != nil {
 		return nil, connecterr.Internal(err)
 	}
-	return s.buildReport(ctx, sh)
+	return s.buildReport(ctx, sh, nil)
 }
 
-func (s *Service) buildReport(ctx context.Context, sh sqlc.Shift) (*restaurantv1.ShiftReport, error) {
+// buildReport assembles a shift's close-out view. names caches user names across
+// calls (nil = no cache).
+// ExpectedCash is the cash a shift's drawer should hold: the opening float plus
+// its cash takings (payments and repayments, less cancelled bills and the cash
+// adjustments counted back into it). Runs on q, so a caller's transaction sees
+// its own writes (the alert rules use it on shift close).
+func ExpectedCash(ctx context.Context, q *sqlc.Queries, sh sqlc.Shift) (int64, error) {
+	totals, err := q.ShiftPaymentTotals(ctx, sh.ID)
+	if err != nil {
+		return 0, err
+	}
+	adjustments, err := q.ListShiftAdjustments(ctx, sh.ID)
+	if err != nil {
+		return 0, err
+	}
+	cash := sh.OpeningFloatPaisa
+	for _, t := range totals {
+		if t.Method == "CASH" {
+			cash += t.Total
+		}
+	}
+	for _, a := range adjustments {
+		if a.Method == "CASH" {
+			cash -= a.AmountPaisa
+		}
+	}
+	return cash, nil
+}
+
+func (s *Service) buildReport(ctx context.Context, sh sqlc.Shift, names map[uuid.UUID]string) (*restaurantv1.ShiftReport, error) {
 	totals, err := s.q.ShiftPaymentTotals(ctx, sh.ID)
 	if err != nil {
 		return nil, connecterr.Internal(err)
 	}
-	report := &restaurantv1.ShiftReport{Shift: toShift(sh)}
-	var cashTotal int64
-	for _, t := range totals {
-		report.Totals = append(report.Totals, &restaurantv1.MethodTotal{Method: paymentMethodEnum(t.Method), TotalPaisa: t.Total})
-		if t.Method == "CASH" {
-			cashTotal = t.Total
-		}
+	adjustments, err := s.q.ListShiftAdjustments(ctx, sh.ID)
+	if err != nil {
+		return nil, connecterr.Internal(err)
 	}
-	report.ExpectedCashPaisa = sh.OpeningFloatPaisa + cashTotal
+	byMethod := map[string]int64{}
+	var order []string
+	add := func(method string, amount int64) {
+		if _, ok := byMethod[method]; !ok {
+			order = append(order, method)
+		}
+		byMethod[method] += amount
+	}
+	for _, t := range totals {
+		add(t.Method, t.Total)
+	}
+	report := &restaurantv1.ShiftReport{Shift: toShift(sh)}
+	report.Shift.CashierName, err = s.userName(ctx, sh.CashierUserID, names)
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range adjustments {
+		add(a.Method, -a.AmountPaisa)
+		adj := &restaurantv1.ShiftAdjustment{
+			Id: a.ID.String(), InvoiceId: uuidOf(a.InvoiceID), InvoiceNumber: a.InvoiceNumber,
+			Method: paymentMethodEnum(a.Method), AmountPaisa: a.AmountPaisa, CreatedAtUnix: a.CreatedAt.Unix(),
+			OriginalShiftId: a.OriginalShiftID.String(), PaymentId: uuidOf(a.PaymentID), RepaymentId: uuidOf(a.RepaymentID),
+		}
+		if a.RepaymentID.Valid {
+			adj.DisplayNumber = repaymentNumber(a.RepaymentNumber) // a voided credit repayment
+		} else {
+			adj.DisplayNumber = DisplayNumber(a.Mode, a.FiscalYear, a.InvoiceNumber)
+		}
+		report.Adjustments = append(report.Adjustments, adj)
+	}
+	for _, m := range order {
+		report.Totals = append(report.Totals, &restaurantv1.MethodTotal{Method: paymentMethodEnum(m), TotalPaisa: byMethod[m]})
+	}
+	report.ExpectedCashPaisa = sh.OpeningFloatPaisa + byMethod["CASH"]
+	if report.RepaymentsPaisa, err = s.q.ShiftRepaymentTotal(ctx, sh.ID); err != nil {
+		return nil, connecterr.Internal(err)
+	}
+	if report.CreditGivenPaisa, err = s.q.ShiftCreditGiven(ctx, sh.ID); err != nil {
+		return nil, connecterr.Internal(err)
+	}
 	if sh.Status == "CLOSED" && sh.CountedCashPaisa.Valid {
 		report.DifferencePaisa = sh.CountedCashPaisa.Int64 - report.ExpectedCashPaisa
 	}
 
-	qr, err := s.q.ListShiftQrPayments(ctx, sh.ID)
+	payments, err := s.q.ListShiftPayments(ctx, sh.ID)
 	if err != nil {
 		return nil, connecterr.Internal(err)
 	}
-	for _, p := range qr {
-		report.QrPayments = append(report.QrPayments, &restaurantv1.QrPaymentRow{
-			PaymentId: p.ID.String(), InvoiceNumber: p.InvoiceNumber, AmountPaisa: p.AmountPaisa,
-			Reference: p.Reference, CreatedAtUnix: p.CreatedAt.Unix(),
+	for _, p := range payments {
+		report.Payments = append(report.Payments, &restaurantv1.ShiftPaymentRow{
+			PaymentId: p.ID.String(), InvoiceId: p.InvoiceID.String(), InvoiceNumber: p.InvoiceNumber,
+			DisplayNumber: DisplayNumber(p.Mode, p.FiscalYear, p.InvoiceNumber), Method: paymentMethodEnum(p.Method),
+			AmountPaisa: p.AmountPaisa, Reference: p.Reference, CreatedAtUnix: p.CreatedAt.Unix(),
+			Confirmed: p.Status == "CONFIRMED", InvoiceCancelled: p.InvoiceStatus == "CANCELLED",
+		})
+		// Deprecated QR-only list, kept for older clients.
+		if p.Method == "QR_FONEPAY" || p.Method == "QR_OTHER" {
+			report.QrPayments = append(report.QrPayments, &restaurantv1.QrPaymentRow{
+				PaymentId: p.ID.String(), InvoiceNumber: p.InvoiceNumber, AmountPaisa: p.AmountPaisa,
+				Reference: p.Reference, CreatedAtUnix: p.CreatedAt.Unix(),
+			})
+		}
+	}
+	// Credit repayments taken in the shift, after the bill payments.
+	repayments, err := s.q.ListShiftRepayments(ctx, sh.ID)
+	if err != nil {
+		return nil, connecterr.Internal(err)
+	}
+	for _, r := range repayments {
+		report.Payments = append(report.Payments, &restaurantv1.ShiftPaymentRow{
+			PaymentId: r.ID.String(), DisplayNumber: repaymentNumber(r.Number), Method: paymentMethodEnum(r.Method),
+			AmountPaisa: r.AmountPaisa, Reference: r.Reference, CreatedAtUnix: r.CreatedAt.Unix(), Confirmed: true,
+			Repayment: true, RepaymentId: r.ID.String(), RepaymentVoided: r.VoidedAt.Valid,
 		})
 	}
 	return report, nil
+}
+
+// repaymentNumber is a credit repayment's receipt number ("R-12"), as credit prints it.
+func repaymentNumber(n int32) string { return "R-" + strconv.Itoa(int(n)) }
+
+func (s *Service) userName(ctx context.Context, id uuid.UUID, cache map[uuid.UUID]string) (string, error) {
+	if n, ok := cache[id]; ok {
+		return n, nil
+	}
+	u, err := s.q.GetUserByID(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", connecterr.Internal(err)
+	}
+	if cache != nil {
+		cache[id] = u.Name
+	}
+	return u.Name, nil
+}
+
+// DisplayNumber formats an invoice number for people: "2083/84-12" for a tax
+// invoice, "E-2083/84-12" for an estimate, from the stored fiscal year "2083.084".
+func DisplayNumber(mode, fiscalYear string, number int32) string {
+	fy := fiscalYear
+	if y, rest, ok := strings.Cut(fiscalYear, "."); ok {
+		if len(rest) > 2 {
+			rest = rest[len(rest)-2:]
+		}
+		fy = y + "/" + rest
+	}
+	prefix := ""
+	if mode == "ESTIMATE" {
+		prefix = "E-"
+	}
+	return prefix + fy + "-" + strconv.Itoa(int(number))
 }
 
 // --- helpers ---
@@ -197,6 +396,7 @@ func toShift(sh sqlc.Shift) *restaurantv1.Shift {
 	out := &restaurantv1.Shift{
 		Id: sh.ID.String(), CashierUserId: sh.CashierUserID.String(), OpenedAtUnix: sh.OpenedAt.Unix(),
 		OpeningFloatPaisa: sh.OpeningFloatPaisa, Note: sh.Note, Status: shiftStatusEnum(sh.Status),
+		ClosingNote: sh.ClosingNote,
 	}
 	if sh.ClosedAt.Valid {
 		out.ClosedAtUnix = sh.ClosedAt.Time.Unix()
@@ -224,7 +424,16 @@ func paymentMethodEnum(s string) restaurantv1.PaymentMethod {
 		return restaurantv1.PaymentMethod_PAYMENT_METHOD_QR_FONEPAY
 	case "QR_OTHER":
 		return restaurantv1.PaymentMethod_PAYMENT_METHOD_QR_OTHER
+	case "ON_ACCOUNT":
+		return restaurantv1.PaymentMethod_PAYMENT_METHOD_ON_ACCOUNT
 	default:
 		return restaurantv1.PaymentMethod_PAYMENT_METHOD_UNSPECIFIED
 	}
+}
+
+func uuidOf(id pgtype.UUID) string {
+	if !id.Valid {
+		return ""
+	}
+	return uuid.UUID(id.Bytes).String()
 }

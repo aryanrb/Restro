@@ -14,6 +14,7 @@ import (
 	"github.com/oneaccord/restro/api/internal/connecterr"
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
 	"github.com/oneaccord/restro/api/internal/dbx"
+	"github.com/oneaccord/restro/api/internal/orders"
 	"github.com/oneaccord/restro/api/internal/realtime"
 )
 
@@ -28,6 +29,12 @@ func NewService(pool *pgxpool.Pool, hub *realtime.Hub, log *zap.Logger) *Service
 	return &Service{pool: pool, q: sqlc.New(pool), hub: hub, log: log}
 }
 
+// requireKitchenRole admits kitchen staff plus owners/managers (who may cover the
+// pass); waiters and cashiers cannot drive the KDS.
+func requireKitchenRole(ctx context.Context) (*auth.Actor, error) {
+	return auth.RequireRole(ctx, auth.RoleOwner, auth.RoleManager, auth.RoleKitchen)
+}
+
 func (s *Service) emit(ev realtime.Event) {
 	if s.hub != nil {
 		s.hub.Broadcast(ev)
@@ -35,7 +42,7 @@ func (s *Service) emit(ev realtime.Event) {
 }
 
 func (s *Service) ListStationTickets(ctx context.Context, stationID string) ([]*restaurantv1.Ticket, error) {
-	if _, err := auth.RequireActor(ctx); err != nil {
+	if _, err := requireKitchenRole(ctx); err != nil {
 		return nil, err
 	}
 	sid, err := parseID("station_id", stationID)
@@ -85,25 +92,42 @@ func (s *Service) ListStationTickets(ctx context.Context, stationID string) ([]*
 	return tickets, nil
 }
 
-func (s *Service) StartItems(ctx context.Context, itemIDs []string) error {
+func (s *Service) StartItems(ctx context.Context, itemIDs []string) (*restaurantv1.KitchenActionResponse, error) {
 	return s.transition(ctx, itemIDs, "PREPARING", []string{"SENT"}, false)
 }
 
-func (s *Service) MarkItemsReady(ctx context.Context, itemIDs []string) error {
+func (s *Service) MarkItemsReady(ctx context.Context, itemIDs []string) (*restaurantv1.KitchenActionResponse, error) {
 	return s.transition(ctx, itemIDs, "READY", []string{"SENT", "PREPARING"}, true)
+}
+
+// result builds the action response from the updated orders (assembled inside
+// the transaction, after the change).
+func result(orders []*restaurantv1.Order) *restaurantv1.KitchenActionResponse {
+	out := &restaurantv1.KitchenActionResponse{Orders: orders}
+	if len(orders) > 0 {
+		out.Order = orders[0]
+	}
+	return out
+}
+
+// emitOrders sends order.updated for each changed order, with its new version.
+func (s *Service) emitOrders(orders []*restaurantv1.Order) {
+	for _, o := range orders {
+		s.emit(realtime.Event{Type: "order.updated", ID: o.Id, Version: o.Version})
+	}
 }
 
 // transition applies a KDS status change to the given items, bumps the affected
 // orders, and emits order.updated (+ item.ready when notifyWaiter).
-func (s *Service) transition(ctx context.Context, itemIDs []string, to string, from []string, notifyWaiter bool) error {
-	if _, err := auth.RequireActor(ctx); err != nil {
-		return err
+func (s *Service) transition(ctx context.Context, itemIDs []string, to string, from []string, notifyWaiter bool) (*restaurantv1.KitchenActionResponse, error) {
+	if _, err := requireKitchenRole(ctx); err != nil {
+		return nil, err
 	}
 	ids, err := parseIDs("item_ids", itemIDs)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	var orderIDs []string
+	var updated []*restaurantv1.Order
 	err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
 		if e := q.KdsSetItemsStatus(ctx, sqlc.KdsSetItemsStatusParams{Status: to, Ids: ids, FromStatus: from}); e != nil {
 			return connecterr.Internal(e)
@@ -119,38 +143,45 @@ func (s *Service) transition(ctx context.Context, itemIDs []string, to string, f
 				if _, e := q.BumpOrderVersion(ctx, it.OrderID); e != nil {
 					return connecterr.Internal(e)
 				}
-				orderIDs = append(orderIDs, it.OrderID.String())
+				// READY is the hand-over for a takeaway: a billed takeaway closes here.
+				if _, e := orders.CloseIfDone(ctx, q, it.OrderID); e != nil {
+					return e
+				}
+				o, e := orders.AssembleOrder(ctx, q, it.OrderID)
+				if e != nil {
+					return e
+				}
+				updated = append(updated, o)
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if notifyWaiter {
 		for _, id := range itemIDs {
 			s.emit(realtime.Event{Type: "item.ready", ID: id})
 		}
 	}
-	for _, oid := range orderIDs {
-		s.emit(realtime.Event{Type: "order.updated", ID: oid})
-	}
-	return nil
+	s.emitOrders(updated)
+	return result(updated), nil
 }
 
-func (s *Service) BumpTicket(ctx context.Context, orderID, stationID string) error {
-	if _, err := auth.RequireActor(ctx); err != nil {
-		return err
+func (s *Service) BumpTicket(ctx context.Context, orderID, stationID string) (*restaurantv1.KitchenActionResponse, error) {
+	if _, err := requireKitchenRole(ctx); err != nil {
+		return nil, err
 	}
 	oid, err := parseID("order_id", orderID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	sid, err := parseID("station_id", stationID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var readied []uuid.UUID
+	var updated *restaurantv1.Order
 	err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
 		r, e := q.BumpStationTicket(ctx, sqlc.BumpStationTicketParams{OrderID: oid, StationID: sid})
 		if e != nil {
@@ -160,16 +191,25 @@ func (s *Service) BumpTicket(ctx context.Context, orderID, stationID string) err
 		if _, e := q.BumpOrderVersion(ctx, oid); e != nil {
 			return connecterr.Internal(e)
 		}
+		// READY is the hand-over for a takeaway: a billed takeaway closes here.
+		if _, e := orders.CloseIfDone(ctx, q, oid); e != nil {
+			return e
+		}
+		o, e := orders.AssembleOrder(ctx, q, oid)
+		if e != nil {
+			return e
+		}
+		updated = o
 		return nil
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, id := range readied {
 		s.emit(realtime.Event{Type: "item.ready", ID: id.String()})
 	}
-	s.emit(realtime.Event{Type: "order.updated", ID: orderID})
-	return nil
+	s.emitOrders([]*restaurantv1.Order{updated})
+	return result([]*restaurantv1.Order{updated}), nil
 }
 
 // --- local helpers (kept here so the package is self-contained) ---

@@ -1,0 +1,475 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+import "buf/validate/validate.proto";
+import "restaurant/v1/billing.proto";
+import "restaurant/v1/common.proto";
+import "restaurant/v1/shift.proto";
+
+// ---------------------------------------------------------------------------
+// AnalyticsService + CalendarService — trends over days, BS months and fiscal
+// years (web: analytics-api.ts). Owner and manager only (NOT_ALLOWED otherwise);
+// the staff section is the owner's, or a manager's the owner listed in settings.
+//
+// Dates are Kathmandu business dates, AD, "YYYY-MM-DD", ranges inclusive. A range
+// may span at most 3 × 366 days (RANGE_TOO_LARGE); from after to, or a malformed
+// date, is INVALID (field "range"). Sales = total of ISSUED bills (estimates
+// included), the daily sales report's definition. Past days come from daily
+// summaries rebuilt from raw data whenever a day changes after the fact; today is
+// always live, and a response that includes today sets up_to_unix.
+// ---------------------------------------------------------------------------
+
+message AnalyticsRange {
+  string from = 1;
+  string to = 2;
+}
+
+enum AnalyticsGrain {
+  ANALYTICS_GRAIN_UNSPECIFIED = 0; // treated as DAY
+  ANALYTICS_GRAIN_DAY = 1;         // key "2026-11-24"
+  ANALYTICS_GRAIN_WEEK = 2;        // Sunday–Saturday; key = its Sunday
+  ANALYTICS_GRAIN_MONTH_BS = 3;    // key "2083-07" (BS year, 0-based month: 0 = Baisakh)
+  ANALYTICS_GRAIN_FY = 4;          // Shrawan–Ashadh; key "2083" (its starting BS year)
+}
+
+enum AnalyticsCompare {
+  ANALYTICS_COMPARE_UNSPECIFIED = 0; // treated as NONE
+  ANALYTICS_COMPARE_NONE = 1;
+  ANALYTICS_COMPARE_PREVIOUS = 2;    // the range of equal length just before
+  ANALYTICS_COMPARE_LAST_YEAR = 3;   // the same BS period a year earlier (month ends stay month ends)
+}
+
+message AnalyticsCountValue {
+  int32 count = 1;
+  int64 value_paisa = 2;
+}
+
+// ---------- Calendar ----------
+
+enum CalendarKind {
+  CALENDAR_KIND_UNSPECIFIED = 0;
+  CALENDAR_KIND_FESTIVAL = 1;
+  CALENDAR_KIND_CLOSED = 2;  // left out of averages, shown as gaps
+  CALENDAR_KIND_OTHER = 3;
+}
+
+message CalendarEvent {
+  string id = 1;
+  LocalText name = 2;
+  string from = 3;                  // AD, inclusive
+  string to = 4;
+  CalendarKind kind = 5;
+  bool built_in = 6;                // shipped with the app; the owner can still edit or remove it
+  string created_by_user_id = 7;    // "" for built-ins
+  string key = 8;                   // festival family ("dashain") for "this Dashain vs last"; "" for one-off days
+  bool approximate = 9;             // lunar date not yet checked: "date to check" until the owner saves it
+}
+
+message ListCalendarEventsRequest {
+  AnalyticsRange range = 1;         // events overlapping it, by start date
+}
+message ListCalendarEventsResponse {
+  repeated CalendarEvent events = 1;
+}
+
+// Owner only; audit-logged ("calendar.save"). id "" adds an event; an unknown id
+// is NOT_FOUND. Blank English name, bad dates, from after to, more than 60 days or
+// an unset kind -> INVALID. Saving clears `approximate`.
+message SaveCalendarEventRequest {
+  string id = 1;
+  LocalText name = 2;
+  string from = 3;
+  string to = 4;
+  CalendarKind kind = 5;
+  optional string key = 6;          // absent keeps an existing event's key
+}
+
+// Owner only; audit-logged ("calendar.remove").
+message RemoveCalendarEventRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+message RemoveCalendarEventResponse {}
+
+service CalendarService {
+  rpc ListCalendarEvents(ListCalendarEventsRequest) returns (ListCalendarEventsResponse);
+  rpc SaveCalendarEvent(SaveCalendarEventRequest) returns (CalendarEvent);
+  rpc RemoveCalendarEvent(RemoveCalendarEventRequest) returns (RemoveCalendarEventResponse);
+}
+
+// ---------- Meta and settings ----------
+
+// Optional features analytics reads from; the web hides their tabs and columns.
+message AnalyticsModules {
+  bool inventory = 1;     // recipe costs (menu engineering)
+  bool loyalty = 2;
+  bool credit = 3;        // on-account sales, customers section
+  bool reservations = 4;
+  bool alerts = 5;
+}
+
+message GetAnalyticsMetaRequest {}
+message AnalyticsMeta {
+  AnalyticsModules modules = 1;
+  string first_date = 2;            // first business date with any data; "" when none
+  int64 last_build_at_unix = 3;     // latest summary build; 0 = never
+  bool can_see_staff = 4;
+  bool is_owner = 5;                // may edit the calendar and settings, and rebuild
+}
+
+message AnalyticsSettings {
+  repeated string managers_see_staff = 1; // manager user ids allowed to see the staff section
+  bool highlight_rules = 2;
+}
+message GetAnalyticsSettingsRequest {}
+// Owner only; audit-logged ("settings.update", entity "analytics_settings"). Ids
+// that aren't managers are dropped.
+message SaveAnalyticsSettingsRequest {
+  AnalyticsSettings settings = 1;
+}
+
+// Owner only: throw away and rebuild the summaries of past days in the range.
+message RebuildAnalyticsRequest {
+  AnalyticsRange range = 1;
+}
+message RebuildAnalyticsResponse {
+  int32 days = 1;
+}
+
+// ---------- Trend ----------
+
+message AnalyticsHeadline {
+  int64 sales_paisa = 1;
+  int32 bills = 2;
+  int32 covers = 3;                 // guests of dine-in orders opened in the range
+  int64 average_bill_paisa = 4;
+  int64 per_cover_paisa = 5;        // dine-in sales per cover
+  int64 dine_in_sales_paisa = 6;
+  int64 takeaway_sales_paisa = 7;
+  int32 dine_in_orders = 8;
+  int32 takeaway_orders = 9;
+  int32 open_days = 10;             // days up to today, from the first data, not marked closed
+  int32 closed_days = 11;
+  int64 daily_average_paisa = 12;   // sales per open day
+}
+
+message TrendPeriod {
+  string key = 1;
+  string from = 2;
+  string to = 3;
+  AnalyticsHeadline headline = 4;
+  repeated string event_ids = 5;    // calendar events touching the period
+  bool closed = 6;                  // every day of the period is marked closed
+}
+
+// Aligned with TrendResponse.periods by position; period absent where the
+// compared range is shorter.
+message ComparedTrendPeriod {
+  TrendPeriod period = 1;
+}
+
+message GetTrendRequest {
+  AnalyticsRange range = 1;
+  AnalyticsGrain grain = 2;
+  AnalyticsCompare compare = 3;
+  AnalyticsRange compare_range = 4; // overrides compare when set (e.g. last year's Dashain)
+}
+message TrendResponse {
+  AnalyticsRange range = 1;
+  AnalyticsRange compared_range = 2; // absent without a comparison
+  repeated TrendPeriod periods = 3;
+  repeated ComparedTrendPeriod compared = 4;
+  AnalyticsHeadline total = 5;
+  AnalyticsHeadline compared_total = 6;
+  repeated CalendarEvent events = 7;
+  int64 up_to_unix = 8;             // set when the range includes today
+}
+
+// ---------- Busy hours ----------
+
+enum HoursMetric {
+  HOURS_METRIC_UNSPECIFIED = 0;     // treated as SALES
+  HOURS_METRIC_SALES = 1;           // by bill issue time (paisa)
+  HOURS_METRIC_ORDERS = 2;          // by order creation time
+  HOURS_METRIC_COVERS = 3;
+}
+
+// One weekday (0 = Sunday): 24 hourly values (Kathmandu hours).
+message HoursRow {
+  int32 weekday = 1;
+  repeated int64 average = 2;       // total / occurrences, rounded
+  repeated int64 total = 3;
+  int32 occurrences = 4;            // open days of this weekday in the range
+}
+
+message GetHoursRequest {
+  AnalyticsRange range = 1;
+  HoursMetric metric = 2;
+}
+message HoursResponse {
+  HoursMetric metric = 1;
+  repeated HoursRow rows = 2;       // 7 rows, Sunday first
+  optional int32 first_hour = 3;    // first and last hour with any activity; absent when none
+  optional int32 last_hour = 4;
+  int64 up_to_unix = 5;
+}
+
+// ---------- Menu ----------
+
+enum MenuClass {
+  MENU_CLASS_UNSPECIFIED = 0;       // not classified (no cost yet)
+  MENU_CLASS_STAR = 1;
+  MENU_CLASS_PLOWHORSE = 2;
+  MENU_CLASS_PUZZLE = 3;
+  MENU_CLASS_DOG = 4;
+}
+
+message MenuRow {
+  string menu_item_id = 1;
+  LocalText name = 2;
+  string category_id = 3;
+  int32 quantity = 4;
+  int64 revenue_paisa = 5;          // line totals before bill discounts
+  int32 share_bp = 6;               // of the range's item revenue
+  optional int32 compared_quantity = 7;
+  optional int64 compared_revenue_paisa = 8;
+  optional int32 change_bp = 9;     // revenue change; absent without a comparison or base
+  int32 voided_qty = 10;
+  // Menu engineering, from the SALE stock movements of the lines sold (their unit
+  // cost snapshot): total cost of the quantity sold and revenue − cost. Absent
+  // when an item has no recipe cost.
+  optional int64 cost_paisa = 11;
+  optional int64 margin_paisa = 12;
+  MenuClass menu_class = 13;
+}
+
+message NeverOrderedItem {
+  string menu_item_id = 1;
+  LocalText name = 2;
+  string category_id = 3;
+}
+
+message GetMenuAnalyticsRequest {
+  AnalyticsRange range = 1;
+  AnalyticsCompare compare = 2;
+  AnalyticsRange compare_range = 3;
+  string category_id = 4;           // "" = all categories
+}
+message MenuAnalyticsResponse {
+  repeated MenuRow rows = 1;        // by revenue, then quantity
+  repeated NeverOrderedItem never_ordered = 2;
+  bool costs = 3;                   // some row has a cost
+  int64 up_to_unix = 4;
+}
+
+// ---------- Tables ----------
+
+// Dwell = order created -> its last issued bill, whole minutes (dine-in, closed
+// orders). Nearest-rank percentiles.
+message DwellStats {
+  int32 count = 1;
+  optional int32 median = 2;
+  optional int32 p90 = 3;
+}
+
+enum Meal {
+  MEAL_UNSPECIFIED = 0;
+  MEAL_LUNCH = 1;                   // orders opened before 16:00
+  MEAL_DINNER = 2;
+}
+
+message TableUse {
+  string table_id = 1;
+  string name = 2;
+  string area_id = 3;
+  int32 seats = 4;
+  int32 orders = 5;
+  int32 covers = 6;
+  double turnover = 7;              // dine-in orders per open day, 1 decimal
+  double covers_per_seat = 8;       // per open day, 1 decimal
+  DwellStats dwell = 9;
+}
+message AreaUse {
+  string area_id = 1;
+  LocalText name = 2;
+  int32 orders = 3;
+  DwellStats dwell = 4;
+}
+message WeekdayDwell {
+  int32 weekday = 1;
+  DwellStats dwell = 2;
+}
+message MealDwell {
+  Meal meal = 1;
+  DwellStats dwell = 2;
+}
+
+message GetTablesAnalyticsRequest {
+  AnalyticsRange range = 1;
+}
+message TablesAnalyticsResponse {
+  repeated TableUse tables = 1;
+  repeated AreaUse areas = 2;
+  repeated WeekdayDwell by_weekday = 3;
+  repeated MealDwell by_meal = 4;
+  DwellStats overall = 5;
+  int32 dine_in_orders = 6;
+  int32 takeaway_orders = 7;
+  int32 takeaway_share_bp = 8;
+  int32 open_days = 9;
+  int64 up_to_unix = 10;
+}
+
+// ---------- Staff (owner, or managers listed in settings) ----------
+
+message StaffRate {
+  string user_id = 1;
+  string name = 2;
+  Role role = 3;
+  int32 days_worked = 4;            // days with an order, item or bill by them
+  int32 orders_as_waiter = 5;
+  int64 sales_as_waiter_paisa = 6;
+  int32 covers = 7;
+  int64 sales_per_day_paisa = 8;    // per day they waited
+  int64 per_cover_paisa = 9;
+  int32 items_added = 10;
+  int32 items_voided = 11;
+  double voids_per_100 = 12;        // 1 decimal
+  int64 sales_billed_paisa = 13;
+  int64 discount_given_paisa = 14;
+  double discount_pct = 15;         // of the sales they billed, 1 decimal
+  int32 cancellations = 16;
+  int32 approvals = 17;             // after-cooking voids and bill cancellations they approved
+  bool too_little_data = 18;        // fewer than min_days days: greyed out, not compared
+}
+message StaffAverage {
+  int64 sales_per_day_paisa = 1;
+  int64 per_cover_paisa = 2;
+  double voids_per_100 = 3;
+  double discount_pct = 4;
+}
+
+message GetStaffAnalyticsRequest {
+  AnalyticsRange range = 1;
+}
+message StaffAnalyticsResponse {
+  repeated StaffRate rows = 1;      // by name; never ranked
+  StaffAverage average = 2;
+  int32 min_days = 3;
+  int64 up_to_unix = 4;
+}
+
+// ---------- Money ----------
+
+message MoneyPeriod {
+  string key = 1;
+  string from = 2;
+  string to = 3;
+  int64 sales_paisa = 4;
+  repeated MethodTotal by_method = 5; // money taken: CASH, QR_FONEPAY, QR_OTHER, CARD
+  optional int64 on_account_paisa = 6; // sales on credit accounts
+  int64 discounts_paisa = 7;
+  double discount_pct = 8;          // of sales, 1 decimal
+  AnalyticsCountValue voids_before = 9;  // voided before cooking (no approval needed)
+  AnalyticsCountValue voids_after = 10;  // approved voids (after cooking started)
+  AnalyticsCountValue cancelled = 11;    // bills cancelled in the period
+  int64 cash_difference_paisa = 12;      // counted − expected of shifts closed in the period
+}
+message DiscountReasonTotal {
+  string reason = 1;                // "—" when none was given
+  int32 count = 2;
+  int64 value_paisa = 3;
+}
+
+message GetMoneyAnalyticsRequest {
+  AnalyticsRange range = 1;
+  AnalyticsGrain grain = 2;
+}
+message MoneyAnalyticsResponse {
+  repeated MoneyPeriod periods = 1;
+  MoneyPeriod total = 2;
+  repeated DiscountReasonTotal discount_reasons = 3; // by value
+  int64 up_to_unix = 4;
+}
+
+// ---------- Highlights ----------
+
+enum HighlightKind {
+  HIGHLIGHT_KIND_UNSPECIFIED = 0;
+  HIGHLIGHT_KIND_BUSIEST_SLOT = 1;       // weekday, hour, value_paisa
+  HIGHLIGHT_KIND_ITEM_UP = 2;            // name, change_pct, quantity
+  HIGHLIGHT_KIND_ITEM_DOWN = 3;          // name, change_pct, quantity
+  HIGHLIGHT_KIND_DISCOUNTS_HIGH = 4;     // pct, average_pct
+  HIGHLIGHT_KIND_VOIDS_HIGH = 5;         // pct, average_pct
+  HIGHLIGHT_KIND_PAYMENT_SHIFT = 6;      // method, points
+  HIGHLIGHT_KIND_FESTIVAL_ONE_SIDE = 7;  // name, in_compared
+}
+
+// Fields are set according to kind (see HighlightKind).
+message AnalyticsHighlight {
+  HighlightKind kind = 1;
+  int32 weekday = 2;
+  int32 hour = 3;
+  int64 value_paisa = 4;
+  LocalText name = 5;
+  int32 change_pct = 6;
+  int32 quantity = 7;
+  double pct = 8;
+  double average_pct = 9;
+  PaymentMethod method = 10;
+  int32 points = 11;
+  bool in_compared = 12;
+}
+
+message GetHighlightsRequest {
+  AnalyticsRange range = 1;
+  AnalyticsCompare compare = 2;
+  AnalyticsRange compare_range = 3;
+}
+message HighlightsResponse {
+  repeated AnalyticsHighlight highlights = 1; // at most 5; empty when switched off
+}
+
+// ---------- Customers (identified customers only) ----------
+
+message TopCustomer {
+  string name = 1;
+  string phone = 2;                 // masked: "98XXXXX567"
+  int32 visits = 3;                 // business days with a bill
+  int64 spend_paisa = 4;
+}
+message TopCustomers {
+  repeated TopCustomer rows = 1;
+}
+
+message GetCustomersAnalyticsRequest {
+  AnalyticsRange range = 1;
+}
+// Identified = a bill with an on-account (credit) payment; loyalty members join
+// here when loyalty exists (new_members / returning stay 0 until then).
+message CustomersAnalyticsResponse {
+  int64 sales_paisa = 1;
+  int64 identified_sales_paisa = 2;
+  int32 identified_pct = 3;
+  int32 customers = 4;
+  int32 new_members = 5;
+  int32 returning = 6;
+  int32 repeat_rate = 7;            // % of identified customers with 2+ visits
+  optional double avg_days_between = 8;
+  TopCustomers top = 9;             // owner only (absent for managers); top 10 by spend
+}
+
+service AnalyticsService {
+  rpc GetMeta(GetAnalyticsMetaRequest) returns (AnalyticsMeta);
+  rpc GetTrend(GetTrendRequest) returns (TrendResponse);
+  rpc GetHours(GetHoursRequest) returns (HoursResponse);
+  rpc GetMenu(GetMenuAnalyticsRequest) returns (MenuAnalyticsResponse);
+  rpc GetTables(GetTablesAnalyticsRequest) returns (TablesAnalyticsResponse);
+  rpc GetStaff(GetStaffAnalyticsRequest) returns (StaffAnalyticsResponse);
+  rpc GetMoney(GetMoneyAnalyticsRequest) returns (MoneyAnalyticsResponse);
+  rpc GetHighlights(GetHighlightsRequest) returns (HighlightsResponse);
+  rpc GetCustomers(GetCustomersAnalyticsRequest) returns (CustomersAnalyticsResponse);
+  rpc Rebuild(RebuildAnalyticsRequest) returns (RebuildAnalyticsResponse);
+  rpc GetSettings(GetAnalyticsSettingsRequest) returns (AnalyticsSettings);
+  rpc SaveSettings(SaveAnalyticsSettingsRequest) returns (AnalyticsSettings);
+}

@@ -26,6 +26,15 @@ func withActor(ctx context.Context, a *Actor) context.Context {
 	return context.WithValue(ctx, actorKey, a)
 }
 
+// DeviceLabel is the label of the enrolled device behind the request, "" when
+// the request is from an un-enrolled device (or outside a request).
+func DeviceLabel(ctx context.Context) string {
+	if a, ok := ctx.Value(actorKey).(*Actor); ok && a != nil && a.Device != nil {
+		return a.Device.Label
+	}
+	return ""
+}
+
 // ActorFrom returns the request's actor. It always returns a non-nil Actor (an
 // empty one when nothing was resolved), so callers can check LoggedIn().
 func ActorFrom(ctx context.Context) *Actor {

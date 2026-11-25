@@ -97,6 +97,8 @@ message StaffMember {
   bool active = 4;
   optional string username = 5; // set only for OWNER/MANAGER
   bool pin_locked = 6;
+  bool has_password = 7;      // can log in with username + password
+  optional string phone = 8;  // normalised digits (no +977), set only if given
 }
 
 message StaffInput {
@@ -107,6 +109,7 @@ message StaffInput {
   optional string username = 5; // required for OWNER/MANAGER (3–30, [a-z0-9._-])
   optional string password = 6; // >= 8 chars when creating or changing (OWNER/MANAGER)
   optional string pin = 7;      // 4–6 digits; required on create
+  optional string phone = 8;    // unset = unchanged; "" clears; Nepali mobile/landline, stored as digits
 }
 
 message ListStaffRequest {}

@@ -1,14 +1,18 @@
 // Package bsdate converts between Gregorian (AD) and Bikram Sambat (BS) dates and
 // resolves the Nepali fiscal year (which starts Shrawan 1 — BS month 4).
 //
-// The month-length table is panchang-verified data from rjach/sambat (checked
-// against the Nepal Panchanga Nirnayak Bikas Samiti national panchang for
-// 2082–2083, Surya Panchanga for 2081). Each year carries its own Baishakh-1 AD
-// anchor, so there is no accumulation drift.
+// Month-length table, BS 2070–2090. Rows 2076–2083 were originally taken from
+// rjach/sambat (checked against the Nepal Panchanga Nirnayak Bikas Samiti national
+// panchang for 2082–2083, Surya Panchanga for 2081). All rows 2070–2090 match the
+// npm package nepali-date-converter@3.4.2 (dist/lib/date-config.js, the converter
+// the web frontend uses; epoch BS 2000-01-01 = AD 1943-04-14), from which 2070–2075
+// and 2084–2090 were taken, so backend and frontend agree on every date. Each year
+// carries its own Baishakh-1 AD anchor; TestTableContiguous checks each anchor equals
+// the previous anchor plus the previous year's length.
 //
-// IMPORTANT: the table currently ends at BS 2083 (AD ~mid-2027). FromAD returns an
-// error beyond it; append the next year's VERIFIED panchang row before the pilot
-// crosses into BS 2084. Do NOT guess future rows — invoice dates are a tax record.
+// Rows beyond the currently published national panchang (2084+) are the package's
+// projected values; re-verify them against the official panchang as each year is
+// published. The package ends at BS 2090 (AD 2034-04-13) and FromAD errors beyond it.
 package bsdate
 
 import (
@@ -28,6 +32,12 @@ type yearInfo struct {
 func npt(y, m, d int) time.Time { return time.Date(y, time.Month(m), d, 0, 0, 0, 0, nepal) }
 
 var table = map[int]yearInfo{
+	2070: {npt(2013, 4, 14), [12]int{31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 30, 30}},
+	2071: {npt(2014, 4, 14), [12]int{31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30}},
+	2072: {npt(2015, 4, 14), [12]int{31, 32, 31, 32, 31, 30, 30, 29, 30, 29, 30, 30}},
+	2073: {npt(2016, 4, 13), [12]int{31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31}},
+	2074: {npt(2017, 4, 14), [12]int{31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30}},
+	2075: {npt(2018, 4, 14), [12]int{31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30}},
 	2076: {npt(2019, 4, 14), [12]int{31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 30}},
 	2077: {npt(2020, 4, 13), [12]int{31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31}},
 	2078: {npt(2021, 4, 14), [12]int{31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30}},
@@ -36,6 +46,13 @@ var table = map[int]yearInfo{
 	2081: {npt(2024, 4, 13), [12]int{31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31}},
 	2082: {npt(2025, 4, 14), [12]int{31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30}},
 	2083: {npt(2026, 4, 14), [12]int{31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30}},
+	2084: {npt(2027, 4, 14), [12]int{31, 31, 32, 31, 31, 30, 30, 30, 29, 30, 30, 30}},
+	2085: {npt(2028, 4, 13), [12]int{31, 32, 31, 32, 30, 31, 30, 30, 29, 30, 30, 30}},
+	2086: {npt(2029, 4, 14), [12]int{30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 30, 30}},
+	2087: {npt(2030, 4, 14), [12]int{31, 31, 32, 31, 31, 31, 30, 30, 29, 30, 30, 30}},
+	2088: {npt(2031, 4, 15), [12]int{30, 31, 32, 32, 30, 31, 30, 30, 29, 30, 30, 30}},
+	2089: {npt(2032, 4, 14), [12]int{30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 30, 30}},
+	2090: {npt(2033, 4, 14), [12]int{30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 30, 30}},
 }
 
 var years []int
@@ -91,7 +108,7 @@ func FromAD(t time.Time) (Date, error) {
 			offset -= md
 		}
 	}
-	return Date{}, fmt.Errorf("bsdate: AD %s is outside the supported BS range (2076–2083); extend the verified calendar table", target.Format("2006-01-02"))
+	return Date{}, fmt.Errorf("bsdate: AD %s is outside the supported BS range (2070–2090); extend the verified calendar table", target.Format("2006-01-02"))
 }
 
 // ToAD returns midnight (Nepal time) of the BS date.

@@ -5,6 +5,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 
 	"connectrpc.com/connect"
@@ -14,13 +15,19 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"go.uber.org/zap"
 
+	restaurantv1 "github.com/oneaccord/restro/api/gen/restaurant/v1"
 	"github.com/oneaccord/restro/api/gen/restaurant/v1/restaurantv1connect"
+	"github.com/oneaccord/restro/api/internal/alerts"
+	"github.com/oneaccord/restro/api/internal/analytics"
 	"github.com/oneaccord/restro/api/internal/auth"
 	"github.com/oneaccord/restro/api/internal/billing"
 	"github.com/oneaccord/restro/api/internal/catalog"
 	"github.com/oneaccord/restro/api/internal/config"
 	"github.com/oneaccord/restro/api/internal/connecterr"
+	"github.com/oneaccord/restro/api/internal/credit"
+	"github.com/oneaccord/restro/api/internal/inventory"
 	"github.com/oneaccord/restro/api/internal/kitchen"
+	"github.com/oneaccord/restro/api/internal/live"
 	"github.com/oneaccord/restro/api/internal/orders"
 	"github.com/oneaccord/restro/api/internal/realtime"
 	"github.com/oneaccord/restro/api/internal/reports"
@@ -41,19 +48,36 @@ func New(d Deps) *echo.Echo {
 	e.HideBanner = true
 	e.HidePort = true
 	e.Use(middleware.Recover(), middleware.RequestID(), requestLogger(d.Log))
+	// CORS for the browser frontends. Auth rides on session cookies, so credentials
+	// are allowed and origins must be an explicit list (never "*"). AllowHeaders is
+	// left empty so Echo reflects the preflight's requested headers, which covers
+	// Connect's Connect-Protocol-Version / Connect-Timeout-Ms and Authorization.
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins:     d.Cfg.CORSOrigins,
+		AllowCredentials: true,
+	}))
 
 	e.GET("/api/healthz", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
-	e.Any("/api/ws", echo.WrapHandler(d.Hub))
-
 	// Shared interceptor chain for every Connect service: load the session (outer),
 	// validate the request (protovalidate), map service errors to ErrorInfo (inner).
+	// Suspicious-activity rules run on every audit_log write (audit/hook).
+	alerts.Install(d.Log)
 	authSvc := auth.NewService(d.Pool, d.Log)
+	e.Any("/api/ws", echo.WrapHandler(wsAuth(authSvc, d.Hub)))
+
 	ic := connect.WithInterceptors(
 		authSvc.Interceptor(),
 		connectvalidate.NewInterceptor(),
 		connecterr.Interceptor(),
+		// Stock events (stock.low / stock.86suggest / stock.updated) written by any
+		// request — order sends, voids, counter sales, waste, counts — are broadcast
+		// only once the handler succeeded (its transaction committed).
+		inventory.EventsInterceptor(d.Hub),
+		// alert.created / alert.updated written by the alert rules (which run on
+		// every audited write, in its transaction) go out once the request finished.
+		alerts.EventsInterceptor(d.Hub),
 	)
 
 	authHandler := auth.NewHandler(authSvc, d.Cfg.Env == "prod")
@@ -84,6 +108,12 @@ func New(d Deps) *echo.Echo {
 	billingPath, billingHH := restaurantv1connect.NewBillingServiceHandler(billingH, ic)
 	mount(e, billingPath, billingHH)
 
+	creditH := credit.NewHandler(credit.NewService(d.Pool, d.Hub, d.Log))
+	customerPath, customerHH := restaurantv1connect.NewCustomerServiceHandler(creditH, ic)
+	mount(e, customerPath, customerHH)
+	creditPath, creditHH := restaurantv1connect.NewCreditServiceHandler(creditH, ic)
+	mount(e, creditPath, creditHH)
+
 	shiftH := shift.NewHandler(shift.NewService(d.Pool, d.Hub, d.Log))
 	shiftPath, shiftHH := restaurantv1connect.NewShiftServiceHandler(shiftH, ic)
 	mount(e, shiftPath, shiftHH)
@@ -92,7 +122,48 @@ func New(d Deps) *echo.Echo {
 	reportPath, reportHH := restaurantv1connect.NewReportServiceHandler(reportH, ic)
 	mount(e, reportPath, reportHH)
 
+	inventoryH := inventory.NewHandler(inventory.NewService(d.Pool, d.Hub, authSvc, d.Log))
+	inventoryPath, inventoryHH := restaurantv1connect.NewInventoryServiceHandler(inventoryH, ic)
+	mount(e, inventoryPath, inventoryHH)
+
+	// Read-only live view (owner/manager): its own handler group with no write routes.
+	livePath, liveHH := restaurantv1connect.NewLiveServiceHandler(live.NewHandler(live.NewService(d.Pool, d.Log)), ic)
+	mount(e, livePath, liveHH)
+
+	analyticsH := analytics.NewHandler(analytics.NewService(d.Pool, d.Log))
+	analyticsPath, analyticsHH := restaurantv1connect.NewAnalyticsServiceHandler(analyticsH, ic)
+	mount(e, analyticsPath, analyticsHH)
+	calendarPath, calendarHH := restaurantv1connect.NewCalendarServiceHandler(analyticsH, ic)
+	mount(e, calendarPath, calendarHH)
+
+	alertH := alerts.NewHandler(alerts.NewService(d.Pool, d.Hub, d.Log))
+	alertPath, alertHH := restaurantv1connect.NewAlertServiceHandler(alertH, ic)
+	mount(e, alertPath, alertHH)
+
 	return e
+}
+
+// wsAuth admits a WebSocket upgrade only with a valid session: the web's session
+// cookie or a mobile bearer token, resolved exactly as for a Connect request (it
+// runs the same auth interceptor). Anything else gets 401 before the upgrade.
+func wsAuth(authSvc *auth.Service, next http.Handler) http.Handler {
+	ic := authSvc.Interceptor()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req := connect.NewRequest(&restaurantv1.GetSessionRequest{})
+		for k, v := range r.Header {
+			req.Header()[k] = v
+		}
+		var loggedIn bool
+		_, _ = ic(func(ctx context.Context, _ connect.AnyRequest) (connect.AnyResponse, error) {
+			loggedIn = auth.ActorFrom(ctx).LoggedIn()
+			return nil, nil
+		})(r.Context(), req)
+		if !loggedIn {
+			http.Error(w, "unauthenticated", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // mount serves a Connect handler under /api, so the generated path

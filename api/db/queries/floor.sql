@@ -29,13 +29,17 @@ SELECT * FROM dining_tables ORDER BY sort, name;
 SELECT * FROM dining_tables WHERE id = $1;
 
 -- name: NextTableSort :one
-SELECT COALESCE(MAX(sort), 0) + 1 FROM dining_tables;
+-- Table sort is per area.
+SELECT COALESCE(MAX(sort), 0) + 1 FROM dining_tables WHERE area_id = $1;
 
 -- name: CreateTable :one
 INSERT INTO dining_tables (area_id, name, seats, active, sort) VALUES ($1, $2, $3, $4, $5) RETURNING *;
 
 -- name: UpdateTable :one
-UPDATE dining_tables SET area_id = $2, name = $3, seats = $4, active = $5 WHERE id = $1 RETURNING *;
+UPDATE dining_tables SET area_id = $2, name = $3, seats = $4, active = $5, sort = $6 WHERE id = $1 RETURNING *;
+
+-- name: ListTablesInArea :many
+SELECT * FROM dining_tables WHERE area_id = $1 ORDER BY sort, name;
 
 -- name: UpdateTableSort :exec
 UPDATE dining_tables SET sort = $2 WHERE id = $1;

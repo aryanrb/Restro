@@ -147,10 +147,27 @@ func (h *Handler) DeleteModifierGroup(ctx context.Context, req *connect.Request[
 	return connect.NewResponse(&restaurantv1.DeleteModifierGroupResponse{}), nil
 }
 
+func (h *Handler) SaveRecipe(ctx context.Context, req *connect.Request[restaurantv1.SaveRecipeRequest]) (*connect.Response[restaurantv1.MenuItem], error) {
+	out, err := h.svc.SaveRecipe(ctx, req.Msg)
+	return resp(out, err)
+}
+
+func (h *Handler) SaveModifierRecipe(ctx context.Context, req *connect.Request[restaurantv1.SaveModifierRecipeRequest]) (*connect.Response[restaurantv1.SaveModifierRecipeResponse], error) {
+	if err := h.svc.SaveModifierRecipe(ctx, req.Msg); err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&restaurantv1.SaveModifierRecipeResponse{}), nil
+}
+
 // resp wraps a value+error into a Connect response.
 func resp[T any](v *T, err error) (*connect.Response[T], error) {
 	if err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(v), nil
+}
+
+func (h *Handler) SetSettingsImage(ctx context.Context, req *connect.Request[restaurantv1.SetSettingsImageRequest]) (*connect.Response[restaurantv1.Settings], error) {
+	out, err := h.svc.SetSettingsImage(ctx, req.Msg.GetKind(), req.Msg.GetImage(), req.Msg.GetContentType())
+	return resp(out, err)
 }

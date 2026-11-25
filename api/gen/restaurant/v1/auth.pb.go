@@ -693,6 +693,8 @@ type StaffMember struct {
 	Active        bool                   `protobuf:"varint,4,opt,name=active,proto3" json:"active,omitempty"`
 	Username      *string                `protobuf:"bytes,5,opt,name=username,proto3,oneof" json:"username,omitempty"` // set only for OWNER/MANAGER
 	PinLocked     bool                   `protobuf:"varint,6,opt,name=pin_locked,json=pinLocked,proto3" json:"pin_locked,omitempty"`
+	HasPassword   bool                   `protobuf:"varint,7,opt,name=has_password,json=hasPassword,proto3" json:"has_password,omitempty"` // can log in with username + password
+	Phone         *string                `protobuf:"bytes,8,opt,name=phone,proto3,oneof" json:"phone,omitempty"`                           // normalised digits (no +977), set only if given
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -769,6 +771,20 @@ func (x *StaffMember) GetPinLocked() bool {
 	return false
 }
 
+func (x *StaffMember) GetHasPassword() bool {
+	if x != nil {
+		return x.HasPassword
+	}
+	return false
+}
+
+func (x *StaffMember) GetPhone() string {
+	if x != nil && x.Phone != nil {
+		return *x.Phone
+	}
+	return ""
+}
+
 type StaffInput struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            *string                `protobuf:"bytes,1,opt,name=id,proto3,oneof" json:"id,omitempty"` // unset = create
@@ -778,6 +794,7 @@ type StaffInput struct {
 	Username      *string                `protobuf:"bytes,5,opt,name=username,proto3,oneof" json:"username,omitempty"` // required for OWNER/MANAGER (3–30, [a-z0-9._-])
 	Password      *string                `protobuf:"bytes,6,opt,name=password,proto3,oneof" json:"password,omitempty"` // >= 8 chars when creating or changing (OWNER/MANAGER)
 	Pin           *string                `protobuf:"bytes,7,opt,name=pin,proto3,oneof" json:"pin,omitempty"`           // 4–6 digits; required on create
+	Phone         *string                `protobuf:"bytes,8,opt,name=phone,proto3,oneof" json:"phone,omitempty"`       // unset = unchanged; "" clears; Nepali mobile/landline, stored as digits
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -857,6 +874,13 @@ func (x *StaffInput) GetPassword() string {
 func (x *StaffInput) GetPin() string {
 	if x != nil && x.Pin != nil {
 		return *x.Pin
+	}
+	return ""
+}
+
+func (x *StaffInput) GetPhone() string {
+	if x != nil && x.Phone != nil {
+		return *x.Phone
 	}
 	return ""
 }
@@ -1112,7 +1136,7 @@ const file_restaurant_v1_auth_proto_rawDesc = "" +
 	"\x17CheckManagerPinResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12&\n" +
 	"\x0fmanager_user_id\x18\x02 \x01(\tR\rmanagerUserId\x12!\n" +
-	"\fmanager_name\x18\x03 \x01(\tR\vmanagerName\"\xbf\x01\n" +
+	"\fmanager_name\x18\x03 \x01(\tR\vmanagerName\"\x87\x02\n" +
 	"\vStaffMember\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12'\n" +
@@ -1120,8 +1144,11 @@ const file_restaurant_v1_auth_proto_rawDesc = "" +
 	"\x06active\x18\x04 \x01(\bR\x06active\x12\x1f\n" +
 	"\busername\x18\x05 \x01(\tH\x00R\busername\x88\x01\x01\x12\x1d\n" +
 	"\n" +
-	"pin_locked\x18\x06 \x01(\bR\tpinLockedB\v\n" +
-	"\t_username\"\x8d\x02\n" +
+	"pin_locked\x18\x06 \x01(\bR\tpinLocked\x12!\n" +
+	"\fhas_password\x18\a \x01(\bR\vhasPassword\x12\x19\n" +
+	"\x05phone\x18\b \x01(\tH\x01R\x05phone\x88\x01\x01B\v\n" +
+	"\t_usernameB\b\n" +
+	"\x06_phone\"\xb2\x02\n" +
 	"\n" +
 	"StaffInput\x12\x13\n" +
 	"\x02id\x18\x01 \x01(\tH\x00R\x02id\x88\x01\x01\x12\x1b\n" +
@@ -1131,11 +1158,13 @@ const file_restaurant_v1_auth_proto_rawDesc = "" +
 	"\x06active\x18\x04 \x01(\bR\x06active\x12\x1f\n" +
 	"\busername\x18\x05 \x01(\tH\x01R\busername\x88\x01\x01\x12\x1f\n" +
 	"\bpassword\x18\x06 \x01(\tH\x02R\bpassword\x88\x01\x01\x12\x15\n" +
-	"\x03pin\x18\a \x01(\tH\x03R\x03pin\x88\x01\x01B\x05\n" +
+	"\x03pin\x18\a \x01(\tH\x03R\x03pin\x88\x01\x01\x12\x19\n" +
+	"\x05phone\x18\b \x01(\tH\x04R\x05phone\x88\x01\x01B\x05\n" +
 	"\x03_idB\v\n" +
 	"\t_usernameB\v\n" +
 	"\t_passwordB\x06\n" +
-	"\x04_pin\"\x12\n" +
+	"\x04_pinB\b\n" +
+	"\x06_phone\"\x12\n" +
 	"\x10ListStaffRequest\"E\n" +
 	"\x11ListStaffResponse\x120\n" +
 	"\x05staff\x18\x01 \x03(\v2\x1a.restaurant.v1.StaffMemberR\x05staff\"C\n" +

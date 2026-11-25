@@ -18,11 +18,11 @@ func (h *Handler) Dashboard(ctx context.Context, _ *connect.Request[restaurantv1
 }
 
 func (h *Handler) SalesBook(ctx context.Context, req *connect.Request[restaurantv1.RangeRequest]) (*connect.Response[restaurantv1.SalesBookResponse], error) {
-	return wrap(h.svc.SalesBook(ctx, req.Msg.GetFromUnix(), req.Msg.GetToUnix()))
+	return wrap(h.svc.SalesBook(ctx, req.Msg))
 }
 
 func (h *Handler) ExportSalesBookCsv(ctx context.Context, req *connect.Request[restaurantv1.RangeRequest]) (*connect.Response[restaurantv1.CsvExport], error) {
-	return wrap(h.svc.ExportSalesBookCsv(ctx, req.Msg.GetFromUnix(), req.Msg.GetToUnix()))
+	return wrap(h.svc.ExportSalesBookCsv(ctx, req.Msg))
 }
 
 func (h *Handler) DailySales(ctx context.Context, req *connect.Request[restaurantv1.RangeRequest]) (*connect.Response[restaurantv1.DailySalesResponse], error) {
@@ -35,6 +35,10 @@ func (h *Handler) CancelledInvoices(ctx context.Context, req *connect.Request[re
 
 func (h *Handler) AuditLog(ctx context.Context, req *connect.Request[restaurantv1.AuditLogRequest]) (*connect.Response[restaurantv1.AuditLogResponse], error) {
 	return wrap(h.svc.AuditLog(ctx, req.Msg))
+}
+
+func (h *Handler) CreditReport(ctx context.Context, _ *connect.Request[restaurantv1.CreditReportRequest]) (*connect.Response[restaurantv1.CreditReportResponse], error) {
+	return wrap(h.svc.CreditReport(ctx))
 }
 
 func wrap[T any](v *T, err error) (*connect.Response[T], error) {

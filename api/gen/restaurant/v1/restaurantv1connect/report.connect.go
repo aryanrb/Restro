@@ -48,6 +48,9 @@ const (
 	ReportServiceCancelledInvoicesProcedure = "/restaurant.v1.ReportService/CancelledInvoices"
 	// ReportServiceAuditLogProcedure is the fully-qualified name of the ReportService's AuditLog RPC.
 	ReportServiceAuditLogProcedure = "/restaurant.v1.ReportService/AuditLog"
+	// ReportServiceCreditReportProcedure is the fully-qualified name of the ReportService's
+	// CreditReport RPC.
+	ReportServiceCreditReportProcedure = "/restaurant.v1.ReportService/CreditReport"
 )
 
 // ReportServiceClient is a client for the restaurant.v1.ReportService service.
@@ -58,6 +61,7 @@ type ReportServiceClient interface {
 	DailySales(context.Context, *connect.Request[v1.RangeRequest]) (*connect.Response[v1.DailySalesResponse], error)
 	CancelledInvoices(context.Context, *connect.Request[v1.RangeRequest]) (*connect.Response[v1.CancelledInvoicesResponse], error)
 	AuditLog(context.Context, *connect.Request[v1.AuditLogRequest]) (*connect.Response[v1.AuditLogResponse], error)
+	CreditReport(context.Context, *connect.Request[v1.CreditReportRequest]) (*connect.Response[v1.CreditReportResponse], error)
 }
 
 // NewReportServiceClient constructs a client for the restaurant.v1.ReportService service. By
@@ -107,6 +111,12 @@ func NewReportServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(reportServiceMethods.ByName("AuditLog")),
 			connect.WithClientOptions(opts...),
 		),
+		creditReport: connect.NewClient[v1.CreditReportRequest, v1.CreditReportResponse](
+			httpClient,
+			baseURL+ReportServiceCreditReportProcedure,
+			connect.WithSchema(reportServiceMethods.ByName("CreditReport")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -118,6 +128,7 @@ type reportServiceClient struct {
 	dailySales         *connect.Client[v1.RangeRequest, v1.DailySalesResponse]
 	cancelledInvoices  *connect.Client[v1.RangeRequest, v1.CancelledInvoicesResponse]
 	auditLog           *connect.Client[v1.AuditLogRequest, v1.AuditLogResponse]
+	creditReport       *connect.Client[v1.CreditReportRequest, v1.CreditReportResponse]
 }
 
 // Dashboard calls restaurant.v1.ReportService.Dashboard.
@@ -150,6 +161,11 @@ func (c *reportServiceClient) AuditLog(ctx context.Context, req *connect.Request
 	return c.auditLog.CallUnary(ctx, req)
 }
 
+// CreditReport calls restaurant.v1.ReportService.CreditReport.
+func (c *reportServiceClient) CreditReport(ctx context.Context, req *connect.Request[v1.CreditReportRequest]) (*connect.Response[v1.CreditReportResponse], error) {
+	return c.creditReport.CallUnary(ctx, req)
+}
+
 // ReportServiceHandler is an implementation of the restaurant.v1.ReportService service.
 type ReportServiceHandler interface {
 	Dashboard(context.Context, *connect.Request[v1.DashboardRequest]) (*connect.Response[v1.DashboardResponse], error)
@@ -158,6 +174,7 @@ type ReportServiceHandler interface {
 	DailySales(context.Context, *connect.Request[v1.RangeRequest]) (*connect.Response[v1.DailySalesResponse], error)
 	CancelledInvoices(context.Context, *connect.Request[v1.RangeRequest]) (*connect.Response[v1.CancelledInvoicesResponse], error)
 	AuditLog(context.Context, *connect.Request[v1.AuditLogRequest]) (*connect.Response[v1.AuditLogResponse], error)
+	CreditReport(context.Context, *connect.Request[v1.CreditReportRequest]) (*connect.Response[v1.CreditReportResponse], error)
 }
 
 // NewReportServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -203,6 +220,12 @@ func NewReportServiceHandler(svc ReportServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(reportServiceMethods.ByName("AuditLog")),
 		connect.WithHandlerOptions(opts...),
 	)
+	reportServiceCreditReportHandler := connect.NewUnaryHandler(
+		ReportServiceCreditReportProcedure,
+		svc.CreditReport,
+		connect.WithSchema(reportServiceMethods.ByName("CreditReport")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/restaurant.v1.ReportService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ReportServiceDashboardProcedure:
@@ -217,6 +240,8 @@ func NewReportServiceHandler(svc ReportServiceHandler, opts ...connect.HandlerOp
 			reportServiceCancelledInvoicesHandler.ServeHTTP(w, r)
 		case ReportServiceAuditLogProcedure:
 			reportServiceAuditLogHandler.ServeHTTP(w, r)
+		case ReportServiceCreditReportProcedure:
+			reportServiceCreditReportHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -248,4 +273,8 @@ func (UnimplementedReportServiceHandler) CancelledInvoices(context.Context, *con
 
 func (UnimplementedReportServiceHandler) AuditLog(context.Context, *connect.Request[v1.AuditLogRequest]) (*connect.Response[v1.AuditLogResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.ReportService.AuditLog is not implemented"))
+}
+
+func (UnimplementedReportServiceHandler) CreditReport(context.Context, *connect.Request[v1.CreditReportRequest]) (*connect.Response[v1.CreditReportResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.ReportService.CreditReport is not implemented"))
 }

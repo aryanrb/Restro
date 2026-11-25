@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -35,7 +36,7 @@ const cancelInvoice = `-- name: CancelInvoice :one
 UPDATE invoices
 SET status = 'CANCELLED', cancel_reason = $2, cancelled_by_user_id = $3, cancel_approved_by_user_id = $4, cancelled_at = now()
 WHERE id = $1 AND status = 'ISSUED'
-RETURNING id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at
+RETURNING id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at, display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number, seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id
 `
 
 type CancelInvoiceParams struct {
@@ -83,6 +84,17 @@ func (q *Queries) CancelInvoice(ctx context.Context, arg CancelInvoiceParams) (I
 		&i.PrintCount,
 		&i.CreatedByUserID,
 		&i.CreatedAt,
+		&i.DisplayNumber,
+		&i.SellerNameEn,
+		&i.SellerNameNe,
+		&i.SellerAddress,
+		&i.SellerPanNumber,
+		&i.SellerVatRateBp,
+		&i.SellerVatRegistered,
+		&i.SellerLogoUrl,
+		&i.IssuedByName,
+		&i.Place,
+		&i.OrderClientID,
 	)
 	return i, err
 }
@@ -113,10 +125,13 @@ INSERT INTO invoices (
     fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, order_id,
     buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa,
     taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason,
-    discount_approved_by_user_id, created_by_user_id
+    discount_approved_by_user_id, created_by_user_id,
+    display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number,
+    seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
-) RETURNING id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+    $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31
+) RETURNING id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at, display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number, seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id
 `
 
 type CreateInvoiceParams struct {
@@ -140,6 +155,17 @@ type CreateInvoiceParams struct {
 	DiscountReason           string      `json:"discount_reason"`
 	DiscountApprovedByUserID pgtype.UUID `json:"discount_approved_by_user_id"`
 	CreatedByUserID          pgtype.UUID `json:"created_by_user_id"`
+	DisplayNumber            string      `json:"display_number"`
+	SellerNameEn             string      `json:"seller_name_en"`
+	SellerNameNe             string      `json:"seller_name_ne"`
+	SellerAddress            string      `json:"seller_address"`
+	SellerPanNumber          string      `json:"seller_pan_number"`
+	SellerVatRateBp          int32       `json:"seller_vat_rate_bp"`
+	SellerVatRegistered      bool        `json:"seller_vat_registered"`
+	SellerLogoUrl            string      `json:"seller_logo_url"`
+	IssuedByName             string      `json:"issued_by_name"`
+	Place                    string      `json:"place"`
+	OrderClientID            pgtype.UUID `json:"order_client_id"`
 }
 
 func (q *Queries) CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (Invoice, error) {
@@ -164,6 +190,17 @@ func (q *Queries) CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (I
 		arg.DiscountReason,
 		arg.DiscountApprovedByUserID,
 		arg.CreatedByUserID,
+		arg.DisplayNumber,
+		arg.SellerNameEn,
+		arg.SellerNameNe,
+		arg.SellerAddress,
+		arg.SellerPanNumber,
+		arg.SellerVatRateBp,
+		arg.SellerVatRegistered,
+		arg.SellerLogoUrl,
+		arg.IssuedByName,
+		arg.Place,
+		arg.OrderClientID,
 	)
 	var i Invoice
 	err := row.Scan(
@@ -196,26 +233,39 @@ func (q *Queries) CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (I
 		&i.PrintCount,
 		&i.CreatedByUserID,
 		&i.CreatedAt,
+		&i.DisplayNumber,
+		&i.SellerNameEn,
+		&i.SellerNameNe,
+		&i.SellerAddress,
+		&i.SellerPanNumber,
+		&i.SellerVatRateBp,
+		&i.SellerVatRegistered,
+		&i.SellerLogoUrl,
+		&i.IssuedByName,
+		&i.Place,
+		&i.OrderClientID,
 	)
 	return i, err
 }
 
 const createInvoiceLine = `-- name: CreateInvoiceLine :one
-INSERT INTO invoice_lines (invoice_id, order_item_id, name_en, name_ne, variant_name, quantity, unit_price_paisa, modifiers_json, line_total_paisa)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, invoice_id, order_item_id, name_en, name_ne, variant_name, quantity, unit_price_paisa, modifiers_json, line_total_paisa
+INSERT INTO invoice_lines (invoice_id, order_item_id, name_en, name_ne, variant_name, quantity, unit_price_paisa, modifiers_json, line_total_paisa, order_item_client_id, variant_name_ne)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING id, invoice_id, order_item_id, name_en, name_ne, variant_name, quantity, unit_price_paisa, modifiers_json, line_total_paisa, order_item_client_id, variant_name_ne
 `
 
 type CreateInvoiceLineParams struct {
-	InvoiceID      uuid.UUID   `json:"invoice_id"`
-	OrderItemID    pgtype.UUID `json:"order_item_id"`
-	NameEn         string      `json:"name_en"`
-	NameNe         string      `json:"name_ne"`
-	VariantName    string      `json:"variant_name"`
-	Quantity       int32       `json:"quantity"`
-	UnitPricePaisa int64       `json:"unit_price_paisa"`
-	ModifiersJson  []byte      `json:"modifiers_json"`
-	LineTotalPaisa int64       `json:"line_total_paisa"`
+	InvoiceID         uuid.UUID   `json:"invoice_id"`
+	OrderItemID       pgtype.UUID `json:"order_item_id"`
+	NameEn            string      `json:"name_en"`
+	NameNe            string      `json:"name_ne"`
+	VariantName       string      `json:"variant_name"`
+	Quantity          int32       `json:"quantity"`
+	UnitPricePaisa    int64       `json:"unit_price_paisa"`
+	ModifiersJson     []byte      `json:"modifiers_json"`
+	LineTotalPaisa    int64       `json:"line_total_paisa"`
+	OrderItemClientID pgtype.UUID `json:"order_item_client_id"`
+	VariantNameNe     string      `json:"variant_name_ne"`
 }
 
 func (q *Queries) CreateInvoiceLine(ctx context.Context, arg CreateInvoiceLineParams) (InvoiceLine, error) {
@@ -229,6 +279,8 @@ func (q *Queries) CreateInvoiceLine(ctx context.Context, arg CreateInvoiceLinePa
 		arg.UnitPricePaisa,
 		arg.ModifiersJson,
 		arg.LineTotalPaisa,
+		arg.OrderItemClientID,
+		arg.VariantNameNe,
 	)
 	var i InvoiceLine
 	err := row.Scan(
@@ -242,14 +294,30 @@ func (q *Queries) CreateInvoiceLine(ctx context.Context, arg CreateInvoiceLinePa
 		&i.UnitPricePaisa,
 		&i.ModifiersJson,
 		&i.LineTotalPaisa,
+		&i.OrderItemClientID,
+		&i.VariantNameNe,
 	)
 	return i, err
+}
+
+const createInvoicePrint = `-- name: CreateInvoicePrint :exec
+INSERT INTO invoice_prints (invoice_id, printed_by_user_id) VALUES ($1, $2)
+`
+
+type CreateInvoicePrintParams struct {
+	InvoiceID       uuid.UUID `json:"invoice_id"`
+	PrintedByUserID uuid.UUID `json:"printed_by_user_id"`
+}
+
+func (q *Queries) CreateInvoicePrint(ctx context.Context, arg CreateInvoicePrintParams) error {
+	_, err := q.db.Exec(ctx, createInvoicePrint, arg.InvoiceID, arg.PrintedByUserID)
+	return err
 }
 
 const createPayment = `-- name: CreatePayment :one
 INSERT INTO payments (invoice_id, method, amount_paisa, reference, confirmed_by_user_id, shift_id, status)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, invoice_id, method, amount_paisa, reference, confirmed_by_user_id, shift_id, status, created_at
+RETURNING id, invoice_id, method, amount_paisa, reference, confirmed_by_user_id, shift_id, status, created_at, customer_id, customer_name, balance_after_paisa, credit_approved_by_user_id
 `
 
 type CreatePaymentParams struct {
@@ -283,12 +351,28 @@ func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (P
 		&i.ShiftID,
 		&i.Status,
 		&i.CreatedAt,
+		&i.CustomerID,
+		&i.CustomerName,
+		&i.BalanceAfterPaisa,
+		&i.CreditApprovedByUserID,
 	)
 	return i, err
 }
 
+const getDiningTableName = `-- name: GetDiningTableName :one
+SELECT name FROM dining_tables WHERE id = $1
+`
+
+// The invoice's place for a dine-in order.
+func (q *Queries) GetDiningTableName(ctx context.Context, id uuid.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getDiningTableName, id)
+	var name string
+	err := row.Scan(&name)
+	return name, err
+}
+
 const getInvoice = `-- name: GetInvoice :one
-SELECT id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at FROM invoices WHERE id = $1
+SELECT id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at, display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number, seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id FROM invoices WHERE id = $1
 `
 
 func (q *Queries) GetInvoice(ctx context.Context, id uuid.UUID) (Invoice, error) {
@@ -324,12 +408,23 @@ func (q *Queries) GetInvoice(ctx context.Context, id uuid.UUID) (Invoice, error)
 		&i.PrintCount,
 		&i.CreatedByUserID,
 		&i.CreatedAt,
+		&i.DisplayNumber,
+		&i.SellerNameEn,
+		&i.SellerNameNe,
+		&i.SellerAddress,
+		&i.SellerPanNumber,
+		&i.SellerVatRateBp,
+		&i.SellerVatRegistered,
+		&i.SellerLogoUrl,
+		&i.IssuedByName,
+		&i.Place,
+		&i.OrderClientID,
 	)
 	return i, err
 }
 
 const getInvoiceLines = `-- name: GetInvoiceLines :many
-SELECT id, invoice_id, order_item_id, name_en, name_ne, variant_name, quantity, unit_price_paisa, modifiers_json, line_total_paisa FROM invoice_lines WHERE invoice_id = $1 ORDER BY id
+SELECT id, invoice_id, order_item_id, name_en, name_ne, variant_name, quantity, unit_price_paisa, modifiers_json, line_total_paisa, order_item_client_id, variant_name_ne FROM invoice_lines WHERE invoice_id = $1 ORDER BY id
 `
 
 func (q *Queries) GetInvoiceLines(ctx context.Context, invoiceID uuid.UUID) ([]InvoiceLine, error) {
@@ -352,6 +447,8 @@ func (q *Queries) GetInvoiceLines(ctx context.Context, invoiceID uuid.UUID) ([]I
 			&i.UnitPricePaisa,
 			&i.ModifiersJson,
 			&i.LineTotalPaisa,
+			&i.OrderItemClientID,
+			&i.VariantNameNe,
 		); err != nil {
 			return nil, err
 		}
@@ -374,8 +471,245 @@ func (q *Queries) IncrementPrintCount(ctx context.Context, id uuid.UUID) (int32,
 	return print_count, err
 }
 
+const listInvoicePrints = `-- name: ListInvoicePrints :many
+SELECT p.printed_at, p.printed_by_user_id, u.name AS printed_by_name
+FROM invoice_prints p JOIN users u ON u.id = p.printed_by_user_id
+WHERE p.invoice_id = $1
+ORDER BY p.printed_at, p.id
+`
+
+type ListInvoicePrintsRow struct {
+	PrintedAt       time.Time `json:"printed_at"`
+	PrintedByUserID uuid.UUID `json:"printed_by_user_id"`
+	PrintedByName   string    `json:"printed_by_name"`
+}
+
+// Oldest first, with the printer's current name.
+func (q *Queries) ListInvoicePrints(ctx context.Context, invoiceID uuid.UUID) ([]ListInvoicePrintsRow, error) {
+	rows, err := q.db.Query(ctx, listInvoicePrints, invoiceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListInvoicePrintsRow{}
+	for rows.Next() {
+		var i ListInvoicePrintsRow
+		if err := rows.Scan(&i.PrintedAt, &i.PrintedByUserID, &i.PrintedByName); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInvoicesByAdRange = `-- name: ListInvoicesByAdRange :many
+SELECT id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at, display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number, seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id FROM invoices
+WHERE ad_datetime >= $1 AND ad_datetime < $2
+ORDER BY ad_datetime DESC, number DESC
+`
+
+type ListInvoicesByAdRangeParams struct {
+	FromTime time.Time `json:"from_time"`
+	ToTime   time.Time `json:"to_time"`
+}
+
+// Half-open AD range [from, to).
+func (q *Queries) ListInvoicesByAdRange(ctx context.Context, arg ListInvoicesByAdRangeParams) ([]Invoice, error) {
+	rows, err := q.db.Query(ctx, listInvoicesByAdRange, arg.FromTime, arg.ToTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Invoice{}
+	for rows.Next() {
+		var i Invoice
+		if err := rows.Scan(
+			&i.ID,
+			&i.FiscalYear,
+			&i.Number,
+			&i.Mode,
+			&i.BsDate,
+			&i.BsYear,
+			&i.BsMonth,
+			&i.BsDay,
+			&i.AdDatetime,
+			&i.OrderID,
+			&i.BuyerName,
+			&i.BuyerPan,
+			&i.SubtotalPaisa,
+			&i.DiscountPaisa,
+			&i.ServiceChargePaisa,
+			&i.TaxablePaisa,
+			&i.VatPaisa,
+			&i.RoundingPaisa,
+			&i.TotalPaisa,
+			&i.DiscountReason,
+			&i.DiscountApprovedByUserID,
+			&i.Status,
+			&i.CancelReason,
+			&i.CancelledByUserID,
+			&i.CancelApprovedByUserID,
+			&i.CancelledAt,
+			&i.PrintCount,
+			&i.CreatedByUserID,
+			&i.CreatedAt,
+			&i.DisplayNumber,
+			&i.SellerNameEn,
+			&i.SellerNameNe,
+			&i.SellerAddress,
+			&i.SellerPanNumber,
+			&i.SellerVatRateBp,
+			&i.SellerVatRegistered,
+			&i.SellerLogoUrl,
+			&i.IssuedByName,
+			&i.Place,
+			&i.OrderClientID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInvoicesByBsDate = `-- name: ListInvoicesByBsDate :many
+SELECT id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at, display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number, seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id FROM invoices WHERE bs_date = $1 ORDER BY ad_datetime DESC, number DESC
+`
+
+func (q *Queries) ListInvoicesByBsDate(ctx context.Context, bsDate string) ([]Invoice, error) {
+	rows, err := q.db.Query(ctx, listInvoicesByBsDate, bsDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Invoice{}
+	for rows.Next() {
+		var i Invoice
+		if err := rows.Scan(
+			&i.ID,
+			&i.FiscalYear,
+			&i.Number,
+			&i.Mode,
+			&i.BsDate,
+			&i.BsYear,
+			&i.BsMonth,
+			&i.BsDay,
+			&i.AdDatetime,
+			&i.OrderID,
+			&i.BuyerName,
+			&i.BuyerPan,
+			&i.SubtotalPaisa,
+			&i.DiscountPaisa,
+			&i.ServiceChargePaisa,
+			&i.TaxablePaisa,
+			&i.VatPaisa,
+			&i.RoundingPaisa,
+			&i.TotalPaisa,
+			&i.DiscountReason,
+			&i.DiscountApprovedByUserID,
+			&i.Status,
+			&i.CancelReason,
+			&i.CancelledByUserID,
+			&i.CancelApprovedByUserID,
+			&i.CancelledAt,
+			&i.PrintCount,
+			&i.CreatedByUserID,
+			&i.CreatedAt,
+			&i.DisplayNumber,
+			&i.SellerNameEn,
+			&i.SellerNameNe,
+			&i.SellerAddress,
+			&i.SellerPanNumber,
+			&i.SellerVatRateBp,
+			&i.SellerVatRegistered,
+			&i.SellerLogoUrl,
+			&i.IssuedByName,
+			&i.Place,
+			&i.OrderClientID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInvoicesForOrder = `-- name: ListInvoicesForOrder :many
+SELECT id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at, display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number, seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id FROM invoices WHERE order_id = $1 ORDER BY ad_datetime DESC, number DESC
+`
+
+func (q *Queries) ListInvoicesForOrder(ctx context.Context, orderID pgtype.UUID) ([]Invoice, error) {
+	rows, err := q.db.Query(ctx, listInvoicesForOrder, orderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Invoice{}
+	for rows.Next() {
+		var i Invoice
+		if err := rows.Scan(
+			&i.ID,
+			&i.FiscalYear,
+			&i.Number,
+			&i.Mode,
+			&i.BsDate,
+			&i.BsYear,
+			&i.BsMonth,
+			&i.BsDay,
+			&i.AdDatetime,
+			&i.OrderID,
+			&i.BuyerName,
+			&i.BuyerPan,
+			&i.SubtotalPaisa,
+			&i.DiscountPaisa,
+			&i.ServiceChargePaisa,
+			&i.TaxablePaisa,
+			&i.VatPaisa,
+			&i.RoundingPaisa,
+			&i.TotalPaisa,
+			&i.DiscountReason,
+			&i.DiscountApprovedByUserID,
+			&i.Status,
+			&i.CancelReason,
+			&i.CancelledByUserID,
+			&i.CancelApprovedByUserID,
+			&i.CancelledAt,
+			&i.PrintCount,
+			&i.CreatedByUserID,
+			&i.CreatedAt,
+			&i.DisplayNumber,
+			&i.SellerNameEn,
+			&i.SellerNameNe,
+			&i.SellerAddress,
+			&i.SellerPanNumber,
+			&i.SellerVatRateBp,
+			&i.SellerVatRegistered,
+			&i.SellerLogoUrl,
+			&i.IssuedByName,
+			&i.Place,
+			&i.OrderClientID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPaymentsForInvoice = `-- name: ListPaymentsForInvoice :many
-SELECT id, invoice_id, method, amount_paisa, reference, confirmed_by_user_id, shift_id, status, created_at FROM payments WHERE invoice_id = $1 ORDER BY created_at
+SELECT id, invoice_id, method, amount_paisa, reference, confirmed_by_user_id, shift_id, status, created_at, customer_id, customer_name, balance_after_paisa, credit_approved_by_user_id FROM payments WHERE invoice_id = $1 ORDER BY created_at
 `
 
 func (q *Queries) ListPaymentsForInvoice(ctx context.Context, invoiceID uuid.UUID) ([]Payment, error) {
@@ -397,6 +731,10 @@ func (q *Queries) ListPaymentsForInvoice(ctx context.Context, invoiceID uuid.UUI
 			&i.ShiftID,
 			&i.Status,
 			&i.CreatedAt,
+			&i.CustomerID,
+			&i.CustomerName,
+			&i.BalanceAfterPaisa,
+			&i.CreditApprovedByUserID,
 		); err != nil {
 			return nil, err
 		}
@@ -409,7 +747,7 @@ func (q *Queries) ListPaymentsForInvoice(ctx context.Context, invoiceID uuid.UUI
 }
 
 const listUnbilledOrderItems = `-- name: ListUnbilledOrderItems :many
-SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id FROM order_items WHERE order_id = $1 AND invoice_id IS NULL AND status <> 'VOIDED' ORDER BY created_at
+SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id, variant_id, modifier_ids FROM order_items WHERE order_id = $1 AND invoice_id IS NULL AND status <> 'VOIDED' ORDER BY created_at
 `
 
 func (q *Queries) ListUnbilledOrderItems(ctx context.Context, orderID uuid.UUID) ([]OrderItem, error) {
@@ -441,6 +779,10 @@ func (q *Queries) ListUnbilledOrderItems(ctx context.Context, orderID uuid.UUID)
 			&i.VoidApprovedByUserID,
 			&i.CreatedAt,
 			&i.InvoiceID,
+			&i.SentAt,
+			&i.AddedByUserID,
+			&i.VariantID,
+			&i.ModifierIds,
 		); err != nil {
 			return nil, err
 		}
@@ -452,8 +794,34 @@ func (q *Queries) ListUnbilledOrderItems(ctx context.Context, orderID uuid.UUID)
 	return items, nil
 }
 
-const setOrderItemsInvoice = `-- name: SetOrderItemsInvoice :exec
-UPDATE order_items SET invoice_id = $1 WHERE id = ANY($2::uuid[])
+const lockOrderByClientIDForBilling = `-- name: LockOrderByClientIDForBilling :one
+SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label FROM orders WHERE client_id = $1 FOR UPDATE
+`
+
+// Locks the order row for the billing transaction so concurrent bills (different
+// command ids) of the same order serialize; the loser then sees the new status /
+// unbilled set. Order mutations (version bumps) also wait on this lock.
+func (q *Queries) LockOrderByClientIDForBilling(ctx context.Context, clientID uuid.UUID) (Order, error) {
+	row := q.db.QueryRow(ctx, lockOrderByClientIDForBilling, clientID)
+	var i Order
+	err := row.Scan(
+		&i.ID,
+		&i.ClientID,
+		&i.Type,
+		&i.TableID,
+		&i.WaiterUserID,
+		&i.Status,
+		&i.GuestCount,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Label,
+	)
+	return i, err
+}
+
+const setOrderItemsInvoice = `-- name: SetOrderItemsInvoice :execrows
+UPDATE order_items SET invoice_id = $1 WHERE id = ANY($2::uuid[]) AND invoice_id IS NULL
 `
 
 type SetOrderItemsInvoiceParams struct {
@@ -461,9 +829,14 @@ type SetOrderItemsInvoiceParams struct {
 	Ids       []uuid.UUID `json:"ids"`
 }
 
-func (q *Queries) SetOrderItemsInvoice(ctx context.Context, arg SetOrderItemsInvoiceParams) error {
-	_, err := q.db.Exec(ctx, setOrderItemsInvoice, arg.InvoiceID, arg.Ids)
-	return err
+// Only claims items that are still unbilled; the caller checks the row count so
+// an item billed by a concurrent command is never re-assigned.
+func (q *Queries) SetOrderItemsInvoice(ctx context.Context, arg SetOrderItemsInvoiceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setOrderItemsInvoice, arg.InvoiceID, arg.Ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const unlinkInvoiceItems = `-- name: UnlinkInvoiceItems :many

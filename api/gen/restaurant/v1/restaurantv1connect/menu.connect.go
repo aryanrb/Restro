@@ -59,6 +59,11 @@ const (
 	// MenuServiceDeleteModifierGroupProcedure is the fully-qualified name of the MenuService's
 	// DeleteModifierGroup RPC.
 	MenuServiceDeleteModifierGroupProcedure = "/restaurant.v1.MenuService/DeleteModifierGroup"
+	// MenuServiceSaveRecipeProcedure is the fully-qualified name of the MenuService's SaveRecipe RPC.
+	MenuServiceSaveRecipeProcedure = "/restaurant.v1.MenuService/SaveRecipe"
+	// MenuServiceSaveModifierRecipeProcedure is the fully-qualified name of the MenuService's
+	// SaveModifierRecipe RPC.
+	MenuServiceSaveModifierRecipeProcedure = "/restaurant.v1.MenuService/SaveModifierRecipe"
 )
 
 // MenuServiceClient is a client for the restaurant.v1.MenuService service.
@@ -73,6 +78,8 @@ type MenuServiceClient interface {
 	Set86(context.Context, *connect.Request[v1.Set86Request]) (*connect.Response[v1.Set86Response], error)
 	SaveModifierGroup(context.Context, *connect.Request[v1.SaveModifierGroupRequest]) (*connect.Response[v1.ModifierGroup], error)
 	DeleteModifierGroup(context.Context, *connect.Request[v1.DeleteModifierGroupRequest]) (*connect.Response[v1.DeleteModifierGroupResponse], error)
+	SaveRecipe(context.Context, *connect.Request[v1.SaveRecipeRequest]) (*connect.Response[v1.MenuItem], error)
+	SaveModifierRecipe(context.Context, *connect.Request[v1.SaveModifierRecipeRequest]) (*connect.Response[v1.SaveModifierRecipeResponse], error)
 }
 
 // NewMenuServiceClient constructs a client for the restaurant.v1.MenuService service. By default,
@@ -146,6 +153,18 @@ func NewMenuServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(menuServiceMethods.ByName("DeleteModifierGroup")),
 			connect.WithClientOptions(opts...),
 		),
+		saveRecipe: connect.NewClient[v1.SaveRecipeRequest, v1.MenuItem](
+			httpClient,
+			baseURL+MenuServiceSaveRecipeProcedure,
+			connect.WithSchema(menuServiceMethods.ByName("SaveRecipe")),
+			connect.WithClientOptions(opts...),
+		),
+		saveModifierRecipe: connect.NewClient[v1.SaveModifierRecipeRequest, v1.SaveModifierRecipeResponse](
+			httpClient,
+			baseURL+MenuServiceSaveModifierRecipeProcedure,
+			connect.WithSchema(menuServiceMethods.ByName("SaveModifierRecipe")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -161,6 +180,8 @@ type menuServiceClient struct {
 	set86               *connect.Client[v1.Set86Request, v1.Set86Response]
 	saveModifierGroup   *connect.Client[v1.SaveModifierGroupRequest, v1.ModifierGroup]
 	deleteModifierGroup *connect.Client[v1.DeleteModifierGroupRequest, v1.DeleteModifierGroupResponse]
+	saveRecipe          *connect.Client[v1.SaveRecipeRequest, v1.MenuItem]
+	saveModifierRecipe  *connect.Client[v1.SaveModifierRecipeRequest, v1.SaveModifierRecipeResponse]
 }
 
 // GetMenu calls restaurant.v1.MenuService.GetMenu.
@@ -213,6 +234,16 @@ func (c *menuServiceClient) DeleteModifierGroup(ctx context.Context, req *connec
 	return c.deleteModifierGroup.CallUnary(ctx, req)
 }
 
+// SaveRecipe calls restaurant.v1.MenuService.SaveRecipe.
+func (c *menuServiceClient) SaveRecipe(ctx context.Context, req *connect.Request[v1.SaveRecipeRequest]) (*connect.Response[v1.MenuItem], error) {
+	return c.saveRecipe.CallUnary(ctx, req)
+}
+
+// SaveModifierRecipe calls restaurant.v1.MenuService.SaveModifierRecipe.
+func (c *menuServiceClient) SaveModifierRecipe(ctx context.Context, req *connect.Request[v1.SaveModifierRecipeRequest]) (*connect.Response[v1.SaveModifierRecipeResponse], error) {
+	return c.saveModifierRecipe.CallUnary(ctx, req)
+}
+
 // MenuServiceHandler is an implementation of the restaurant.v1.MenuService service.
 type MenuServiceHandler interface {
 	GetMenu(context.Context, *connect.Request[v1.GetMenuRequest]) (*connect.Response[v1.Menu], error)
@@ -225,6 +256,8 @@ type MenuServiceHandler interface {
 	Set86(context.Context, *connect.Request[v1.Set86Request]) (*connect.Response[v1.Set86Response], error)
 	SaveModifierGroup(context.Context, *connect.Request[v1.SaveModifierGroupRequest]) (*connect.Response[v1.ModifierGroup], error)
 	DeleteModifierGroup(context.Context, *connect.Request[v1.DeleteModifierGroupRequest]) (*connect.Response[v1.DeleteModifierGroupResponse], error)
+	SaveRecipe(context.Context, *connect.Request[v1.SaveRecipeRequest]) (*connect.Response[v1.MenuItem], error)
+	SaveModifierRecipe(context.Context, *connect.Request[v1.SaveModifierRecipeRequest]) (*connect.Response[v1.SaveModifierRecipeResponse], error)
 }
 
 // NewMenuServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -294,6 +327,18 @@ func NewMenuServiceHandler(svc MenuServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(menuServiceMethods.ByName("DeleteModifierGroup")),
 		connect.WithHandlerOptions(opts...),
 	)
+	menuServiceSaveRecipeHandler := connect.NewUnaryHandler(
+		MenuServiceSaveRecipeProcedure,
+		svc.SaveRecipe,
+		connect.WithSchema(menuServiceMethods.ByName("SaveRecipe")),
+		connect.WithHandlerOptions(opts...),
+	)
+	menuServiceSaveModifierRecipeHandler := connect.NewUnaryHandler(
+		MenuServiceSaveModifierRecipeProcedure,
+		svc.SaveModifierRecipe,
+		connect.WithSchema(menuServiceMethods.ByName("SaveModifierRecipe")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/restaurant.v1.MenuService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case MenuServiceGetMenuProcedure:
@@ -316,6 +361,10 @@ func NewMenuServiceHandler(svc MenuServiceHandler, opts ...connect.HandlerOption
 			menuServiceSaveModifierGroupHandler.ServeHTTP(w, r)
 		case MenuServiceDeleteModifierGroupProcedure:
 			menuServiceDeleteModifierGroupHandler.ServeHTTP(w, r)
+		case MenuServiceSaveRecipeProcedure:
+			menuServiceSaveRecipeHandler.ServeHTTP(w, r)
+		case MenuServiceSaveModifierRecipeProcedure:
+			menuServiceSaveModifierRecipeHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -363,4 +412,12 @@ func (UnimplementedMenuServiceHandler) SaveModifierGroup(context.Context, *conne
 
 func (UnimplementedMenuServiceHandler) DeleteModifierGroup(context.Context, *connect.Request[v1.DeleteModifierGroupRequest]) (*connect.Response[v1.DeleteModifierGroupResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.MenuService.DeleteModifierGroup is not implemented"))
+}
+
+func (UnimplementedMenuServiceHandler) SaveRecipe(context.Context, *connect.Request[v1.SaveRecipeRequest]) (*connect.Response[v1.MenuItem], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.MenuService.SaveRecipe is not implemented"))
+}
+
+func (UnimplementedMenuServiceHandler) SaveModifierRecipe(context.Context, *connect.Request[v1.SaveModifierRecipeRequest]) (*connect.Response[v1.SaveModifierRecipeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.MenuService.SaveModifierRecipe is not implemented"))
 }

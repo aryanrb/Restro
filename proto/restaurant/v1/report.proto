@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package restaurant.v1;
 
+import "restaurant/v1/shift.proto";
+
 // ---------------------------------------------------------------------------
 // ReportService — live dashboard, daily sales, IRD-style sales book (BS dates),
 // cancelled-invoice report, and the audit-log browser. Owner/manager only.
@@ -22,11 +24,23 @@ message DashboardResponse {
   int32 void_count = 5;
   int32 discount_count = 6;
   repeated TopItem top_items = 7;
+  repeated MethodTotal by_method = 8;  // confirmed payments on today's issued bills
+  int64 discount_paisa = 9;            // discount amount on today's issued bills
+  int64 void_value_paisa = 10;         // value of items voided today
+  int32 cancelled_count = 11;          // bills cancelled today
+  int64 cancelled_value_paisa = 12;
+  // Credit (udharo): on-account amounts on today's issued bills, repayments taken
+  // today (not voided), and everything owed now (sum of positive balances).
+  int64 credit_given_today_paisa = 13;
+  int64 repayments_today_paisa = 14;
+  int64 credit_owed_paisa = 15;
 }
 
 message RangeRequest {
   int64 from_unix = 1;
   int64 to_unix = 2;
+  // SalesBook / ExportSalesBookCsv only: false (default) = tax invoices only.
+  bool include_estimates = 3;
 }
 
 message SalesBookRow {
@@ -42,6 +56,15 @@ message SalesBookRow {
   int64 vat_paisa = 10;
   int64 total_paisa = 11;
   string status = 12;
+  string display_number = 13;   // "2083/84-12", or "E-2083/84-12" for an estimate
+  string invoice_id = 14;
+  string entered_by_name = 15;  // who issued the bill
+  int32 print_count = 16;
+  int64 ad_datetime_unix = 17;
+  // The bill's most recent print (original or reprint), from the print log;
+  // 0 / "" when it was never printed.
+  int64 last_printed_at_unix = 18;
+  string last_printed_by_name = 19;
 }
 message SalesBookResponse {
   repeated SalesBookRow rows = 1;
@@ -53,6 +76,11 @@ message DailySalesRow {
   int64 total_paisa = 3;
   int64 vat_paisa = 4;
   int64 taxable_paisa = 5;
+  string ad_date = 6;                 // "YYYY-MM-DD", Kathmandu
+  int64 discount_paisa = 7;
+  int64 service_charge_paisa = 8;
+  repeated MethodTotal by_method = 9; // confirmed payments on the day's issued bills
+  int32 cancelled_count = 10;         // bills issued that day and since cancelled
 }
 message DailySalesResponse {
   repeated DailySalesRow rows = 1;
@@ -66,6 +94,13 @@ message CancelledInvoiceRow {
   string reason = 5;
   string cancelled_by_user_id = 6;
   int64 cancelled_at_unix = 7;
+  string display_number = 8;
+  string invoice_id = 9;
+  string issued_by_user_id = 10;
+  string issued_by_name = 11;
+  string cancelled_by_name = 12;
+  string approved_by_user_id = 13;
+  string approved_by_name = 14;
 }
 message CancelledInvoicesResponse {
   repeated CancelledInvoiceRow rows = 1;
@@ -76,6 +111,7 @@ message AuditLogRequest {
   int64 to_unix = 2;
   string action = 3; // "" = any
   int32 limit = 4;   // 0 -> default 200
+  string actor_id = 5; // "" = anyone
 }
 message AuditEntry {
   int64 id = 1;
@@ -86,6 +122,11 @@ message AuditEntry {
   string reason = 6;
   string approver_user_id = 7;
   int64 created_at_unix = 8;
+  string actor_name = 9;
+  string approver_name = 10;
+  string subject = 11;      // readable: "E-2083/84-3", "Chicken Momo", "T4", a staff name...
+  string device_label = 12;
+  string detail = 13;       // readable: reason, amounts, counted cash...
 }
 message AuditLogResponse {
   repeated AuditEntry entries = 1;
@@ -96,6 +137,23 @@ message CsvExport {
   string filename = 2;
 }
 
+// Every credit account whose balance is not zero, oldest unpaid bill first
+// (accounts with none last), then by name.
+message CreditReportRequest {}
+message CreditReportRow {
+  string customer_id = 1;
+  string name = 2;
+  string phone = 3;
+  bool active = 4;
+  int64 balance_paisa = 5;
+  int64 credit_limit_paisa = 6;
+  int64 oldest_unpaid_at_unix = 7;  // issue time of the oldest bill not yet paid off; 0 = none
+  int64 last_repayment_at_unix = 8; // 0 = none
+}
+message CreditReportResponse {
+  repeated CreditReportRow rows = 1;
+}
+
 service ReportService {
   rpc Dashboard(DashboardRequest) returns (DashboardResponse);
   rpc SalesBook(RangeRequest) returns (SalesBookResponse);
@@ -103,4 +161,5 @@ service ReportService {
   rpc DailySales(RangeRequest) returns (DailySalesResponse);
   rpc CancelledInvoices(RangeRequest) returns (CancelledInvoicesResponse);
   rpc AuditLog(AuditLogRequest) returns (AuditLogResponse);
+  rpc CreditReport(CreditReportRequest) returns (CreditReportResponse);
 }
