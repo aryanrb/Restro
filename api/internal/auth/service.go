@@ -45,8 +45,13 @@ type ManagerApproval struct {
 
 // --- pgtype helpers ---
 
-func ptext(s string) pgtype.Text    { return pgtype.Text{String: s, Valid: true} }
-func ptextOpt(s string) pgtype.Text { if s == "" { return pgtype.Text{} }; return ptext(s) }
+func ptext(s string) pgtype.Text { return pgtype.Text{String: s, Valid: true} }
+func ptextOpt(s string) pgtype.Text {
+	if s == "" {
+		return pgtype.Text{}
+	}
+	return ptext(s)
+}
 func puuid(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
 
 func auditJSON(v any) []byte { b, _ := json.Marshal(v); return b }
@@ -155,25 +160,44 @@ func (s *Service) PinLogin(ctx context.Context, userID uuid.UUID, pin string, de
 	if !u.Active || !u.PinHash.Valid {
 		return sqlc.User{}, "", connecterr.InvalidCredentials()
 	}
-	ok, err := VerifySecret(pin, u.PinHash.String)
-	if err != nil {
-		return sqlc.User{}, "", s.internal("verify pin", err)
-	}
-	if !ok {
-		updated, err := s.q.IncrementPinFailure(ctx, userID)
-		if err != nil {
-			return sqlc.User{}, "", s.internal("increment pin failure", err)
-		}
-		if updated.FailedPinAttempts >= pinLockAfter {
-			return sqlc.User{}, "", connecterr.PinLocked()
-		}
-		return sqlc.User{}, "", connecterr.InvalidCredentials()
+	if cerr := s.checkPin(ctx, u, pin, connecterr.InvalidCredentials()); cerr != nil {
+		return sqlc.User{}, "", cerr
 	}
 	token, cerr := s.issueSession(ctx, u.ID, puuid(device.ID))
 	if cerr != nil {
 		return sqlc.User{}, "", cerr
 	}
 	return u, token, nil
+}
+
+// checkPin verifies pin against u's PIN hash under the shared lockout used by PIN
+// login and manager approval. The attempt is counted atomically BEFORE the
+// (slow) hash check, so parallel guesses can't each slip under the limit; a
+// correct PIN clears the counter. Returns nil on success, PinLocked once the
+// limit is reached, otherwise wrongPin. Runs on the pool (not a caller's tx) so
+// failures persist even if the surrounding command rolls back.
+func (s *Service) checkPin(ctx context.Context, u sqlc.User, pin string, wrongPin *connecterr.Error) *connecterr.Error {
+	reserved, err := s.q.ReservePinAttempt(ctx, sqlc.ReservePinAttemptParams{ID: u.ID, LockAfter: pinLockAfter})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return connecterr.PinLocked()
+	}
+	if err != nil {
+		return s.internal("reserve pin attempt", err)
+	}
+	ok, err := VerifySecret(pin, u.PinHash.String)
+	if err != nil {
+		return s.internal("verify pin", err)
+	}
+	if !ok {
+		if reserved.FailedPinAttempts >= pinLockAfter {
+			return connecterr.PinLocked()
+		}
+		return wrongPin
+	}
+	if err := s.q.ResetPinFailures(ctx, u.ID); err != nil {
+		return s.internal("reset pin failures", err)
+	}
+	return nil
 }
 
 // EnrollDevice marks the caller's device as a shared PIN-login device.
@@ -401,6 +425,19 @@ func (s *Service) ResetPin(ctx context.Context, actor *Actor, userID uuid.UUID, 
 	if !pinRe.MatchString(pin) {
 		return connecterr.Invalid("pin", "PIN must be 4–6 digits")
 	}
+	target, err := s.q.GetUserByID(ctx, userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return connecterr.NotFound("staff not found")
+	}
+	if err != nil {
+		return s.internal("get user by id", err)
+	}
+	// Same hierarchy as SaveStaff: a manager may not touch owner/manager accounts,
+	// which includes their own (otherwise a locked manager could unlock themselves).
+	// Owners may reset anyone.
+	if actor.User.Role == RoleManager && isPrivileged(target.Role) {
+		return connecterr.NotAllowed("managers can only reset PINs of cashier, waiter or kitchen staff")
+	}
 	h, err := HashSecret(pin)
 	if err != nil {
 		return s.internal("hash pin", err)
@@ -411,7 +448,7 @@ func (s *Service) ResetPin(ctx context.Context, actor *Actor, userID uuid.UUID, 
 	}
 	defer tx.Rollback(ctx)
 	q := s.q.WithTx(tx)
-	if err := q.SetUserPin(ctx, sqlc.SetUserPinParams{ID: userID, PinHash: ptext(h)}); err != nil {
+	if err := q.SetUserPin(ctx, sqlc.SetUserPinParams{ID: target.ID, PinHash: ptext(h)}); err != nil {
 		return s.internal("set pin", err)
 	}
 	if err := q.InsertAudit(ctx, sqlc.InsertAuditParams{
@@ -423,7 +460,10 @@ func (s *Service) ResetPin(ctx context.Context, actor *Actor, userID uuid.UUID, 
 }
 
 // VerifyManagerApproval checks an inline manager override. Returns the approving
-// manager, or ManagerApprovalInvalid. Used by privileged commands in later steps.
+// manager, ManagerApprovalInvalid, or PinLocked. Wrong PINs share the PIN-login
+// failure counter and lockout (pinLockAfter), so an approval PIN cannot be
+// brute-forced; a correct PIN clears the counter. The counter updates run on the
+// pool, not the caller's transaction, so a rolled-back command still counts.
 func (s *Service) VerifyManagerApproval(ctx context.Context, a ManagerApproval) (sqlc.User, error) {
 	id, err := uuid.Parse(a.ManagerUserID)
 	if err != nil {
@@ -439,12 +479,11 @@ func (s *Service) VerifyManagerApproval(ctx context.Context, a ManagerApproval) 
 	if !u.Active || !isPrivileged(u.Role) || !u.PinHash.Valid {
 		return sqlc.User{}, connecterr.ManagerApprovalInvalid()
 	}
-	ok, err := VerifySecret(a.Pin, u.PinHash.String)
-	if err != nil {
-		return sqlc.User{}, s.internal("verify manager pin", err)
+	if u.FailedPinAttempts >= pinLockAfter {
+		return sqlc.User{}, connecterr.PinLocked()
 	}
-	if !ok {
-		return sqlc.User{}, connecterr.ManagerApprovalInvalid()
+	if cerr := s.checkPin(ctx, u, a.Pin, connecterr.ManagerApprovalInvalid()); cerr != nil {
+		return sqlc.User{}, cerr
 	}
 	return u, nil
 }

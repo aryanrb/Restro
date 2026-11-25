@@ -34,11 +34,19 @@ RETURNING *;
 -- name: IncrementPrintCount :one
 UPDATE invoices SET print_count = print_count + 1 WHERE id = $1 RETURNING print_count;
 
+-- Locks the order row for the billing transaction so concurrent bills (different
+-- command ids) of the same order serialize; the loser then sees the new status /
+-- unbilled set. Order mutations (version bumps) also wait on this lock.
+-- name: LockOrderByClientIDForBilling :one
+SELECT * FROM orders WHERE client_id = $1 FOR UPDATE;
+
 -- name: ListUnbilledOrderItems :many
 SELECT * FROM order_items WHERE order_id = $1 AND invoice_id IS NULL AND status <> 'VOIDED' ORDER BY created_at;
 
--- name: SetOrderItemsInvoice :exec
-UPDATE order_items SET invoice_id = @invoice_id WHERE id = ANY(@ids::uuid[]);
+-- Only claims items that are still unbilled; the caller checks the row count so
+-- an item billed by a concurrent command is never re-assigned.
+-- name: SetOrderItemsInvoice :execrows
+UPDATE order_items SET invoice_id = @invoice_id WHERE id = ANY(@ids::uuid[]) AND invoice_id IS NULL;
 
 -- name: UnlinkInvoiceItems :many
 UPDATE order_items SET invoice_id = NULL WHERE invoice_id = $1 RETURNING order_id;

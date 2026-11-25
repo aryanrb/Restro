@@ -28,6 +28,12 @@ func NewService(pool *pgxpool.Pool, hub *realtime.Hub, log *zap.Logger) *Service
 	return &Service{pool: pool, q: sqlc.New(pool), hub: hub, log: log}
 }
 
+// requireKitchenRole admits kitchen staff plus owners/managers (who may cover the
+// pass); waiters and cashiers cannot drive the KDS.
+func requireKitchenRole(ctx context.Context) (*auth.Actor, error) {
+	return auth.RequireRole(ctx, auth.RoleOwner, auth.RoleManager, auth.RoleKitchen)
+}
+
 func (s *Service) emit(ev realtime.Event) {
 	if s.hub != nil {
 		s.hub.Broadcast(ev)
@@ -35,7 +41,7 @@ func (s *Service) emit(ev realtime.Event) {
 }
 
 func (s *Service) ListStationTickets(ctx context.Context, stationID string) ([]*restaurantv1.Ticket, error) {
-	if _, err := auth.RequireActor(ctx); err != nil {
+	if _, err := requireKitchenRole(ctx); err != nil {
 		return nil, err
 	}
 	sid, err := parseID("station_id", stationID)
@@ -96,7 +102,7 @@ func (s *Service) MarkItemsReady(ctx context.Context, itemIDs []string) error {
 // transition applies a KDS status change to the given items, bumps the affected
 // orders, and emits order.updated (+ item.ready when notifyWaiter).
 func (s *Service) transition(ctx context.Context, itemIDs []string, to string, from []string, notifyWaiter bool) error {
-	if _, err := auth.RequireActor(ctx); err != nil {
+	if _, err := requireKitchenRole(ctx); err != nil {
 		return err
 	}
 	ids, err := parseIDs("item_ids", itemIDs)
@@ -139,7 +145,7 @@ func (s *Service) transition(ctx context.Context, itemIDs []string, to string, f
 }
 
 func (s *Service) BumpTicket(ctx context.Context, orderID, stationID string) error {
-	if _, err := auth.RequireActor(ctx); err != nil {
+	if _, err := requireKitchenRole(ctx); err != nil {
 		return err
 	}
 	oid, err := parseID("order_id", orderID)

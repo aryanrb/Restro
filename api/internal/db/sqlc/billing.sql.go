@@ -452,8 +452,33 @@ func (q *Queries) ListUnbilledOrderItems(ctx context.Context, orderID uuid.UUID)
 	return items, nil
 }
 
-const setOrderItemsInvoice = `-- name: SetOrderItemsInvoice :exec
-UPDATE order_items SET invoice_id = $1 WHERE id = ANY($2::uuid[])
+const lockOrderByClientIDForBilling = `-- name: LockOrderByClientIDForBilling :one
+SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at FROM orders WHERE client_id = $1 FOR UPDATE
+`
+
+// Locks the order row for the billing transaction so concurrent bills (different
+// command ids) of the same order serialize; the loser then sees the new status /
+// unbilled set. Order mutations (version bumps) also wait on this lock.
+func (q *Queries) LockOrderByClientIDForBilling(ctx context.Context, clientID uuid.UUID) (Order, error) {
+	row := q.db.QueryRow(ctx, lockOrderByClientIDForBilling, clientID)
+	var i Order
+	err := row.Scan(
+		&i.ID,
+		&i.ClientID,
+		&i.Type,
+		&i.TableID,
+		&i.WaiterUserID,
+		&i.Status,
+		&i.GuestCount,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const setOrderItemsInvoice = `-- name: SetOrderItemsInvoice :execrows
+UPDATE order_items SET invoice_id = $1 WHERE id = ANY($2::uuid[]) AND invoice_id IS NULL
 `
 
 type SetOrderItemsInvoiceParams struct {
@@ -461,9 +486,14 @@ type SetOrderItemsInvoiceParams struct {
 	Ids       []uuid.UUID `json:"ids"`
 }
 
-func (q *Queries) SetOrderItemsInvoice(ctx context.Context, arg SetOrderItemsInvoiceParams) error {
-	_, err := q.db.Exec(ctx, setOrderItemsInvoice, arg.InvoiceID, arg.Ids)
-	return err
+// Only claims items that are still unbilled; the caller checks the row count so
+// an item billed by a concurrent command is never re-assigned.
+func (q *Queries) SetOrderItemsInvoice(ctx context.Context, arg SetOrderItemsInvoiceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setOrderItemsInvoice, arg.InvoiceID, arg.Ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const unlinkInvoiceItems = `-- name: UnlinkInvoiceItems :many

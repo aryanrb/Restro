@@ -111,6 +111,10 @@ type Querier interface {
 	ListUnbilledOrderItems(ctx context.Context, orderID uuid.UUID) ([]OrderItem, error)
 	// Variants -----------------------------------------------------------------
 	ListVariants(ctx context.Context) ([]ItemVariant, error)
+	// Locks the order row for the billing transaction so concurrent bills (different
+	// command ids) of the same order serialize; the loser then sees the new status /
+	// unbilled set. Order mutations (version bumps) also wait on this lock.
+	LockOrderByClientIDForBilling(ctx context.Context, clientID uuid.UUID) (Order, error)
 	MoveOrderItemsToOrder(ctx context.Context, arg MoveOrderItemsToOrderParams) error
 	NextAreaSort(ctx context.Context) (int32, error)
 	NextCategorySort(ctx context.Context) (int32, error)
@@ -119,13 +123,19 @@ type Querier interface {
 	NextTableSort(ctx context.Context) (int32, error)
 	OpenShift(ctx context.Context, arg OpenShiftParams) (Shift, error)
 	QueryAuditLog(ctx context.Context, arg QueryAuditLogParams) ([]AuditLog, error)
+	// Atomically counts a PIN attempt before it is checked, only while the user is
+	// not locked (limit passed as $2). No row = locked. A correct PIN then resets the
+	// counter, so concurrent guesses can never exceed the limit.
+	ReservePinAttempt(ctx context.Context, arg ReservePinAttemptParams) (User, error)
 	ResetPinFailures(ctx context.Context, id uuid.UUID) error
 	RevokeSession(ctx context.Context, tokenHash string) error
 	SalesBook(ctx context.Context, arg SalesBookParams) ([]Invoice, error)
 	Set86(ctx context.Context, arg Set86Params) error
 	SetItemImage(ctx context.Context, arg SetItemImageParams) (MenuItem, error)
 	SetOrderItemStatus(ctx context.Context, arg SetOrderItemStatusParams) error
-	SetOrderItemsInvoice(ctx context.Context, arg SetOrderItemsInvoiceParams) error
+	// Only claims items that are still unbilled; the caller checks the row count so
+	// an item billed by a concurrent command is never re-assigned.
+	SetOrderItemsInvoice(ctx context.Context, arg SetOrderItemsInvoiceParams) (int64, error)
 	SetOrderStatus(ctx context.Context, arg SetOrderStatusParams) error
 	SetOrderTable(ctx context.Context, arg SetOrderTableParams) error
 	SetUserLanguage(ctx context.Context, arg SetUserLanguageParams) (User, error)

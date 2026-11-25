@@ -37,3 +37,11 @@ UPDATE users SET failed_pin_attempts = 0, updated_at = now() WHERE id = $1;
 
 -- name: SetUserPin :exec
 UPDATE users SET pin_hash = $2, failed_pin_attempts = 0, updated_at = now() WHERE id = $1;
+
+-- name: ReservePinAttempt :one
+-- Atomically counts a PIN attempt before it is checked, only while the user is
+-- not locked (limit passed as $2). No row = locked. A correct PIN then resets the
+-- counter, so concurrent guesses can never exceed the limit.
+UPDATE users SET failed_pin_attempts = failed_pin_attempts + 1, updated_at = now()
+WHERE id = $1 AND failed_pin_attempts < sqlc.arg(lock_after)::int
+RETURNING *;

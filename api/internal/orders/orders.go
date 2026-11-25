@@ -31,6 +31,30 @@ func NewService(pool *pgxpool.Pool, hub *realtime.Hub, authSvc *auth.Service, lo
 	return &Service{pool: pool, q: sqlc.New(pool), hub: hub, auth: authSvc, log: log}
 }
 
+// requireOrderRole admits the front-of-house roles that take and manage orders.
+// KITCHEN staff work tickets through the kitchen service, not orders.
+func requireOrderRole(ctx context.Context) (*auth.Actor, error) {
+	return auth.RequireRole(ctx, auth.RoleOwner, auth.RoleManager, auth.RoleWaiter, auth.RoleCashier)
+}
+
+// requireOpen rejects commands against an order that is no longer OPEN
+// (BILLED/CLOSED/CANCELLED) with ORDER_CLOSED.
+func requireOpen(o sqlc.Order) error {
+	if o.Status != "OPEN" {
+		return connecterr.OrderClosed("order is not open")
+	}
+	return nil
+}
+
+// requireServable allows MarkServed on OPEN and BILLED orders: a paid order whose food
+// isn't handed over yet (pay-first counter, bill before the last dish) must still be servable.
+func requireServable(o sqlc.Order) error {
+	if o.Status != "OPEN" && o.Status != "BILLED" {
+		return connecterr.OrderClosed("order is closed")
+	}
+	return nil
+}
+
 func (s *Service) emit(ev realtime.Event) {
 	if s.hub != nil {
 		s.hub.Broadcast(ev)

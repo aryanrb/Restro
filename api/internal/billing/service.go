@@ -366,8 +366,12 @@ func (s *Service) GetInvoice(ctx context.Context, req *restaurantv1.GetInvoiceRe
 
 // --- internals ---
 
+// loadForBilling must run inside the billing transaction: it locks the order row
+// (SELECT ... FOR UPDATE) before reading the unbilled items, so two bills of the
+// same order under different command ids serialize and the second sees the first's
+// result (status BILLED or the items already invoiced) instead of a stale read.
 func (s *Service) loadForBilling(ctx context.Context, q *sqlc.Queries, ocid uuid.UUID) (sqlc.Order, []sqlc.OrderItem, sqlc.Setting, error) {
-	order, e := q.GetOrderByClientID(ctx, ocid)
+	order, e := q.LockOrderByClientIDForBilling(ctx, ocid)
 	if errors.Is(e, pgx.ErrNoRows) {
 		return sqlc.Order{}, nil, sqlc.Setting{}, connecterr.NotFound("order not found")
 	}
@@ -464,8 +468,14 @@ func (s *Service) issueInvoiceForItems(ctx context.Context, q *sqlc.Queries, ord
 		}
 		itemIDs = append(itemIDs, it.ID)
 	}
-	if err := q.SetOrderItemsInvoice(ctx, sqlc.SetOrderItemsInvoiceParams{InvoiceID: dbx.UUID(inv.ID), Ids: itemIDs}); err != nil {
+	// Claim only still-unbilled items; a short count means another command billed
+	// some of them, so abort the whole transaction rather than double-bill.
+	claimed, err := q.SetOrderItemsInvoice(ctx, sqlc.SetOrderItemsInvoiceParams{InvoiceID: dbx.UUID(inv.ID), Ids: itemIDs})
+	if err != nil {
 		return sqlc.Invoice{}, connecterr.Internal(err)
+	}
+	if claimed != int64(len(itemIDs)) {
+		return sqlc.Invoice{}, connecterr.OrderClosed("some items were already billed; refresh the order")
 	}
 	if err := q.CreateCbmsOutbox(ctx, sqlc.CreateCbmsOutboxParams{
 		InvoiceID: inv.ID, Kind: "BILL", Payload: audit.JSON(map[string]any{"number": number, "total": r.Total, "fiscal_year": fy}), Status: "DISABLED",

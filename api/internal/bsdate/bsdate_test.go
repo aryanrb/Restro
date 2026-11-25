@@ -12,10 +12,10 @@ func TestFromAD(t *testing.T) {
 		ad   time.Time
 		want Date
 	}{
-		{ad(2023, 4, 14), Date{2080, 1, 1}},   // Nepali New Year 2080
-		{ad(2024, 4, 13), Date{2081, 1, 1}},   // 2081
-		{ad(2026, 4, 14), Date{2083, 1, 1}},   // 2083
-		{ad(2026, 11, 23), Date{2083, 8, 7}},  // research anchor: BS 2083 Mangsir 7
+		{ad(2023, 4, 14), Date{2080, 1, 1}},  // Nepali New Year 2080
+		{ad(2024, 4, 13), Date{2081, 1, 1}},  // 2081
+		{ad(2026, 4, 14), Date{2083, 1, 1}},  // 2083
+		{ad(2026, 11, 23), Date{2083, 8, 7}}, // research anchor: BS 2083 Mangsir 7
 	}
 	for _, c := range cases {
 		got, err := FromAD(c.ad)

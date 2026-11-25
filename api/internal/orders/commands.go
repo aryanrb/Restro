@@ -28,7 +28,7 @@ func parseID(field, s string) (uuid.UUID, error) {
 // --- queries ---
 
 func (s *Service) ListOpenOrders(ctx context.Context) ([]*restaurantv1.Order, error) {
-	if _, err := auth.RequireActor(ctx); err != nil {
+	if _, err := requireOrderRole(ctx); err != nil {
 		return nil, err
 	}
 	rows, err := s.q.ListOpenOrders(ctx)
@@ -47,7 +47,7 @@ func (s *Service) ListOpenOrders(ctx context.Context) ([]*restaurantv1.Order, er
 }
 
 func (s *Service) GetOrder(ctx context.Context, req *restaurantv1.GetOrderRequest) (*restaurantv1.Order, error) {
-	if _, err := auth.RequireActor(ctx); err != nil {
+	if _, err := requireOrderRole(ctx); err != nil {
 		return nil, err
 	}
 	var o sqlc.Order
@@ -80,7 +80,7 @@ func (s *Service) GetOrder(ctx context.Context, req *restaurantv1.GetOrderReques
 // --- commands ---
 
 func (s *Service) CreateOrder(ctx context.Context, req *restaurantv1.CreateOrderRequest) (*restaurantv1.OrderResult, error) {
-	actor, err := auth.RequireActor(ctx)
+	actor, err := requireOrderRole(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +134,7 @@ func (s *Service) CreateOrder(ctx context.Context, req *restaurantv1.CreateOrder
 }
 
 func (s *Service) AddItems(ctx context.Context, req *restaurantv1.AddItemsRequest) (*restaurantv1.AddItemsResult, error) {
-	actor, err := auth.RequireActor(ctx)
+	actor, err := requireOrderRole(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -156,8 +156,8 @@ func (s *Service) AddItems(ctx context.Context, req *restaurantv1.AddItemsReques
 		if e != nil {
 			return connecterr.Internal(e)
 		}
-		if order.Status != "OPEN" {
-			return connecterr.OrderClosed("order is not open")
+		if e := requireOpen(order); e != nil {
+			return e
 		}
 
 		applied := 0
@@ -224,7 +224,7 @@ func (s *Service) AddItems(ctx context.Context, req *restaurantv1.AddItemsReques
 }
 
 func (s *Service) SendItems(ctx context.Context, req *restaurantv1.SendItemsRequest) (*restaurantv1.OrderResult, error) {
-	actor, err := auth.RequireActor(ctx)
+	actor, err := requireOrderRole(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -245,6 +245,9 @@ func (s *Service) SendItems(ctx context.Context, req *restaurantv1.SendItemsRequ
 		}
 		if e != nil {
 			return connecterr.Internal(e)
+		}
+		if e := requireOpen(order); e != nil {
+			return e
 		}
 		items, e := q.ListOrderItems(ctx, order.ID)
 		if e != nil {
@@ -289,7 +292,7 @@ func (s *Service) SendItems(ctx context.Context, req *restaurantv1.SendItemsRequ
 }
 
 func (s *Service) VoidItem(ctx context.Context, req *restaurantv1.VoidItemRequest) (*restaurantv1.OrderResult, error) {
-	actor, err := auth.RequireActor(ctx)
+	actor, err := requireOrderRole(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -315,12 +318,22 @@ func (s *Service) VoidItem(ctx context.Context, req *restaurantv1.VoidItemReques
 		if e != nil {
 			return connecterr.Internal(e)
 		}
+		if e := requireOpen(order); e != nil {
+			return e
+		}
 		item, e := q.GetOrderItem(ctx, itemID)
 		if errors.Is(e, pgx.ErrNoRows) || (e == nil && item.OrderID != order.ID) {
 			return connecterr.NotFound("item not found on this order")
 		}
 		if e != nil {
 			return connecterr.Internal(e)
+		}
+
+		// A line on an issued invoice is part of an immutable fiscal document; the
+		// invoice must be cancelled (which clears invoice_id) before it can be voided.
+		// TODO: switch to an ITEM_BILLED reason once the proto has one.
+		if item.InvoiceID.Valid {
+			return connecterr.Invalid("item_id", "item is on an issued invoice; cancel the invoice first")
 		}
 
 		var approvedBy uuid.UUID
@@ -378,7 +391,7 @@ func (s *Service) VoidItem(ctx context.Context, req *restaurantv1.VoidItemReques
 }
 
 func (s *Service) MarkServed(ctx context.Context, req *restaurantv1.MarkServedRequest) (*restaurantv1.OrderResult, error) {
-	actor, err := auth.RequireActor(ctx)
+	actor, err := requireOrderRole(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -408,6 +421,9 @@ func (s *Service) MarkServed(ctx context.Context, req *restaurantv1.MarkServedRe
 		if e != nil {
 			return connecterr.Internal(e)
 		}
+		if e := requireServable(order); e != nil {
+			return e
+		}
 		if e := q.SetOrderItemStatus(ctx, sqlc.SetOrderItemStatusParams{
 			Status: "SERVED", OrderID: order.ID, Ids: ids, FromStatus: []string{"SENT", "PREPARING", "READY"},
 		}); e != nil {
@@ -431,7 +447,7 @@ func (s *Service) MarkServed(ctx context.Context, req *restaurantv1.MarkServedRe
 }
 
 func (s *Service) TransferTable(ctx context.Context, req *restaurantv1.TransferTableRequest) (*restaurantv1.OrderResult, error) {
-	actor, err := auth.RequireActor(ctx)
+	actor, err := requireOrderRole(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -457,6 +473,9 @@ func (s *Service) TransferTable(ctx context.Context, req *restaurantv1.TransferT
 		}
 		if e != nil {
 			return connecterr.Internal(e)
+		}
+		if e := requireOpen(order); e != nil {
+			return e
 		}
 		oldTable = pgUUIDStr(order.TableID)
 		if _, e := q.CheckBumpOrderVersion(ctx, sqlc.CheckBumpOrderVersionParams{ID: order.ID, Version: req.GetBaseVersion()}); errors.Is(e, pgx.ErrNoRows) {
@@ -489,7 +508,7 @@ func (s *Service) TransferTable(ctx context.Context, req *restaurantv1.TransferT
 }
 
 func (s *Service) MergeTables(ctx context.Context, req *restaurantv1.MergeTablesRequest) (*restaurantv1.OrderResult, error) {
-	actor, err := auth.RequireActor(ctx)
+	actor, err := requireOrderRole(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -522,6 +541,12 @@ func (s *Service) MergeTables(ctx context.Context, req *restaurantv1.MergeTables
 		}
 		if e != nil {
 			return connecterr.Internal(e)
+		}
+		if e := requireOpen(src); e != nil {
+			return connecterr.OrderClosed("source order is not open")
+		}
+		if e := requireOpen(tgt); e != nil {
+			return connecterr.OrderClosed("target order is not open")
 		}
 		srcID = src.ID.String()
 		if _, e := q.CheckBumpOrderVersion(ctx, sqlc.CheckBumpOrderVersionParams{ID: src.ID, Version: req.GetSourceBaseVersion()}); errors.Is(e, pgx.ErrNoRows) {

@@ -209,6 +209,39 @@ func (q *Queries) ListStaff(ctx context.Context) ([]User, error) {
 	return items, nil
 }
 
+const reservePinAttempt = `-- name: ReservePinAttempt :one
+UPDATE users SET failed_pin_attempts = failed_pin_attempts + 1, updated_at = now()
+WHERE id = $1 AND failed_pin_attempts < $2::int
+RETURNING id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at
+`
+
+type ReservePinAttemptParams struct {
+	ID        uuid.UUID `json:"id"`
+	LockAfter int32     `json:"lock_after"`
+}
+
+// Atomically counts a PIN attempt before it is checked, only while the user is
+// not locked (limit passed as $2). No row = locked. A correct PIN then resets the
+// counter, so concurrent guesses can never exceed the limit.
+func (q *Queries) ReservePinAttempt(ctx context.Context, arg ReservePinAttemptParams) (User, error) {
+	row := q.db.QueryRow(ctx, reservePinAttempt, arg.ID, arg.LockAfter)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Role,
+		&i.Username,
+		&i.PasswordHash,
+		&i.PinHash,
+		&i.Language,
+		&i.Active,
+		&i.FailedPinAttempts,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const resetPinFailures = `-- name: ResetPinFailures :exec
 UPDATE users SET failed_pin_attempts = 0, updated_at = now() WHERE id = $1
 `
