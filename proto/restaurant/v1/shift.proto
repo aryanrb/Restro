@@ -79,13 +79,31 @@ message ShiftAdjustment {
   string repayment_id = 10;
 }
 
+enum ShiftPaidOutKind {
+  SHIFT_PAID_OUT_KIND_UNSPECIFIED = 0;
+  SHIFT_PAID_OUT_KIND_SUPPLIER_PAYMENT = 1;      // till payment to a supplier (+)
+  SHIFT_PAID_OUT_KIND_SUPPLIER_REFUND = 2;       // cash a supplier handed back on a return (-)
+  SHIFT_PAID_OUT_KIND_SUPPLIER_PAYMENT_VOID = 3; // till payment from a closed shift voided in this one (-)
+}
+
+// Supplier cash out of (or back into) the drawer (purchases.proto).
+message ShiftPaidOut {
+  ShiftPaidOutKind kind = 1;
+  string ref_id = 2;        // supplier payment id, or purchase return id for a refund
+  string ref = 3;           // payment slip "SP-4", or the purchase "P-12" for a refund
+  string supplier_name = 4;
+  int64 amount_paisa = 5;   // positive = out of the drawer; refunds and voids are negative
+  string by_name = 6;
+  int64 at_unix = 7;
+}
+
 // Close-out / report view of a shift.
 message ShiftReport {
   Shift shift = 1;
   // Takings by method: confirmed payments, excluding bills cancelled while this
   // shift was open, minus this shift's adjustments.
   repeated MethodTotal totals = 2;
-  int64 expected_cash_paisa = 3;       // opening float + cash takings (after adjustments)
+  int64 expected_cash_paisa = 3;       // opening float + cash takings (after adjustments) - paid-outs
   int64 difference_paisa = 4;          // counted - expected (0 unless closed)
   // Deprecated: use payments (QR only, no method or invoice id).
   repeated QrPaymentRow qr_payments = 5;
@@ -95,6 +113,9 @@ message ShiftReport {
   int64 repayments_paisa = 8;
   // On-account amounts billed in this shift (not money; never in totals or expected cash).
   int64 credit_given_paisa = 9;
+  // Supplier paid-outs in this shift (net of refunds / voids), oldest first.
+  repeated ShiftPaidOut paid_outs = 10;
+  int64 paid_out_total_paisa = 11;
 }
 
 message OpenShiftRequest {

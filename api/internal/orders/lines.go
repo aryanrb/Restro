@@ -132,6 +132,30 @@ func priceLine(ctx context.Context, q *sqlc.Queries, ni *restaurantv1.NewItem) (
 	return out, nil, nil
 }
 
+// PricedLine is a NewItem validated and priced against the live menu, without
+// inserting it: guest ordering prices a guest's cart this way at submit (the
+// server's price, never the client's) and snapshots it until staff accept it.
+type PricedLine struct {
+	Item      sqlc.MenuItem
+	Variant   *sqlc.ItemVariant // nil when the item has no variants
+	Modifiers []sqlc.Modifier
+	UnitPrice int64 // variant (or item) price + every chosen modifier's delta
+}
+
+// PriceLine runs the same per-line validation and pricing as InsertLines. A
+// refusal (unknown/inactive item, ITEM_86D, bad variant/modifiers) is returned as
+// a RejectedLine (reason + message); a non-nil error is an infrastructure failure.
+func PriceLine(ctx context.Context, q *sqlc.Queries, ni *restaurantv1.NewItem) (*PricedLine, *restaurantv1.RejectedLine, error) {
+	pl, rej, err := priceLine(ctx, q, ni)
+	if err != nil {
+		return nil, nil, err
+	}
+	if rej != nil {
+		return nil, &restaurantv1.RejectedLine{ClientId: ni.GetClientId(), Reason: rej.reason, Message: rej.msg}, nil
+	}
+	return &PricedLine{Item: pl.item, Variant: pl.variant, Modifiers: pl.modifiers, UnitPrice: pl.unitPrice}, nil, nil
+}
+
 // InsertLines validates, prices and inserts NewItems on an order inside the
 // caller's transaction, with the given status (DRAFT, or SENT for one-step
 // add+send). It is the shared core of AddItems and billing's CounterSale.

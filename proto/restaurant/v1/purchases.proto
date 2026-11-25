@@ -1,0 +1,454 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+import "buf/validate/validate.proto";
+import "restaurant/v1/common.proto";
+import "restaurant/v1/inventory.proto";
+
+// ---------------------------------------------------------------------------
+// SupplierService + PurchaseService — suppliers, purchase bills (goods received
+// and the supplier's invoice in one record), supplier payments (incl. "From till"
+// paid-outs counted in the payer's open shift), purchase returns, the buy list
+// and the purchase reports (spec: docs/superpowers/specs/2026-11-24-purchases-
+// suppliers-design.md; web fake: web/src/lib/api/mock/mock-purchases-api.ts).
+//
+// UNITS: quantities are thousandths (`*_milli`). A purchase line's quantity is in
+// its PURCHASE unit; `factor_milli` is that unit's size in thousandths of the
+// item's stock unit (crate of 24 pcs = 24000, kg for a g item = 1000000), so
+// stock in = quantity_milli × factor_milli / 1000. Purchase units of an item: its
+// stock unit (key "g"/"ml"/"pcs", factor 1), kg / L for g / ml items (key "kg" /
+// "L"), and each of its packs (key "pack:<English pack name>").
+// Unit cost on a line is paisa per purchase unit, excluding VAT. Stock-unit cost
+// is paisa per stock unit ×10,000 (`*_e4`), as in inventory.proto.
+//
+// ROLES: OWNER/MANAGER do everything. CASHIER may list/get/create suppliers (no
+// opening balance), record purchases, list/get purchases and payments, and pay
+// "From till" only (up to Rs 5,000 per payment without a manager PIN). Supplier
+// edits/deactivation, statements, voids, returns, purchase settings, the buy list
+// and reports are owner/manager. WAITER/KITCHEN: NOT_ALLOWED.
+//
+// ERRORS (reason, field):
+//   DUPLICATE_SUPPLIER_BILL (supplier_bill_no) same bill no. on a recorded bill of the supplier
+//   NOT_A_VAT_BILL (is_vat_bill)   VAT bill needs supplier PAN + VAT registration + a bill no.
+//   PAYMENT_TOO_HIGH (amount)      payment more than what is owed (no advances)
+//   RETURN_TOO_HIGH (lines)        return quantity more than bought − already returned
+//   MANAGER_APPROVAL_REQUIRED (amount)  cashier till payment over the limit without a PIN (web: PAID_OUT_LIMIT)
+//   INVALID (supplier_id)          inactive supplier on a new bill (web: SUPPLIER_INACTIVE)
+//   ITEM_UNTRACKED (lines)         inactive stock item on a line (web: ITEM_INACTIVE)
+//   IN_USE                         void of a bill that has returns (web: PURCHASE_HAS_RETURNS)
+//   SHIFT_NOT_OPEN                 till payment / refund / closed-shift void without an open shift
+//   DUPLICATE (name)               supplier name taken (case-insensitive)
+//
+// Realtime: `purchase.recorded` (id = purchase id, also on void/return),
+// `supplier.updated` (id = supplier id), `shift.updated` on till money,
+// `inventory.updated` (id "inventory") on purchase settings. Stock events are
+// inventory's (stock.updated / stock.low).
+//
+// Audit actions: SUPPLIER_CHANGED, PURCHASE_RECORDED, PURCHASE_VOIDED,
+// PURCHASE_RETURNED, SUPPLIER_PAID (approver set over the till limit),
+// SUPPLIER_PAYMENT_VOIDED, INVENTORY_ITEM_CHANGED (purchase settings).
+// ---------------------------------------------------------------------------
+
+message Supplier {
+  string id = 1;
+  string name = 2;
+  string phone = 3;
+  string address = 4;
+  string pan = 5; // 9 digits or ""
+  bool vat_registered = 6;
+  string contact_person = 7;
+  string notes = 8;
+  bool active = 9; // inactive: no new bills; payments still allowed
+  int64 opening_balance_paisa = 10;
+  string created_by_id = 11;
+  int64 created_at_unix = 12;
+  // Server-computed: opening + recorded bills − returns − payments + refunds.
+  // Negative = credit with the supplier.
+  int64 balance_paisa = 13;
+}
+
+message SupplierInput {
+  string name = 1;
+  string phone = 2;
+  string address = 3;
+  string pan = 4;
+  bool vat_registered = 5;
+  string contact_person = 6;
+  string notes = 7;
+}
+
+message ListSuppliersRequest {
+  string query = 1; // name, or >= 3 digits of phone / PAN
+  bool include_inactive = 2;
+}
+message ListSuppliersResponse {
+  repeated Supplier suppliers = 1; // by name
+}
+
+message GetSupplierRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message CreateSupplierRequest {
+  SupplierInput input = 1 [(buf.validate.field).required = true];
+  int64 opening_balance_paisa = 2 [(buf.validate.field).int64.gte = 0]; // owner/manager only
+}
+
+message UpdateSupplierRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  SupplierInput input = 2 [(buf.validate.field).required = true];
+}
+
+message SetSupplierActiveRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  bool active = 2;
+}
+
+enum SupplierStatementKind {
+  SUPPLIER_STATEMENT_KIND_UNSPECIFIED = 0;
+  SUPPLIER_STATEMENT_KIND_OPENING = 1;
+  SUPPLIER_STATEMENT_KIND_BILL = 2;
+  SUPPLIER_STATEMENT_KIND_RETURN = 3;
+  SUPPLIER_STATEMENT_KIND_PAYMENT = 4;
+  SUPPLIER_STATEMENT_KIND_REFUND = 5;
+}
+
+message SupplierStatementEntry {
+  SupplierStatementKind kind = 1;
+  string ref = 2; // "P-12" / "SP-4" / ""
+  int64 at_unix = 3;
+  string bs_date = 4;
+  int64 amount_paisa = 5; // + raises what is owed, − lowers it
+  int64 balance_paisa = 6;
+  string detail = 7;
+}
+
+// AD dates "YYYY-MM-DD" in Kathmandu time, inclusive.
+message SupplierStatementRequest {
+  string supplier_id = 1 [(buf.validate.field).string.min_len = 1];
+  string from = 2;
+  string to = 3;
+}
+message SupplierStatement {
+  Supplier supplier = 1;
+  string from = 2;
+  string to = 3;
+  int64 opening_paisa = 4;
+  repeated SupplierStatementEntry entries = 5;
+  int64 closing_paisa = 6;
+}
+
+service SupplierService {
+  rpc ListSuppliers(ListSuppliersRequest) returns (ListSuppliersResponse);
+  rpc GetSupplier(GetSupplierRequest) returns (Supplier);
+  rpc CreateSupplier(CreateSupplierRequest) returns (Supplier);
+  rpc UpdateSupplier(UpdateSupplierRequest) returns (Supplier);       // owner/manager
+  rpc SetSupplierActive(SetSupplierActiveRequest) returns (Supplier); // owner/manager
+  rpc GetSupplierStatement(SupplierStatementRequest) returns (SupplierStatement); // owner/manager
+}
+
+// --- purchases ---
+
+enum PurchaseStatus {
+  PURCHASE_STATUS_UNSPECIFIED = 0;
+  PURCHASE_STATUS_RECORDED = 1;
+  PURCHASE_STATUS_VOIDED = 2;
+}
+
+enum SupplierPaymentMethod {
+  SUPPLIER_PAYMENT_METHOD_UNSPECIFIED = 0;
+  SUPPLIER_PAYMENT_METHOD_TILL = 1;       // cash from the drawer: a paid-out in the payer's open shift
+  SUPPLIER_PAYMENT_METHOD_OWNER_CASH = 2;
+  SUPPLIER_PAYMENT_METHOD_BANK_QR = 3;
+  SUPPLIER_PAYMENT_METHOD_CHEQUE = 4;
+}
+
+message PurchaseLine {
+  string id = 1;
+  string purchase_id = 2;
+  string inventory_item_id = 3; // "" = non-stock line (gas, cleaning…)
+  LocalText name = 4;           // item name at the time, or the free-text description
+  StockUnit stock_unit = 5;     // UNSPECIFIED for a non-stock line
+  int64 quantity_milli = 6;     // in purchase units
+  string unit_key = 7;
+  LocalText unit_label = 8;     // snapshot of the purchase unit
+  int64 factor_milli = 9;
+  int64 unit_cost_paisa = 10;   // per purchase unit, excl. VAT
+  bool vat_applies = 11;
+  int64 amount_paisa = 12;      // quantity × unit cost
+  int64 discount_paisa = 13;    // share of the bill discount
+  int64 vat_paisa = 14;         // share of the bill's VAT
+  int64 stock_unit_cost_e4 = 15; // cost per stock unit of the PURCHASE movement (claimable VAT excluded)
+  int64 returned_milli = 16;    // purchase units already returned
+}
+
+message PurchaseReturnLine {
+  string purchase_line_id = 1;
+  int64 quantity_milli = 2;
+}
+
+message PurchaseReturn {
+  string id = 1;
+  string purchase_id = 2;
+  string note_no = 3; // supplier's credit/debit note number
+  string reason = 4;
+  repeated PurchaseReturnLine lines = 5;
+  int64 taxable_paisa = 6;
+  int64 exempt_paisa = 7;
+  int64 vat_paisa = 8;
+  int64 total_paisa = 9;        // what the supplier is owed less
+  int64 refund_paisa = 10;      // cash handed back into the till (paid-in on the returner's shift)
+  string refund_shift_id = 11;
+  string by_id = 12;
+  string by_name = 13;
+  int64 at_unix = 14;
+  string bs_date = 15;
+}
+
+message Purchase {
+  string id = 1;
+  string display_number = 2; // "P-12"
+  string supplier_id = 3;
+  string supplier_name = 4;
+  string supplier_pan = 5;
+  string supplier_bill_no = 6;
+  string bill_date = 7;      // AD "YYYY-MM-DD"
+  string bill_date_bs = 8;   // "2083.08.08"
+  string fiscal_year = 9;
+  bool is_vat_bill = 10;
+  int64 discount_paisa = 11;
+  int64 taxable_paisa = 12;
+  int64 exempt_paisa = 13;
+  int64 vat_paisa = 14;      // as printed on the bill
+  int64 total_paisa = 15;
+  PurchaseStatus status = 16;
+  string void_reason = 17;
+  string voided_by_id = 18;
+  int64 voided_at_unix = 19;
+  string recorded_by_id = 20;
+  string recorded_by_name = 21;
+  int64 at_unix = 22;
+  repeated PurchaseLine lines = 23;
+  repeated PurchaseReturn returns = 24;
+  int64 returned_total_paisa = 25;
+  // Still unpaid on this bill after oldest-first allocation (0 for voided bills).
+  int64 owed_paisa = 26;
+}
+
+message PurchaseLineInput {
+  string inventory_item_id = 1; // "" = non-stock line
+  string description = 2;       // non-stock lines only
+  int64 quantity_milli = 3 [(buf.validate.field).int64.gt = 0];
+  string unit_key = 4;          // stock lines: a purchase unit key (see header)
+  int64 unit_cost_paisa = 5 [(buf.validate.field).int64.gte = 0];
+  bool vat_applies = 6;
+}
+
+message PayNow {
+  int64 amount_paisa = 1;
+  SupplierPaymentMethod method = 2;
+  string reference = 3;
+}
+
+message RecordPurchaseRequest {
+  string supplier_id = 1 [(buf.validate.field).string.min_len = 1];
+  string supplier_bill_no = 2;
+  string bill_date = 3; // AD "YYYY-MM-DD", not in the future
+  bool is_vat_bill = 4;
+  repeated PurchaseLineInput lines = 5;
+  int64 discount_paisa = 6 [(buf.validate.field).int64.gte = 0];
+  int64 vat_paisa = 7 [(buf.validate.field).int64.gte = 0]; // as printed on the bill
+  optional PayNow pay_now = 8;
+  ManagerApproval approval = 9; // till pay-now over the limit
+  string request_id = 10 [(buf.validate.field).string.min_len = 1];
+}
+
+message VoidPurchaseRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  string reason = 2;
+}
+
+message ReturnPurchaseRequest {
+  string purchase_id = 1 [(buf.validate.field).string.min_len = 1];
+  string note_no = 2;
+  string reason = 3;
+  repeated PurchaseReturnLine lines = 4; // quantities in the line's purchase unit
+  int64 refund_paisa = 5 [(buf.validate.field).int64.gte = 0];
+  string request_id = 6 [(buf.validate.field).string.min_len = 1];
+}
+
+// AD dates "YYYY-MM-DD" (bill date), inclusive.
+message ListPurchasesRequest {
+  string from = 1;
+  string to = 2;
+  string supplier_id = 3;
+  string inventory_item_id = 4;
+  bool include_voided = 5;
+}
+message ListPurchasesResponse {
+  repeated Purchase purchases = 1; // newest bill date first
+}
+
+message GetPurchaseRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message SupplierPayment {
+  string id = 1;
+  int32 number = 2;
+  string display_number = 3; // "SP-4": a payment slip, not an invoice
+  string supplier_id = 4;
+  string supplier_name = 5;
+  int64 amount_paisa = 6;
+  SupplierPaymentMethod method = 7;
+  string reference = 8;
+  string note = 9;
+  string shift_id = 10; // TILL only
+  string paid_by_id = 11;
+  string paid_by_name = 12;
+  string approver_id = 13;
+  string approver_name = 14;
+  int64 at_unix = 15;
+  string bs_date = 16;
+  int64 balance_after_paisa = 17;
+  int64 voided_at_unix = 18;
+  string voided_by_id = 19;
+  string void_reason = 20;
+  string void_shift_id = 21; // a closed-shift till payment voided: cash back in this shift
+}
+
+message PaySupplierRequest {
+  string supplier_id = 1 [(buf.validate.field).string.min_len = 1];
+  int64 amount_paisa = 2;
+  SupplierPaymentMethod method = 3;
+  string reference = 4;
+  string note = 5;
+  ManagerApproval approval = 6;
+  string request_id = 7 [(buf.validate.field).string.min_len = 1];
+}
+
+message VoidSupplierPaymentRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  string reason = 2;
+}
+
+message ListSupplierPaymentsRequest {
+  string supplier_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+message ListSupplierPaymentsResponse {
+  repeated SupplierPayment payments = 1; // newest first
+}
+
+message ItemPurchaseSettings {
+  string inventory_item_id = 1;
+  string preferred_supplier_id = 2; // "" = none
+  string default_unit_key = 3;      // "" = the stock unit
+  optional int64 buy_up_to_milli = 4; // stock units; unset = not set
+}
+
+message ListPurchaseSettingsRequest {}
+message ListPurchaseSettingsResponse {
+  repeated ItemPurchaseSettings settings = 1;
+}
+
+message SavePurchaseSettingsRequest {
+  ItemPurchaseSettings settings = 1 [(buf.validate.field).required = true];
+}
+
+message BuyListLine {
+  string inventory_item_id = 1;
+  LocalText name = 2;
+  StockUnit unit = 3;
+  int64 on_hand_milli = 4;
+  int64 low_stock_milli = 5;
+  optional int64 buy_up_to_milli = 6;
+  // In purchase units (whole, rounded up); unset when no buy-up-to level is set or it is reached.
+  optional int64 buy = 7;
+  string unit_key = 8;
+  LocalText unit_label = 9;
+  int64 factor_milli = 10;
+  // Last price paid (per that bill line's unit); unset when never bought.
+  optional int64 last_unit_cost_paisa = 11;
+  LocalText last_unit_label = 12;
+}
+
+message BuyListGroup {
+  string supplier_id = 1; // "" = no supplier set (last)
+  string supplier_name = 2;
+  string phone = 3;
+  repeated BuyListLine lines = 4;
+}
+
+message SuggestedPurchasesRequest {}
+message SuggestedPurchasesResponse {
+  repeated BuyListGroup groups = 1;
+}
+
+enum PurchaseBookRowKind {
+  PURCHASE_BOOK_ROW_KIND_UNSPECIFIED = 0;
+  PURCHASE_BOOK_ROW_KIND_BILL = 1;
+  PURCHASE_BOOK_ROW_KIND_RETURN = 2; // negative amounts
+}
+
+message PurchaseBookRow {
+  string date = 1;
+  string date_bs = 2;
+  string bill_no = 3;
+  string note_no = 4;
+  PurchaseBookRowKind kind = 5;
+  string supplier_name = 6;
+  string supplier_pan = 7;
+  int64 total_paisa = 8;
+  int64 exempt_paisa = 9;
+  int64 taxable_paisa = 10;
+  int64 vat_paisa = 11;
+}
+
+// AD dates "YYYY-MM-DD", inclusive.
+message PurchaseBookRequest {
+  string from = 1;
+  string to = 2;
+}
+message PurchaseBookResponse {
+  repeated PurchaseBookRow rows = 1;
+}
+
+message PayableRow {
+  string supplier_id = 1;
+  string name = 2;
+  string phone = 3;
+  bool active = 4;
+  int64 balance_paisa = 5;
+  string oldest_unpaid = 6; // AD date of the oldest debt not paid off, or ""
+  int64 last_payment_at_unix = 7; // 0 = never
+}
+
+message PayablesRequest {}
+message PayablesResponse {
+  repeated PayableRow rows = 1; // oldest debt first
+}
+
+message PurchasesTodayRequest {}
+message PurchasesToday {
+  int64 purchases_paisa = 1;
+  int64 paid_from_till_paisa = 2;
+  int64 owed_paisa = 3;
+}
+
+service PurchaseService {
+  rpc RecordPurchase(RecordPurchaseRequest) returns (Purchase);
+  rpc VoidPurchase(VoidPurchaseRequest) returns (Purchase);            // owner/manager
+  rpc ReturnPurchase(ReturnPurchaseRequest) returns (PurchaseReturn);  // owner/manager
+  rpc ListPurchases(ListPurchasesRequest) returns (ListPurchasesResponse);
+  rpc GetPurchase(GetPurchaseRequest) returns (Purchase);
+  rpc PaySupplier(PaySupplierRequest) returns (SupplierPayment);
+  rpc VoidSupplierPayment(VoidSupplierPaymentRequest) returns (SupplierPayment); // owner/manager
+  rpc ListSupplierPayments(ListSupplierPaymentsRequest) returns (ListSupplierPaymentsResponse);
+  rpc ListPurchaseSettings(ListPurchaseSettingsRequest) returns (ListPurchaseSettingsResponse); // owner/manager
+  rpc SavePurchaseSettings(SavePurchaseSettingsRequest) returns (ItemPurchaseSettings);         // owner/manager
+  rpc SuggestedPurchases(SuggestedPurchasesRequest) returns (SuggestedPurchasesResponse);       // owner/manager
+  rpc PurchaseBook(PurchaseBookRequest) returns (PurchaseBookResponse);                         // owner/manager
+  rpc Payables(PayablesRequest) returns (PayablesResponse);                                     // owner/manager
+  rpc GetPurchasesToday(PurchasesTodayRequest) returns (PurchasesToday);                        // owner/manager
+}

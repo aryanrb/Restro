@@ -13,9 +13,13 @@ import (
 )
 
 type Querier interface {
+	// BOOKED bookings that may hold a table now (the live view picks HOLD/LATE in Go).
+	ActiveBookedReservations(ctx context.Context, arg ActiveBookedReservationsParams) ([]ActiveBookedReservationsRow, error)
+	ActiveOwnerIDs(ctx context.Context) ([]uuid.UUID, error)
 	// Adds delta to the on-hand cache (and locks the row) and returns the item after.
 	AddOnHand(ctx context.Context, arg AddOnHandParams) (InventoryItem, error)
 	AddOrderGuestCount(ctx context.Context, arg AddOrderGuestCountParams) error
+	AddPurchaseLineReturned(ctx context.Context, arg AddPurchaseLineReturnedParams) error
 	AlertAuditEntries(ctx context.Context, ids []int64) ([]AlertAuditEntriesRow, error)
 	AlertClosedShiftsSince(ctx context.Context, arg AlertClosedShiftsSinceParams) ([]Shift, error)
 	AlertCountLoss(ctx context.Context, countID uuid.UUID) (int64, error)
@@ -35,6 +39,10 @@ type Querier interface {
 	AlertDiscountTotal(ctx context.Context, arg AlertDiscountTotalParams) (int64, error)
 	// The audit rows of one entity and action up to (and including) @up_to_id, oldest first.
 	AlertEntityAudit(ctx context.Context, arg AlertEntityAuditParams) ([]AlertEntityAuditRow, error)
+	// --- alert rules ---
+	// EARN entries in the window on bills still issued, by the bill's issuer.
+	AlertLoyaltyEarnsSince(ctx context.Context, arg AlertLoyaltyEarnsSinceParams) ([]pgtype.UUID, error)
+	AlertLoyaltyRedemptions(ctx context.Context, arg AlertLoyaltyRedemptionsParams) (AlertLoyaltyRedemptionsRow, error)
 	// --- rule look-backs ---
 	AlertOpenShiftOf(ctx context.Context, cashierUserID uuid.UUID) (Shift, error)
 	AlertPushExists(ctx context.Context, arg AlertPushExistsParams) (bool, error)
@@ -47,10 +55,15 @@ type Querier interface {
 	// Open orders with SERVED items on no issued bill: place, waiter, item count and value.
 	AlertServedUnbilled(ctx context.Context) ([]AlertServedUnbilledRow, error)
 	AlertSoldBetween(ctx context.Context, arg AlertSoldBetweenParams) (int32, error)
+	// Alerts (LARGE_PAID_OUT) ----------------------------------------------------------
+	// One person's till payments counted in a shift (voided while the shift was open = never paid out).
+	AlertTillPaidOutsInShift(ctx context.Context, arg AlertTillPaidOutsInShiftParams) (AlertTillPaidOutsInShiftRow, error)
 	AlertUserNames(ctx context.Context, ids []uuid.UUID) ([]AlertUserNamesRow, error)
 	AlertWasteTotal(ctx context.Context, arg AlertWasteTotalParams) (int64, error)
 	// Gap-free number allocation: the ON CONFLICT ... DO UPDATE locks the counter row.
 	AllocateInvoiceNumber(ctx context.Context, arg AllocateInvoiceNumberParams) (int32, error)
+	// Counters -----------------------------------------------------------------------
+	AllocatePurchaseCounter(ctx context.Context, kind string) (int32, error)
 	// Gap-free repayment receipt numbers: the upsert locks the single counter row.
 	AllocateRepaymentNumber(ctx context.Context) (int32, error)
 	AnalyticsCancelledInvoices(ctx context.Context, arg AnalyticsCancelledInvoicesParams) ([]AnalyticsCancelledInvoicesRow, error)
@@ -82,6 +95,8 @@ type Querier interface {
 	// Lines sent in the range (a void belongs to the day of its send).
 	AnalyticsSentItems(ctx context.Context, arg AnalyticsSentItemsParams) ([]AnalyticsSentItemsRow, error)
 	AnalyticsUsers(ctx context.Context) ([]AnalyticsUsersRow, error)
+	// Tables held by BOOKED bookings in an overlapping window (for suggestions).
+	BookedTablesInWindow(ctx context.Context, arg BookedTablesInWindowParams) ([]uuid.UUID, error)
 	BumpMenuItemVersion(ctx context.Context, arg BumpMenuItemVersionParams) (int64, error)
 	BumpOrderVersion(ctx context.Context, id uuid.UUID) (int64, error)
 	BumpStationTicket(ctx context.Context, arg BumpStationTicketParams) ([]uuid.UUID, error)
@@ -90,6 +105,9 @@ type Querier interface {
 	CheckBumpOrderVersion(ctx context.Context, arg CheckBumpOrderVersionParams) (int64, error)
 	ClearAnalyticsDirtyDays(ctx context.Context, days []pgtype.Date) error
 	ClearCountLine(ctx context.Context, arg ClearCountLineParams) (int64, error)
+	// A bill was issued on the order: Ask for bill is answered.
+	ClearOrderBillRequested(ctx context.Context, id uuid.UUID) error
+	ClearTableBillRequested(ctx context.Context, tableID pgtype.UUID) ([]uuid.UUID, error)
 	CloseOrder(ctx context.Context, id uuid.UUID) (int64, error)
 	// The opening note is kept; the close-out note goes in closing_note.
 	CloseShift(ctx context.Context, arg CloseShiftParams) (Shift, error)
@@ -101,12 +119,15 @@ type Querier interface {
 	CountItemsUsingStation(ctx context.Context, stationID uuid.UUID) (int64, error)
 	CountOpenOrders(ctx context.Context) (int32, error)
 	CountOpenTables(ctx context.Context) (int32, error)
+	CountPendingGuestOrders(ctx context.Context, tableID uuid.UUID) (int64, error)
+	CountPurchaseReturns(ctx context.Context, purchaseID uuid.UUID) (int32, error)
 	CountStations(ctx context.Context) (int64, error)
 	CountTablesInArea(ctx context.Context, areaID uuid.UUID) (int64, error)
 	CountTodayDiscounts(ctx context.Context, adDatetime time.Time) (int32, error)
 	// Payments of a cancelled bill that need an adjustment but have no canceller
 	// shift to land in (the canceller had no shift open at the time).
 	CountUnplacedCancelAdjustments(ctx context.Context, id uuid.UUID) (int32, error)
+	CountUserPushSubscriptions(ctx context.Context, userID uuid.UUID) (int32, error)
 	CreateArea(ctx context.Context, arg CreateAreaParams) (Area, error)
 	CreateCalendarEvent(ctx context.Context, arg CreateCalendarEventParams) (CalendarEvent, error)
 	CreateCategory(ctx context.Context, arg CreateCategoryParams) (MenuCategory, error)
@@ -115,6 +136,7 @@ type Querier interface {
 	CreateCountList(ctx context.Context, arg CreateCountListParams) (CountList, error)
 	CreateCustomer(ctx context.Context, arg CreateCustomerParams) (Customer, error)
 	CreateDevice(ctx context.Context, arg CreateDeviceParams) (Device, error)
+	CreateGuestRequest(ctx context.Context, arg CreateGuestRequestParams) (GuestRequest, error)
 	// Inventory items ------------------------------------------------------------
 	CreateInventoryItem(ctx context.Context, arg CreateInventoryItemParams) (InventoryItem, error)
 	CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (Invoice, error)
@@ -142,6 +164,8 @@ type Querier interface {
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateStation(ctx context.Context, arg CreateStationParams) (Station, error)
 	CreateStockCount(ctx context.Context, arg CreateStockCountParams) (StockCount, error)
+	// Suppliers --------------------------------------------------------------------
+	CreateSupplier(ctx context.Context, arg CreateSupplierParams) (Supplier, error)
 	CreateTable(ctx context.Context, arg CreateTableParams) (DiningTable, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateVariant(ctx context.Context, arg CreateVariantParams) (ItemVariant, error)
@@ -149,6 +173,8 @@ type Querier interface {
 	// Dashboard: on-account amounts on issued bills since $1.
 	CreditGivenSince(ctx context.Context, adDatetime time.Time) (int64, error)
 	CustomerBalance(ctx context.Context, customerID uuid.UUID) (int64, error)
+	// Booking history per customer (derived; nothing stored on the customer).
+	CustomerBookingStats(ctx context.Context, ids []uuid.UUID) ([]CustomerBookingStatsRow, error)
 	CustomerIDByPhone(ctx context.Context, phone string) (uuid.UUID, error)
 	DailySalesByMethod(ctx context.Context, arg DailySalesByMethodParams) ([]DailySalesByMethodRow, error)
 	// Daily totals by Kathmandu AD day. Money columns count issued bills only;
@@ -169,14 +195,23 @@ type Querier interface {
 	DeleteMenuItemRecipe(ctx context.Context, menuItemID uuid.UUID) error
 	DeleteModifierGroup(ctx context.Context, id uuid.UUID) error
 	DeleteModifierRecipe(ctx context.Context, modifierID uuid.UUID) error
+	DeletePushSubscriptionByEndpoint(ctx context.Context, endpoint string) error
 	DeleteStation(ctx context.Context, id uuid.UUID) error
+	DeleteUserPushSubscription(ctx context.Context, arg DeleteUserPushSubscriptionParams) (int64, error)
 	DeleteVariantRecipe(ctx context.Context, variantID uuid.UUID) error
 	DeleteVariantRecipeLines(ctx context.Context, variantID uuid.UUID) error
 	DiscardStockCount(ctx context.Context, arg DiscardStockCountParams) error
+	// Marks the order's table's open Ask for bill alerts done (a bill was issued on it).
+	DoneOrderTableBillAlerts(ctx context.Context, arg DoneOrderTableBillAlertsParams) ([]DoneOrderTableBillAlertsRow, error)
+	ExtendReservationHold(ctx context.Context, arg ExtendReservationHoldParams) error
+	// A BOOKED booking (other than exclude_id) holding one of the tables in an overlapping window.
+	FindReservationClash(ctx context.Context, arg FindReservationClashParams) (uuid.UUID, error)
 	GetActiveSessionByTokenHash(ctx context.Context, tokenHash string) (GetActiveSessionByTokenHashRow, error)
 	GetAlert(ctx context.Context, id uuid.UUID) (Alert, error)
 	// --- config ---
 	GetAlertConfig(ctx context.Context) (AlertConfig, error)
+	// --- Web Push ---
+	GetAlertPush(ctx context.Context, id uuid.UUID) (AlertPush, error)
 	// Settings --------------------------------------------------------------------
 	GetAnalyticsSettings(ctx context.Context) (GetAnalyticsSettingsRow, error)
 	GetArea(ctx context.Context, id uuid.UUID) (Area, error)
@@ -187,13 +222,18 @@ type Querier interface {
 	GetDeviceByTokenHash(ctx context.Context, tokenHash string) (Device, error)
 	// The invoice's place for a dine-in order.
 	GetDiningTableName(ctx context.Context, id uuid.UUID) (string, error)
+	GetGuestOrderByRequestID(ctx context.Context, arg GetGuestOrderByRequestIDParams) (GuestRequest, error)
+	GetGuestTable(ctx context.Context, id uuid.UUID) (DiningTable, error)
 	GetInventoryItem(ctx context.Context, id uuid.UUID) (InventoryItem, error)
 	GetInventoryItemForUpdate(ctx context.Context, id uuid.UUID) (InventoryItem, error)
 	GetInvoice(ctx context.Context, id uuid.UUID) (Invoice, error)
 	GetInvoiceLines(ctx context.Context, invoiceID uuid.UUID) ([]InvoiceLine, error)
 	GetItem(ctx context.Context, id uuid.UUID) (MenuItem, error)
+	// Loyalty stamp card: settings, members (customers), the append-only ledger.
+	GetLoyaltySettings(ctx context.Context) (LoyaltySetting, error)
 	GetModifierByID(ctx context.Context, id uuid.UUID) (Modifier, error)
 	GetModifierGroup(ctx context.Context, id uuid.UUID) (ModifierGroup, error)
+	GetOpenGuestAlert(ctx context.Context, arg GetOpenGuestAlertParams) (GuestRequest, error)
 	GetOpenShiftForUser(ctx context.Context, cashierUserID uuid.UUID) (Shift, error)
 	GetOrderByClientID(ctx context.Context, clientID uuid.UUID) (Order, error)
 	GetOrderByID(ctx context.Context, id uuid.UUID) (Order, error)
@@ -204,12 +244,20 @@ type Querier interface {
 	GetOrderItemByClientID(ctx context.Context, clientID uuid.UUID) (OrderItem, error)
 	// Idempotency ---------------------------------------------------------------
 	GetProcessedCommand(ctx context.Context, commandID uuid.UUID) ([]byte, error)
+	GetPurchaseRow(ctx context.Context, id uuid.UUID) (GetPurchaseRowRow, error)
 	GetRepaymentDetail(ctx context.Context, id uuid.UUID) (GetRepaymentDetailRow, error)
+	GetReservationByRequestID(ctx context.Context, requestID uuid.UUID) (Reservation, error)
+	// Reservations (table bookings). Business rules live in internal/reservations.
+	GetReservationSettings(ctx context.Context) (ReservationSetting, error)
+	GetReservationView(ctx context.Context, id uuid.UUID) (GetReservationViewRow, error)
 	GetSettings(ctx context.Context) (Setting, error)
 	GetShift(ctx context.Context, id uuid.UUID) (Shift, error)
 	GetStation(ctx context.Context, id uuid.UUID) (Station, error)
 	GetStockCount(ctx context.Context, id uuid.UUID) (StockCount, error)
 	GetStockCountForUpdate(ctx context.Context, id uuid.UUID) (StockCount, error)
+	GetSupplier(ctx context.Context, id uuid.UUID) (Supplier, error)
+	GetSupplierPaymentRow(ctx context.Context, id uuid.UUID) (GetSupplierPaymentRowRow, error)
+	GetSupplierWithBalance(ctx context.Context, id uuid.UUID) (GetSupplierWithBalanceRow, error)
 	GetTable(ctx context.Context, id uuid.UUID) (DiningTable, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserByUsername(ctx context.Context, username pgtype.Text) (User, error)
@@ -217,26 +265,39 @@ type Querier interface {
 	GetVariant(ctx context.Context, id uuid.UUID) (ItemVariant, error)
 	// Waste ----------------------------------------------------------------------
 	GetWasteByRequestID(ctx context.Context, requestID uuid.UUID) (WasteEntry, error)
+	// Guest table ordering (internal/guest).
+	GuestTableByCode(ctx context.Context, guestCode string) (DiningTable, error)
+	HandleGuestRequest(ctx context.Context, arg HandleGuestRequestParams) (GuestRequest, error)
 	IncrementPinFailure(ctx context.Context, id uuid.UUID) (User, error)
 	IncrementPrintCount(ctx context.Context, id uuid.UUID) (int32, error)
-	// MORE and SUMMARY are once per business day (unique index): a repeat is a no-op.
-	InsertAlertPush(ctx context.Context, arg InsertAlertPushParams) error
+	// MORE and SUMMARY are once per business day (unique index): a repeat is a no-op
+	// (no row returned). The returned row is handed to the Web Push sender.
+	InsertAlertPush(ctx context.Context, arg InsertAlertPushParams) ([]AlertPush, error)
 	InsertAudit(ctx context.Context, arg InsertAuditParams) error
 	// Suspicious activity alerts (internal/alerts). Rules run inside the transaction
 	// that wrote the audit row, so every query here takes that transaction's Queries.
 	// audit.Write's insert: returns the row so the alert rules can run on it.
 	InsertAuditReturning(ctx context.Context, arg InsertAuditReturningParams) (AuditLog, error)
 	InsertCountLine(ctx context.Context, arg InsertCountLineParams) error
+	InsertLoyaltyEntry(ctx context.Context, arg InsertLoyaltyEntryParams) (LoyaltyEntry, error)
 	InsertMenuItemRecipeLine(ctx context.Context, arg InsertMenuItemRecipeLineParams) error
 	InsertModifierRecipeLine(ctx context.Context, arg InsertModifierRecipeLineParams) error
 	InsertProcessedCommand(ctx context.Context, arg InsertProcessedCommandParams) (uuid.UUID, error)
+	InsertPurchase(ctx context.Context, arg InsertPurchaseParams) (Purchase, error)
+	InsertPurchaseLine(ctx context.Context, arg InsertPurchaseLineParams) (PurchaseLine, error)
+	InsertPurchaseReturn(ctx context.Context, arg InsertPurchaseReturnParams) (PurchaseReturn, error)
+	InsertPurchaseReturnLine(ctx context.Context, arg InsertPurchaseReturnLineParams) error
+	InsertReservation(ctx context.Context, arg InsertReservationParams) (Reservation, error)
 	// Stock ledger ---------------------------------------------------------------
 	InsertStockMovement(ctx context.Context, arg InsertStockMovementParams) (StockMovement, error)
+	// Supplier payments ----------------------------------------------------------------
+	InsertSupplierPayment(ctx context.Context, arg InsertSupplierPaymentParams) (SupplierPayment, error)
 	InsertVariantRecipeLine(ctx context.Context, arg InsertVariantRecipeLineParams) error
 	InsertWasteEntry(ctx context.Context, arg InsertWasteEntryParams) (WasteEntry, error)
 	InventoryItemHasMovements(ctx context.Context, inventoryItemID uuid.UUID) (bool, error)
 	InventoryItemIDsWithMovements(ctx context.Context) ([]uuid.UUID, error)
 	KdsSetItemsStatus(ctx context.Context, arg KdsSetItemsStatusParams) error
+	LastSupplierPaymentAt(ctx context.Context, supplierID uuid.UUID) (time.Time, error)
 	ListActiveUsers(ctx context.Context) ([]User, error)
 	// The latest 30 for a viewer (null = owner: everything), oldest first.
 	ListAlertPushes(ctx context.Context, viewer pgtype.UUID) ([]AlertPush, error)
@@ -247,6 +308,7 @@ type Querier interface {
 	ListAllModifierRecipeLines(ctx context.Context) ([]ModifierRecipeLine, error)
 	ListAllVariantRecipeLines(ctx context.Context) ([]VariantRecipeLine, error)
 	ListAreas(ctx context.Context) ([]Area, error)
+	ListBookingCustomers(ctx context.Context) ([]ListBookingCustomersRow, error)
 	// Calendar --------------------------------------------------------------------
 	ListCalendarEventsIn(ctx context.Context, arg ListCalendarEventsInParams) ([]CalendarEvent, error)
 	// Categories ---------------------------------------------------------------
@@ -256,12 +318,18 @@ type Querier interface {
 	// On-account amounts per issued bill (one row per bill and customer), oldest
 	// first. customer_id NULL = every customer.
 	ListCreditCharges(ctx context.Context, customerID pgtype.UUID) ([]ListCreditChargesRow, error)
+	ListCustomerReservations(ctx context.Context, customerID uuid.UUID) ([]ListCustomerReservationsRow, error)
 	// Credit customers (udharo): accounts, balances, repayments, statements.
 	ListCustomersWithBalance(ctx context.Context) ([]ListCustomersWithBalanceRow, error)
+	// Pending requests plus those handled since @since, oldest first, with names.
+	ListGuestRequests(ctx context.Context, since pgtype.Timestamptz) ([]ListGuestRequestsRow, error)
+	ListGuestTables(ctx context.Context) ([]DiningTable, error)
 	ListInventoryItems(ctx context.Context, includeInactive bool) ([]InventoryItem, error)
 	ListInventoryItemsByIDs(ctx context.Context, ids []uuid.UUID) ([]InventoryItem, error)
 	// Customers owed by a bill's on-account payments (for realtime after a cancel).
 	ListInvoiceCreditCustomers(ctx context.Context, invoiceID uuid.UUID) ([]uuid.UUID, error)
+	// A bill's own entries (not reversals), for its cancellation.
+	ListInvoiceLoyaltyEntries(ctx context.Context, invoiceID pgtype.UUID) ([]LoyaltyEntry, error)
 	// Oldest first, with the printer's current name.
 	ListInvoicePrints(ctx context.Context, invoiceID uuid.UUID) ([]ListInvoicePrintsRow, error)
 	// Half-open AD range [from, to).
@@ -272,11 +340,18 @@ type Querier interface {
 	// Movements of one item up to (and including) a ledger point: at < point, or the
 	// same at with seq <= point seq. Oldest first.
 	ListItemMovementsUntil(ctx context.Context, arg ListItemMovementsUntilParams) ([]StockMovement, error)
+	// Purchase settings / buy list ---------------------------------------------------
+	ListItemPurchaseSettings(ctx context.Context) ([]ItemPurchaseSetting, error)
 	// Items --------------------------------------------------------------------
 	ListItems(ctx context.Context) ([]MenuItem, error)
 	ListItemsInCategory(ctx context.Context, categoryID uuid.UUID) ([]MenuItem, error)
+	// The last price paid per item (newest recorded bill line).
+	ListLastPurchasePrices(ctx context.Context) ([]ListLastPurchasePricesRow, error)
 	// Repayments not voided, oldest first. customer_id NULL = every customer.
 	ListLiveRepayments(ctx context.Context, customerID pgtype.UUID) ([]Repayment, error)
+	// Newest first, with the bill number and who made it.
+	ListLoyaltyEntries(ctx context.Context, customerID uuid.UUID) ([]ListLoyaltyEntriesRow, error)
+	ListLoyaltyMembers(ctx context.Context) ([]ListLoyaltyMembersRow, error)
 	// Recipes --------------------------------------------------------------------
 	ListMenuItemRecipeLines(ctx context.Context, menuItemID uuid.UUID) ([]MenuItemRecipeLine, error)
 	// Modifier groups ----------------------------------------------------------
@@ -296,11 +371,23 @@ type Querier interface {
 	ListPaymentsForInvoice(ctx context.Context, invoiceID uuid.UUID) ([]Payment, error)
 	// Counted lines of POSTED counts for one item (for the variance period), any order.
 	ListPostedCountLinesForItem(ctx context.Context, inventoryItemID uuid.UUID) ([]StockCountLine, error)
+	ListPurchaseLinesFor(ctx context.Context, ids []uuid.UUID) ([]PurchaseLine, error)
+	ListPurchaseReturnLinesFor(ctx context.Context, ids []uuid.UUID) ([]PurchaseReturnLine, error)
+	ListPurchaseReturnsFor(ctx context.Context, ids []uuid.UUID) ([]ListPurchaseReturnsForRow, error)
+	// Bill date window (AD, inclusive), newest first; NULL filters = any.
+	ListPurchaseRows(ctx context.Context, arg ListPurchaseRowsParams) ([]ListPurchaseRowsRow, error)
+	// Subscriptions of active users with one of the given ids, with their language.
+	ListPushTargets(ctx context.Context, userIds []uuid.UUID) ([]ListPushTargetsRow, error)
 	// Newest first, voided included.
 	ListRepaymentDetails(ctx context.Context, customerID uuid.UUID) ([]ListRepaymentDetailsRow, error)
+	ListReservationsBetween(ctx context.Context, arg ListReservationsBetweenParams) ([]ListReservationsBetweenRow, error)
 	// A row is either a cancelled bill's payment (invoice fields set) or a voided
 	// repayment (repayment_id + repayment_number set).
 	ListShiftAdjustments(ctx context.Context, shiftID uuid.UUID) ([]ListShiftAdjustmentsRow, error)
+	// Supplier cash out of / back into the shift's drawer (purchases): till payments
+	// (+; one voided while its shift was still open never counts), till payments from
+	// a closed shift voided in this one (-), and refunds handed back on returns (-).
+	ListShiftPaidOuts(ctx context.Context, shiftID uuid.UUID) ([]ListShiftPaidOutsRow, error)
 	// Every payment taken in the shift (all methods), oldest first.
 	ListShiftPayments(ctx context.Context, shiftID uuid.UUID) ([]ListShiftPaymentsRow, error)
 	// Kept for the deprecated ShiftReport.qr_payments field.
@@ -313,6 +400,15 @@ type Querier interface {
 	ListStationOpenItems(ctx context.Context, stationID uuid.UUID) ([]ListStationOpenItemsRow, error)
 	ListStations(ctx context.Context) ([]Station, error)
 	ListStockCounts(ctx context.Context) ([]StockCount, error)
+	// What the supplier is owed for: recorded bills net of their returns, oldest first.
+	ListSupplierDebts(ctx context.Context, supplierID uuid.UUID) ([]ListSupplierDebtsRow, error)
+	ListSupplierPaymentRows(ctx context.Context, supplierID uuid.UUID) ([]ListSupplierPaymentRowsRow, error)
+	// Statement events ---------------------------------------------------------------
+	ListSupplierStatementBills(ctx context.Context, supplierID uuid.UUID) ([]ListSupplierStatementBillsRow, error)
+	ListSupplierStatementReturns(ctx context.Context, supplierID uuid.UUID) ([]ListSupplierStatementReturnsRow, error)
+	ListSuppliersWithBalance(ctx context.Context) ([]ListSuppliersWithBalanceRow, error)
+	// One table's requests: pending, or handled since @since; oldest first.
+	ListTableGuestRequests(ctx context.Context, arg ListTableGuestRequestsParams) ([]GuestRequest, error)
 	ListTables(ctx context.Context) ([]DiningTable, error)
 	ListTablesInArea(ctx context.Context, areaID uuid.UUID) ([]DiningTable, error)
 	ListUnbilledOrderItems(ctx context.Context, orderID uuid.UUID) ([]OrderItem, error)
@@ -322,6 +418,10 @@ type Querier interface {
 	// Variants -----------------------------------------------------------------
 	ListVariants(ctx context.Context) ([]ItemVariant, error)
 	ListVariantsForItem(ctx context.Context, itemID uuid.UUID) ([]ItemVariant, error)
+	// Reports -----------------------------------------------------------------------
+	ListVatPurchasesInRange(ctx context.Context, arg ListVatPurchasesInRangeParams) ([]Purchase, error)
+	// Returns on recorded VAT bills, by return date (Kathmandu).
+	ListVatReturnsInRange(ctx context.Context, arg ListVatReturnsInRangeParams) ([]ListVatReturnsInRangeRow, error)
 	// Lines voided after the kitchen started (a manager approved the void), sent in a range.
 	ListVoidedAfterCooking(ctx context.Context, arg ListVoidedAfterCookingParams) ([]ListVoidedAfterCookingRow, error)
 	// Order lines voided after cooking with a SALE movement in (since, until].
@@ -330,6 +430,9 @@ type Querier interface {
 	Live86Items(ctx context.Context) ([]Live86ItemsRow, error)
 	// Guests of dine-in orders opened since $1 (not cancelled).
 	LiveCoversSince(ctx context.Context, createdAt time.Time) (int32, error)
+	// The newest alert each of the given audit entries fed (alerts.audit_ids), minus
+	// alerts about hide_for (a manager never sees alerts involving themselves).
+	LiveExceptionAlerts(ctx context.Context, arg LiveExceptionAlertsParams) ([]LiveExceptionAlertsRow, error)
 	// Today's exceptions: voids, bill cancellations, reprints, 86s, shift closes, and
 	// issued bills that carry a discount. Newest first, at most 50.
 	LiveExceptions(ctx context.Context, since time.Time) ([]LiveExceptionsRow, error)
@@ -342,6 +445,10 @@ type Querier interface {
 	// Locks the account for the billing / repayment transaction, so two tills can't
 	// both use the last of a limit (or repay the same balance twice).
 	LockCustomer(ctx context.Context, id uuid.UUID) (Customer, error)
+	LockGuestRequest(ctx context.Context, id uuid.UUID) (GuestRequest, error)
+	// Locks the table row: serializes a table's guest submits (pending limit) and
+	// accepts (one open order per table).
+	LockGuestTable(ctx context.Context, id uuid.UUID) (DiningTable, error)
 	// Reads the caller's open shift inside a billing transaction and holds a share
 	// lock on it, so a concurrent CloseShift waits until the payments recorded
 	// against it have committed (and are counted in its report).
@@ -353,7 +460,42 @@ type Querier interface {
 	// Locks the order row so the close-rule evaluation that follows sees every
 	// change committed by concurrent order/kitchen/billing transactions.
 	LockOrderForUpdate(ctx context.Context, id uuid.UUID) (Order, error)
+	LockPurchase(ctx context.Context, id uuid.UUID) (Purchase, error)
 	LockRepayment(ctx context.Context, id uuid.UUID) (Repayment, error)
+	LockReservation(ctx context.Context, id uuid.UUID) (Reservation, error)
+	// Serialises booking writes so two overlapping bookings can't both pass the clash check.
+	LockReservations(ctx context.Context) error
+	// Serialises balance checks (payments, bills, returns) per supplier.
+	LockSupplier(ctx context.Context, id uuid.UUID) (Supplier, error)
+	LockSupplierPayment(ctx context.Context, id uuid.UUID) (SupplierPayment, error)
+	// Everything a member's card summary is computed from. stamped_today: an EARN on a
+	// bill still issued on business_date. last_visit: joining, a bill still issued
+	// with the member on it, or a manual adjustment. 'epoch' = none.
+	LoyaltyCardStats(ctx context.Context, arg LoyaltyCardStatsParams) (LoyaltyCardStatsRow, error)
+	// A loyalty-only member: no credit account (hidden from the credit customer list).
+	LoyaltyCreateMember(ctx context.Context, arg LoyaltyCreateMemberParams) (Customer, error)
+	LoyaltyCustomerByPhone(ctx context.Context, phone string) (Customer, error)
+	LoyaltyCustomerByToken(ctx context.Context, cardToken pgtype.Text) (Customer, error)
+	// An existing customer (e.g. a credit account) joins: same record, one per phone.
+	LoyaltyEnroll(ctx context.Context, arg LoyaltyEnrollParams) (Customer, error)
+	LoyaltyGetCustomer(ctx context.Context, id uuid.UUID) (Customer, error)
+	// Leaving: no card; the phone is erased unless the customer still has a credit account.
+	LoyaltyLeave(ctx context.Context, id uuid.UUID) error
+	LoyaltyLockCustomer(ctx context.Context, id uuid.UUID) (Customer, error)
+	LoyaltyNewMembers(ctx context.Context, arg LoyaltyNewMembersParams) (int32, error)
+	// The member's other bills (still issued) of the same order, for "a split gives one stamp".
+	LoyaltyOrderSiblings(ctx context.Context, arg LoyaltyOrderSiblingsParams) ([]LoyaltyOrderSiblingsRow, error)
+	// --- report ---
+	LoyaltyReportEntries(ctx context.Context, arg LoyaltyReportEntriesParams) ([]LoyaltyReportEntriesRow, error)
+	LoyaltySetCardToken(ctx context.Context, arg LoyaltySetCardTokenParams) error
+	// Staff whose phone is a member's (any user, active or not).
+	LoyaltyStaffByPhone(ctx context.Context, phone string) ([]LoyaltyStaffByPhoneRow, error)
+	// Not a version bump: a guest's request must never make a waiter's command stale.
+	MarkBillRequested(ctx context.Context, tableID pgtype.UUID) ([]uuid.UUID, error)
+	MarkOrderItemsGuest(ctx context.Context, clientIds []uuid.UUID) error
+	// Not an edit: no version bump, so an open edit dialog isn't made stale.
+	MarkReservationConfirmed(ctx context.Context, id uuid.UUID) error
+	MarkReservationReminded(ctx context.Context, id uuid.UUID) error
 	MaxMovementSeq(ctx context.Context) (int64, error)
 	MoveOrderItemsToOrder(ctx context.Context, arg MoveOrderItemsToOrderParams) error
 	NextAreaSort(ctx context.Context) (int32, error)
@@ -363,7 +505,16 @@ type Querier interface {
 	// Table sort is per area.
 	NextTableSort(ctx context.Context, areaID uuid.UUID) (int32, error)
 	OnHandAt(ctx context.Context, arg OnHandAtParams) (int64, error)
+	// Loyalty: a loyalty-only member gets a credit account (same record, one per phone).
+	OpenCreditAccount(ctx context.Context, id uuid.UUID) error
+	// The table's OPEN orders, oldest first.
+	OpenOrdersOfTable(ctx context.Context, tableID pgtype.UUID) ([]Order, error)
+	OpenOrdersOnTables(ctx context.Context, tableIds []uuid.UUID) ([]OpenOrdersOnTablesRow, error)
 	OpenShift(ctx context.Context, arg OpenShiftParams) (Shift, error)
+	// Item-level commands accept a line's server id or its client_id: maps the client
+	// ids among @ids to server ids (ids that are no line's client_id are not returned).
+	OrderItemIDsByClientIDs(ctx context.Context, ids []uuid.UUID) ([]OrderItemIDsByClientIDsRow, error)
+	OwedToSuppliers(ctx context.Context) (int64, error)
 	PostStockCount(ctx context.Context, arg PostStockCountParams) error
 	QueryAuditLog(ctx context.Context, arg QueryAuditLogParams) ([]AuditLog, error)
 	// Audit rows with actor/approver names and a readable subject for the entity.
@@ -373,6 +524,7 @@ type Querier interface {
 	// canceller's shift that was open at cancelled_at. Idempotent (one row per
 	// payment); invoice_id NULL = every cancelled bill (catch-up).
 	RecordCancelAdjustments(ctx context.Context, invoiceID pgtype.UUID) (int64, error)
+	RecordedPurchasesTotalBetween(ctx context.Context, arg RecordedPurchasesTotalBetweenParams) (int64, error)
 	ReopenStockCount(ctx context.Context, id uuid.UUID) error
 	// Dashboard: repayments (not voided) taken since $1.
 	RepaymentsSince(ctx context.Context, createdAt time.Time) (int64, error)
@@ -389,16 +541,20 @@ type Querier interface {
 	// lockout escalation.
 	ResetPinFailures(ctx context.Context, id uuid.UUID) error
 	ResolveAlert(ctx context.Context, arg ResolveAlertParams) (Alert, error)
+	RestoreReservation(ctx context.Context, arg RestoreReservationParams) error
 	RevokeSession(ctx context.Context, tokenHash string) error
 	// Sales book rows with the issuer's name and the bill's last print (time + who;
 	// 0 / '' when never printed). Tax invoices only unless include_estimates.
 	SalesBookDetail(ctx context.Context, arg SalesBookDetailParams) ([]SalesBookDetailRow, error)
 	SaveAnalyticsSettings(ctx context.Context, arg SaveAnalyticsSettingsParams) (SaveAnalyticsSettingsRow, error)
+	SaveReservationSettings(ctx context.Context, arg SaveReservationSettingsParams) (ReservationSetting, error)
 	Set86(ctx context.Context, arg Set86Params) error
 	SetCountLine(ctx context.Context, arg SetCountLineParams) (int64, error)
 	SetCountLineResult(ctx context.Context, arg SetCountLineResultParams) error
 	SetCustomerActive(ctx context.Context, arg SetCustomerActiveParams) (Customer, error)
 	SetInventoryTracked(ctx context.Context, arg SetInventoryTrackedParams) (InventoryItem, error)
+	// The purchase posting moves the item's moving-average unit cost.
+	SetInventoryUnitCost(ctx context.Context, arg SetInventoryUnitCostParams) error
 	SetItemImage(ctx context.Context, arg SetItemImageParams) (MenuItem, error)
 	SetOrderGuestCount(ctx context.Context, arg SetOrderGuestCountParams) error
 	// Moving a line to SENT stamps sent_at (once).
@@ -408,13 +564,21 @@ type Querier interface {
 	// Only claims items that are still unbilled; the caller checks the row count so
 	// an item billed by a concurrent command is never re-assigned.
 	SetOrderItemsInvoice(ctx context.Context, arg SetOrderItemsInvoiceParams) (int64, error)
+	SetOrderReservation(ctx context.Context, arg SetOrderReservationParams) error
 	SetOrderStatus(ctx context.Context, arg SetOrderStatusParams) error
 	// Moves an order to a table (DINE_IN) or off the floor (NULL table -> TAKEAWAY).
 	SetOrderTable(ctx context.Context, arg SetOrderTableParams) error
+	SetReservationCancelled(ctx context.Context, arg SetReservationCancelledParams) error
+	SetReservationNoShow(ctx context.Context, arg SetReservationNoShowParams) error
+	SetReservationSeated(ctx context.Context, arg SetReservationSeatedParams) error
+	SetSettingsGuestOrdering(ctx context.Context, guestOrdering bool) (Setting, error)
 	// Images are not part of the settings form, so they do not bump version.
 	SetSettingsLogo(ctx context.Context, logoUrl string) (Setting, error)
 	SetSettingsQrFonepay(ctx context.Context, qrFonepayUrl string) (Setting, error)
 	SetSettingsQrOther(ctx context.Context, qrOtherUrl string) (Setting, error)
+	SetSupplierActive(ctx context.Context, arg SetSupplierActiveParams) (Supplier, error)
+	SetTableGuestCode(ctx context.Context, arg SetTableGuestCodeParams) (DiningTable, error)
+	SetTableGuestOrdering(ctx context.Context, arg SetTableGuestOrderingParams) (DiningTable, error)
 	SetUserLanguage(ctx context.Context, arg SetUserLanguageParams) (User, error)
 	// An owner/manager PIN reset unlocks immediately and clears the escalation.
 	SetUserPin(ctx context.Context, arg SetUserPinParams) error
@@ -431,8 +595,23 @@ type Querier interface {
 	// Repayments counted in the shift (same rule as ShiftPaymentTotals).
 	ShiftRepaymentTotal(ctx context.Context, shiftID uuid.UUID) (int64, error)
 	SubmitStockCount(ctx context.Context, arg SubmitStockCountParams) error
+	SupplierBalance(ctx context.Context, supplierID uuid.UUID) (int64, error)
+	// Purchases ----------------------------------------------------------------------
+	SupplierBillTaken(ctx context.Context, arg SupplierBillTakenParams) (bool, error)
+	SupplierNameTaken(ctx context.Context, arg SupplierNameTakenParams) (bool, error)
+	// Live payments less refunds handed back: the pool that settles debts oldest first.
+	SupplierPaidNet(ctx context.Context, supplierID uuid.UUID) (int64, error)
+	// An EARN on an on-account bill counts (DONE) only while every on-account amount
+	// on the bill is paid off, oldest bill first per customer (credit allocation);
+	// otherwise it waits (PENDING). Sets every such entry to what it should be and
+	// returns the members whose card changed.
+	SyncLoyaltyPending(ctx context.Context) ([]uuid.UUID, error)
+	TableOfOrder(ctx context.Context, id uuid.UUID) (pgtype.UUID, error)
+	TillPaidBetween(ctx context.Context, arg TillPaidBetweenParams) (int64, error)
 	TodayCancelled(ctx context.Context, cancelledAt pgtype.Timestamptz) (TodayCancelledRow, error)
 	TodayDiscountTotal(ctx context.Context, adDatetime time.Time) (int64, error)
+	// Loyalty rewards on bills issued since $1 (still issued).
+	TodayRewards(ctx context.Context, adDatetime time.Time) (TodayRewardsRow, error)
 	TodaySalesByMethod(ctx context.Context, adDatetime time.Time) ([]TodaySalesByMethodRow, error)
 	TodaySalesTotal(ctx context.Context, adDatetime time.Time) (TodaySalesTotalRow, error)
 	// Items voided since $1 and their value (the order line's unit price already
@@ -454,10 +633,13 @@ type Querier interface {
 	UpdateInventoryItem(ctx context.Context, arg UpdateInventoryItemParams) (InventoryItem, error)
 	UpdateItem(ctx context.Context, arg UpdateItemParams) (MenuItem, error)
 	UpdateItemSort(ctx context.Context, arg UpdateItemSortParams) error
+	UpdateLoyaltySettings(ctx context.Context, arg UpdateLoyaltySettingsParams) (LoyaltySetting, error)
 	UpdateModifier(ctx context.Context, arg UpdateModifierParams) (Modifier, error)
 	UpdateModifierGroup(ctx context.Context, arg UpdateModifierGroupParams) (ModifierGroup, error)
+	UpdateReservationFields(ctx context.Context, arg UpdateReservationFieldsParams) error
 	UpdateSettings(ctx context.Context, arg UpdateSettingsParams) (Setting, error)
 	UpdateStation(ctx context.Context, arg UpdateStationParams) (Station, error)
+	UpdateSupplier(ctx context.Context, arg UpdateSupplierParams) (Supplier, error)
 	UpdateTable(ctx context.Context, arg UpdateTableParams) (DiningTable, error)
 	UpdateTableSort(ctx context.Context, arg UpdateTableSortParams) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
@@ -467,9 +649,14 @@ type Querier interface {
 	// count = 1 in the result means it was created.
 	UpsertAlert(ctx context.Context, arg UpsertAlertParams) (Alert, error)
 	UpsertAnalyticsDay(ctx context.Context, arg UpsertAnalyticsDayParams) error
+	UpsertItemPurchaseSettings(ctx context.Context, arg UpsertItemPurchaseSettingsParams) (ItemPurchaseSetting, error)
+	// A device re-subscribing (or now used by another user) replaces its row.
+	UpsertPushSubscription(ctx context.Context, arg UpsertPushSubscriptionParams) (PushSubscription, error)
 	VariantHasOwnRecipe(ctx context.Context, variantID uuid.UUID) (bool, error)
 	VoidOrderItem(ctx context.Context, arg VoidOrderItemParams) error
+	VoidPurchase(ctx context.Context, arg VoidPurchaseParams) error
 	VoidRepayment(ctx context.Context, arg VoidRepaymentParams) error
+	VoidSupplierPayment(ctx context.Context, arg VoidSupplierPaymentParams) error
 }
 
 var _ Querier = (*Queries)(nil)

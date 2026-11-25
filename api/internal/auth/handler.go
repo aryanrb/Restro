@@ -23,14 +23,21 @@ const (
 // Handler implements AuthServiceHandler and StaffServiceHandler. It stays thin:
 // read the actor from context, call the service, convert to proto, set cookies.
 type Handler struct {
-	svc    *Service
-	secure bool // Secure flag on cookies (prod)
+	svc       *Service
+	secure    bool // Secure flag on cookies (prod)
+	crossSite bool // SameSite=None; Secure — web app on another site
 }
 
 func NewHandler(svc *Service, secure bool) *Handler { return &Handler{svc: svc, secure: secure} }
 
+// WithCrossSiteCookies makes session/device cookies SameSite=None; Secure.
+func (h *Handler) WithCrossSiteCookies(on bool) *Handler { h.crossSite = on; return h }
+
 func (h *Handler) setCookie(header http.Header, name, value string, maxAge int) {
 	c := &http.Cookie{Name: name, Value: value, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: h.secure, MaxAge: maxAge}
+	if h.crossSite {
+		c.SameSite, c.Secure = http.SameSiteNoneMode, true
+	}
 	header.Add("Set-Cookie", c.String())
 }
 

@@ -20,7 +20,9 @@ import (
 	"github.com/oneaccord/restro/api/internal/credit"
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
 	"github.com/oneaccord/restro/api/internal/dbx"
+	"github.com/oneaccord/restro/api/internal/guest"
 	"github.com/oneaccord/restro/api/internal/idem"
+	"github.com/oneaccord/restro/api/internal/loyalty"
 	"github.com/oneaccord/restro/api/internal/money"
 	"github.com/oneaccord/restro/api/internal/orders"
 	"github.com/oneaccord/restro/api/internal/realtime"
@@ -28,7 +30,8 @@ import (
 )
 
 func (s *Service) PreviewBill(ctx context.Context, req *restaurantv1.PreviewBillRequest) (*restaurantv1.BillPreview, error) {
-	if _, err := auth.RequireActor(ctx); err != nil {
+	actor, err := auth.RequireActor(ctx)
+	if err != nil {
 		return nil, err
 	}
 	ocid, err := parseID("order_client_id", req.GetOrderClientId())
@@ -46,22 +49,83 @@ func (s *Service) PreviewBill(ctx context.Context, req *restaurantv1.PreviewBill
 	if err != nil {
 		return nil, connecterr.Internal(err)
 	}
+	if len(req.GetItemIds()) > 0 {
+		if items, err = pickItems(items, req.GetItemIds()); err != nil {
+			return nil, err
+		}
+	}
 	subtotal, _, err := s.subtotalOf(ctx, s.q, order.ID, items)
 	if err != nil {
 		return nil, err
 	}
-	discount := previewDiscount(req.GetDiscount(), subtotal)
+	return s.preview(ctx, actor, order.ID, subtotal, req.GetDiscount(), loyaltyRequest(req))
+}
+
+// PreviewCounterSale previews a counter (pay-first) sale: the lines are priced
+// against the live menu and nothing is created.
+func (s *Service) PreviewCounterSale(ctx context.Context, req *restaurantv1.PreviewCounterSaleRequest) (*restaurantv1.BillPreview, error) {
+	actor, err := requireBillingRole(ctx)
+	if err != nil {
+		return nil, err
+	}
+	subtotal, err := orders.PriceLines(ctx, s.q, req.GetLines())
+	if err != nil {
+		return nil, err
+	}
+	return s.preview(ctx, actor, uuid.Nil, subtotal, req.GetDiscount(), loyaltyRequest(req))
+}
+
+// preview computes a bill's figures, and with a loyalty member its reward and
+// stamp (orderID = uuid.Nil for a bill with no order yet).
+func (s *Service) preview(ctx context.Context, actor *auth.Actor, orderID uuid.UUID, subtotal int64, disc *restaurantv1.DiscountInput, loyReq loyalty.Request) (*restaurantv1.BillPreview, error) {
+	discount := previewDiscount(disc, subtotal)
 	settings, err := s.q.GetSettings(ctx)
 	if err != nil {
 		return nil, connecterr.Internal(err)
 	}
-	r := s.compute(settings, subtotal, discount)
-	return &restaurantv1.BillPreview{
+	// Loyalty: the member's reward and whether the bill earns (in a transaction:
+	// reading a card can expire it).
+	var loy *loyalty.Bill
+	if loyReq.CustomerID != "" || loyReq.RedeemReward || loyReq.RedeemBirthday {
+		err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
+			b, e := loyalty.Check(ctx, q, actor, loyReq, subtotal-discount, false)
+			if e != nil {
+				return e
+			}
+			loy = b
+			return b.Plan(ctx, q, orderID, subtotal-discount-b.Reward, false)
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	r := s.compute(settings, subtotal, discount, loy.RewardPaisa())
+	out := &restaurantv1.BillPreview{
 		SubtotalPaisa: r.Subtotal, DiscountPaisa: r.Discount, ServiceChargePaisa: r.ServiceCharge,
 		TaxablePaisa: r.Taxable, VatPaisa: r.Vat, RoundingPaisa: r.RoundingAdjustment, TotalPaisa: r.Total,
-	}, nil
+		RewardPaisa: r.Reward,
+	}
+	if loy != nil {
+		earns, after := loy.Earn, loy.PreviewStampsAfter()
+		out.EarnsStamp, out.StampsAfter = &earns, &after
+	}
+	return out, nil
 }
 
+// loyaltyRequest is a bill request's loyalty fields.
+func loyaltyRequest(req interface {
+	GetCustomerId() string
+	GetRedeemReward() bool
+	GetRedeemBirthday() bool
+}) loyalty.Request {
+	return loyalty.Request{CustomerID: req.GetCustomerId(), RedeemReward: req.GetRedeemReward(), RedeemBirthday: req.GetRedeemBirthday()}
+}
+
+// IssueFullBill and SplitByItem are the older issue-then-pay RPCs. They take no
+// loyalty member (no customer_id / redeem fields), so their bills neither earn a
+// stamp nor use a reward: adding it needs new request fields and the payBill
+// loyalty flow (Check under lock, Plan, stamp settlement once paid on account),
+// so it is left out. Clients bill members through IssueBill / CounterSale.
 func (s *Service) IssueFullBill(ctx context.Context, req *restaurantv1.IssueFullBillRequest) (*restaurantv1.Invoice, error) {
 	actor, err := auth.RequireRole(ctx, auth.RoleOwner, auth.RoleManager, auth.RoleCashier)
 	if err != nil {
@@ -94,7 +158,7 @@ func (s *Service) IssueFullBill(ctx context.Context, req *restaurantv1.IssueFull
 		if e != nil {
 			return e
 		}
-		inv, e := s.issueInvoiceForItems(ctx, q, order, items, byItem, subtotal, settings, discount, reason, approvedBy, req.GetBuyerName(), req.GetBuyerPan(), actor, "")
+		inv, e := s.issueInvoiceForItems(ctx, q, order, items, byItem, subtotal, settings, discount, reason, approvedBy, req.GetBuyerName(), req.GetBuyerPan(), actor, "", nil)
 		if e != nil {
 			return e
 		}
@@ -169,7 +233,7 @@ func (s *Service) SplitByItem(ctx context.Context, req *restaurantv1.SplitByItem
 			if e != nil {
 				return e
 			}
-			inv, e := s.issueInvoiceForItems(ctx, q, order, groupItems, byItem, subtotal, settings, 0, "", uuid.Nil, "", "", actor, "")
+			inv, e := s.issueInvoiceForItems(ctx, q, order, groupItems, byItem, subtotal, settings, 0, "", uuid.Nil, "", "", actor, "", nil)
 			if e != nil {
 				return e
 			}
@@ -299,6 +363,7 @@ func (s *Service) CancelInvoice(ctx context.Context, req *restaurantv1.CancelInv
 
 	var reopened []string
 	var credited []uuid.UUID
+	var member uuid.UUID
 	out := &restaurantv1.Invoice{}
 	err = idem.Run(ctx, s.pool, s.q, cmdID, actor.User.ID, out, func(q *sqlc.Queries) error {
 		inv, e := q.CancelInvoice(ctx, sqlc.CancelInvoiceParams{
@@ -336,6 +401,12 @@ func (s *Service) CancelInvoice(ctx context.Context, req *restaurantv1.CancelInv
 				reopened = append(reopened, oid.String())
 			}
 		}
+		// Loyalty: the bill's stamp is reversed and any reward used on it comes back.
+		if inv.LoyaltyCustomerID.Valid {
+			if member, e = loyalty.Reverse(ctx, q, actor, inv.ID, mgr.ID, req.GetReason()); e != nil {
+				return e
+			}
+		}
 		if e := q.CreateCbmsOutbox(ctx, sqlc.CreateCbmsOutboxParams{InvoiceID: inv.ID, Kind: "RETURN", Payload: audit.JSON(map[string]any{"invoice": inv.Number}), Status: "DISABLED"}); e != nil {
 			return connecterr.Internal(e)
 		}
@@ -356,6 +427,9 @@ func (s *Service) CancelInvoice(ctx context.Context, req *restaurantv1.CancelInv
 		s.emit(realtime.Event{Type: "order.updated", ID: oid})
 	}
 	s.emit(realtime.Event{Type: "invoice.cancelled", ID: invID.String()})
+	if member != uuid.Nil {
+		credited = append(credited, member)
+	}
 	for _, c := range credited {
 		s.emit(realtime.Event{Type: credit.EventCustomerUpdated, ID: c.String()})
 	}
@@ -472,9 +546,9 @@ func tableIDStr(o sqlc.Order) string {
 	return uuid.UUID(o.TableID.Bytes).String()
 }
 
-func (s *Service) compute(settings sqlc.Setting, subtotal, discount int64) money.Result {
+func (s *Service) compute(settings sqlc.Setting, subtotal, discount, reward int64) money.Result {
 	return money.Compute(money.Input{
-		Subtotal: subtotal, Discount: discount,
+		Subtotal: subtotal, Discount: discount, Reward: reward,
 		ServiceChargeEnabled: settings.ServiceChargeEnabled, ServiceChargeRateBp: settings.ServiceChargeRateBp,
 		VatRegistered: settings.VatRegistered, PricesIncludeVat: settings.PricesIncludeVat, VatRateBp: settings.VatRateBp,
 		RoundTotalToRupee: settings.RoundTotalToRupee,
@@ -502,8 +576,10 @@ func placeOf(ctx context.Context, q *sqlc.Queries, order sqlc.Order, label strin
 // issueInvoiceForItems allocates the next number and writes the immutable invoice:
 // totals, lines, and the issue-time snapshot (seller details from settings,
 // display number, issuer, place). label is the counter-sale label ("" otherwise).
-func (s *Service) issueInvoiceForItems(ctx context.Context, q *sqlc.Queries, order sqlc.Order, items []sqlc.OrderItem, byItem map[uuid.UUID][]sqlc.OrderItemModifier, subtotal int64, settings sqlc.Setting, discount int64, discountReason string, discountApprovedBy uuid.UUID, buyerName, buyerPan string, actor *auth.Actor, label string) (sqlc.Invoice, error) {
-	r := s.compute(settings, subtotal, discount)
+// loy is the checked and planned loyalty member (nil = none): its reward is a
+// discount before VAT and its ledger entries are written with the invoice.
+func (s *Service) issueInvoiceForItems(ctx context.Context, q *sqlc.Queries, order sqlc.Order, items []sqlc.OrderItem, byItem map[uuid.UUID][]sqlc.OrderItemModifier, subtotal int64, settings sqlc.Setting, discount int64, discountReason string, discountApprovedBy uuid.UUID, buyerName, buyerPan string, actor *auth.Actor, label string, loy *loyalty.Bill) (sqlc.Invoice, error) {
+	r := s.compute(settings, subtotal, discount, loy.RewardPaisa())
 	actorID := actor.User.ID
 	place, err := placeOf(ctx, q, order, label)
 	if err != nil {
@@ -532,6 +608,7 @@ func (s *Service) issueInvoiceForItems(ctx context.Context, q *sqlc.Queries, ord
 		SellerNameEn:  settings.NameEn, SellerNameNe: settings.NameNe, SellerAddress: settings.Address,
 		SellerPanNumber: settings.PanNumber, SellerVatRateBp: settings.VatRateBp, SellerVatRegistered: settings.VatRegistered,
 		SellerLogoUrl: settings.LogoUrl, IssuedByName: actor.User.Name, Place: place, OrderClientID: dbx.UUID(order.ClientID),
+		LoyaltyCustomerID: dbx.UUIDOpt(loy.CustomerID()), RewardPaisa: r.Reward, LoyaltySnapshot: loy.SnapshotJSON(),
 	})
 	if err != nil {
 		return sqlc.Invoice{}, connecterr.Internal(err)
@@ -567,6 +644,13 @@ func (s *Service) issueInvoiceForItems(ctx context.Context, q *sqlc.Queries, ord
 		InvoiceID: inv.ID, Kind: "BILL", Payload: audit.JSON(map[string]any{"number": number, "total": r.Total, "fiscal_year": fy}), Status: "DISABLED",
 	}); err != nil {
 		return sqlc.Invoice{}, connecterr.Internal(err)
+	}
+	if err := guest.ClearBillRequest(ctx, q, order.ID, actorID); err != nil { // a bill answers the guest's Ask for bill
+		return sqlc.Invoice{}, err
+	}
+	// Loyalty entries go before invoice.issue: its alert rules read them.
+	if err := loyalty.Record(ctx, q, actor, inv.ID, inv.DisplayNumber, loy); err != nil {
+		return sqlc.Invoice{}, err
 	}
 	if err := audit.Write(ctx, q, audit.Entry{ActorID: actorID, Action: "invoice.issue", Entity: "invoice", EntityID: inv.ID.String(), After: audit.JSON(map[string]any{"number": number, "fiscal_year": fy, "total": r.Total})}); err != nil {
 		return sqlc.Invoice{}, err

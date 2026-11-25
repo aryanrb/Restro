@@ -1325,7 +1325,7 @@ func (q *Queries) ListVariantRecipeLines(ctx context.Context, variantID uuid.UUI
 }
 
 const listVoidedAfterCooking = `-- name: ListVoidedAfterCooking :many
-SELECT oi.id, oi.order_id, oi.client_id, oi.menu_item_id, oi.name_en, oi.name_ne, oi.variant_name_en, oi.variant_name_ne, oi.has_variant, oi.unit_price_paisa, oi.quantity, oi.note, oi.station_id, oi.status, oi.void_reason, oi.voided_by_user_id, oi.void_approved_by_user_id, oi.created_at, oi.invoice_id, oi.sent_at, oi.added_by_user_id, oi.variant_id, oi.modifier_ids, COALESCE(u.name, '')::text AS approver_name
+SELECT oi.id, oi.order_id, oi.client_id, oi.menu_item_id, oi.name_en, oi.name_ne, oi.variant_name_en, oi.variant_name_ne, oi.has_variant, oi.unit_price_paisa, oi.quantity, oi.note, oi.station_id, oi.status, oi.void_reason, oi.voided_by_user_id, oi.void_approved_by_user_id, oi.created_at, oi.invoice_id, oi.sent_at, oi.added_by_user_id, oi.variant_id, oi.modifier_ids, oi.source, COALESCE(u.name, '')::text AS approver_name
 FROM order_items oi
 LEFT JOIN users u ON u.id = oi.void_approved_by_user_id
 WHERE oi.status = 'VOIDED' AND oi.void_approved_by_user_id IS NOT NULL
@@ -1362,6 +1362,7 @@ type ListVoidedAfterCookingRow struct {
 	AddedByUserID        pgtype.UUID        `json:"added_by_user_id"`
 	VariantID            pgtype.UUID        `json:"variant_id"`
 	ModifierIds          []uuid.UUID        `json:"modifier_ids"`
+	Source               string             `json:"source"`
 	ApproverName         string             `json:"approver_name"`
 }
 
@@ -1399,6 +1400,7 @@ func (q *Queries) ListVoidedAfterCooking(ctx context.Context, arg ListVoidedAfte
 			&i.AddedByUserID,
 			&i.VariantID,
 			&i.ModifierIds,
+			&i.Source,
 			&i.ApproverName,
 		); err != nil {
 			return nil, err

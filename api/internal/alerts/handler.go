@@ -54,3 +54,15 @@ func (h *Handler) GetDaySummary(ctx context.Context, req *connect.Request[restau
 func (h *Handler) ListNotifications(ctx context.Context, _ *connect.Request[restaurantv1.ListNotificationsRequest]) (*connect.Response[restaurantv1.ListNotificationsResponse], error) {
 	return wrap(h.svc.ListNotifications(ctx))
 }
+
+func (h *Handler) GetPushConfig(ctx context.Context, _ *connect.Request[restaurantv1.GetPushConfigRequest]) (*connect.Response[restaurantv1.GetPushConfigResponse], error) {
+	return wrap(h.svc.GetPushConfig(ctx))
+}
+
+func (h *Handler) SavePushSubscription(ctx context.Context, req *connect.Request[restaurantv1.SavePushSubscriptionRequest]) (*connect.Response[restaurantv1.SavePushSubscriptionResponse], error) {
+	return wrap(h.svc.SavePushSubscription(ctx, req.Msg))
+}
+
+func (h *Handler) DeletePushSubscription(ctx context.Context, req *connect.Request[restaurantv1.DeletePushSubscriptionRequest]) (*connect.Response[restaurantv1.DeletePushSubscriptionResponse], error) {
+	return wrap(h.svc.DeletePushSubscription(ctx, req.Msg))
+}

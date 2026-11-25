@@ -53,6 +53,10 @@ func (h *Handler) ListInvoices(ctx context.Context, req *connect.Request[restaur
 	return wrap(h.svc.ListInvoices(ctx, req.Msg))
 }
 
+func (h *Handler) PreviewCounterSale(ctx context.Context, req *connect.Request[restaurantv1.PreviewCounterSaleRequest]) (*connect.Response[restaurantv1.BillPreview], error) {
+	return wrap(h.svc.PreviewCounterSale(ctx, req.Msg))
+}
+
 func wrap[T any](v *T, err error) (*connect.Response[T], error) {
 	if err != nil {
 		return nil, err

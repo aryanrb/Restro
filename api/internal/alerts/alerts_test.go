@@ -973,13 +973,21 @@ func TestRealtimeEventsAfterTheRequest(t *testing.T) {
 	}
 	id := f.openShift(f.hari, 100_000)
 	run(f.hari, func(c context.Context) { f.closeShift(c, id, 0) })
-	select {
-	case ev := <-ch:
-		if ev.Type != alerts.EventAlertCreated {
-			t.Fatalf("event = %+v", ev)
+	var audited bool
+	for {
+		select {
+		case ev := <-ch:
+			if ev.Type == alerts.EventAuditCreated { // the shift.close audit row's poke
+				audited = true
+				continue
+			}
+			if ev.Type != alerts.EventAlertCreated || !audited {
+				t.Fatalf("event = %+v (audit.created seen: %v)", ev, audited)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("no alert event")
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("no alert event")
+		return
 	}
 }
 

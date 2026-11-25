@@ -25,12 +25,16 @@ import (
 	"github.com/oneaccord/restro/api/internal/config"
 	"github.com/oneaccord/restro/api/internal/connecterr"
 	"github.com/oneaccord/restro/api/internal/credit"
+	"github.com/oneaccord/restro/api/internal/guest"
 	"github.com/oneaccord/restro/api/internal/inventory"
 	"github.com/oneaccord/restro/api/internal/kitchen"
 	"github.com/oneaccord/restro/api/internal/live"
+	"github.com/oneaccord/restro/api/internal/loyalty"
 	"github.com/oneaccord/restro/api/internal/orders"
+	"github.com/oneaccord/restro/api/internal/purchases"
 	"github.com/oneaccord/restro/api/internal/realtime"
 	"github.com/oneaccord/restro/api/internal/reports"
+	"github.com/oneaccord/restro/api/internal/reservations"
 	"github.com/oneaccord/restro/api/internal/shift"
 )
 
@@ -64,6 +68,8 @@ func New(d Deps) *echo.Echo {
 	// validate the request (protovalidate), map service errors to ErrorInfo (inner).
 	// Suspicious-activity rules run on every audit_log write (audit/hook).
 	alerts.Install(d.Log)
+	// Web Push for alert notifications; off unless VAPID keys are configured.
+	alerts.EnablePush(d.Pool, alerts.PushConfig{PublicKey: d.Cfg.VAPIDPublicKey, PrivateKey: d.Cfg.VAPIDPrivateKey, Subject: d.Cfg.VAPIDSubject}, d.Log)
 	authSvc := auth.NewService(d.Pool, d.Log)
 	e.Any("/api/ws", echo.WrapHandler(wsAuth(authSvc, d.Hub)))
 
@@ -80,7 +86,7 @@ func New(d Deps) *echo.Echo {
 		alerts.EventsInterceptor(d.Hub),
 	)
 
-	authHandler := auth.NewHandler(authSvc, d.Cfg.Env == "prod")
+	authHandler := auth.NewHandler(authSvc, d.Cfg.Env == "prod").WithCrossSiteCookies(d.Cfg.CookieCrossSite)
 	authPath, authH := restaurantv1connect.NewAuthServiceHandler(authHandler, ic)
 	mount(e, authPath, authH)
 	staffPath, staffH := restaurantv1connect.NewStaffServiceHandler(authHandler, ic)
@@ -136,9 +142,35 @@ func New(d Deps) *echo.Echo {
 	calendarPath, calendarHH := restaurantv1connect.NewCalendarServiceHandler(analyticsH, ic)
 	mount(e, calendarPath, calendarHH)
 
+	purchaseH := purchases.NewHandler(purchases.NewService(d.Pool, d.Hub, authSvc, d.Log))
+	supplierPath, supplierHH := restaurantv1connect.NewSupplierServiceHandler(purchaseH, ic)
+	mount(e, supplierPath, supplierHH)
+	purchasePath, purchaseHH := restaurantv1connect.NewPurchaseServiceHandler(purchaseH, ic)
+	mount(e, purchasePath, purchaseHH)
+
 	alertH := alerts.NewHandler(alerts.NewService(d.Pool, d.Hub, d.Log))
 	alertPath, alertHH := restaurantv1connect.NewAlertServiceHandler(alertH, ic)
 	mount(e, alertPath, alertHH)
+
+	reservationPath, reservationHH := restaurantv1connect.NewReservationServiceHandler(reservations.NewHandler(reservations.NewService(d.Pool, d.Hub, d.Log)), ic)
+	mount(e, reservationPath, reservationHH)
+
+	// Loyalty stamp card. GetCardStatus is public: it reads no session.
+	loyaltyPath, loyaltyHH := restaurantv1connect.NewLoyaltyServiceHandler(loyalty.NewHandler(loyalty.NewService(d.Pool, d.Hub, authSvc, d.Log)), ic)
+	mount(e, loyaltyPath, loyaltyHH)
+
+	// Guest table ordering. The desk (staff) service uses the normal chain; the
+	// PUBLIC guest service gets a chain WITHOUT the session interceptor, so even a
+	// request carrying a staff cookie has no actor there: it is identified only by
+	// its table code and its handler type exposes only the four guest RPCs.
+	guestSvc := guest.NewService(d.Pool, d.Hub, d.Log)
+	guestDeskPath, guestDeskHH := restaurantv1connect.NewGuestDeskServiceHandler(guest.NewDeskHandler(guestSvc), ic)
+	mount(e, guestDeskPath, guestDeskHH)
+	publicIC := connect.WithInterceptors(connectvalidate.NewInterceptor(), connecterr.Interceptor())
+	guestPath, guestHH := restaurantv1connect.NewGuestServiceHandler(guest.NewPublicHandler(guestSvc), publicIC)
+	mount(e, guestPath, guestHH)
+	// The guest page's own socket: only that table's guest.status pokes.
+	e.GET("/api/guest/ws", echo.WrapHandler(guestSvc.WatchHandler()))
 
 	return e
 }

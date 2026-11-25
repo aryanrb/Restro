@@ -73,11 +73,16 @@ func (s *Service) Dashboard(ctx context.Context) (*restaurantv1.DashboardRespons
 	if err != nil {
 		return nil, connecterr.Internal(err)
 	}
+	rewards, err := s.q.TodayRewards(ctx, since)
+	if err != nil {
+		return nil, connecterr.Internal(err)
+	}
 	out := &restaurantv1.DashboardResponse{
 		TodaySalesPaisa: sales.Total, TodayInvoiceCount: sales.InvoiceCount,
 		OpenOrders: openOrders, OpenTables: openTables, VoidCount: voids.VoidCount, DiscountCount: discounts,
 		DiscountPaisa: discountTotal, VoidValuePaisa: voids.VoidValue,
 		CancelledCount: cancelled.CancelledCount, CancelledValuePaisa: cancelled.CancelledValue,
+		RewardCount: rewards.RewardCount, RewardPaisa: rewards.RewardPaisa,
 	}
 	if out.CreditGivenTodayPaisa, err = s.q.CreditGivenSince(ctx, since); err != nil {
 		return nil, connecterr.Internal(err)
@@ -122,7 +127,7 @@ func (s *Service) ExportSalesBookCsv(ctx context.Context, req *restaurantv1.Rang
 	for _, r := range rows {
 		_ = w.Write([]string{
 			r.FiscalYear, shift.DisplayNumber(r.Mode, r.FiscalYear, r.Number), r.Mode, r.BsDate, r.BuyerName, r.BuyerPan,
-			rupees(r.SubtotalPaisa), rupees(r.DiscountPaisa), rupees(r.TaxablePaisa), rupees(r.VatPaisa), rupees(r.TotalPaisa), r.Status,
+			rupees(r.SubtotalPaisa), rupees(r.DiscountPaisa + r.RewardPaisa), rupees(r.TaxablePaisa), rupees(r.VatPaisa), rupees(r.TotalPaisa), r.Status,
 			r.EnteredByName, printedAt(r.LastPrintedAtUnix), r.LastPrintedByName,
 		})
 	}
@@ -165,7 +170,7 @@ func (s *Service) DailySales(ctx context.Context, fromUnix, toUnix int64) (*rest
 	for _, r := range rows {
 		out.Rows = append(out.Rows, &restaurantv1.DailySalesRow{
 			BsDate: r.BsDate, AdDate: r.AdDate, InvoiceCount: r.InvoiceCount, TotalPaisa: r.TotalPaisa, VatPaisa: r.VatPaisa,
-			TaxablePaisa: r.TaxablePaisa, DiscountPaisa: r.DiscountPaisa, ServiceChargePaisa: r.ServiceChargePaisa,
+			TaxablePaisa: r.TaxablePaisa, DiscountPaisa: r.DiscountPaisa, ServiceChargePaisa: r.ServiceChargePaisa, RewardPaisa: r.RewardPaisa,
 			ByMethod: byDay[r.AdDate], CancelledCount: r.CancelledCount,
 		})
 	}
@@ -298,6 +303,7 @@ func toSalesBookRow(r sqlc.SalesBookDetailRow) *restaurantv1.SalesBookRow {
 		DisplayNumber: shift.DisplayNumber(r.Mode, r.FiscalYear, r.Number), InvoiceId: r.ID.String(),
 		EnteredByName: r.EnteredByName, PrintCount: r.PrintCount, AdDatetimeUnix: r.AdDatetime.Unix(),
 		LastPrintedAtUnix: r.LastPrintedAtUnix, LastPrintedByName: r.LastPrintedByName,
+		RewardPaisa: r.RewardPaisa,
 	}
 }
 

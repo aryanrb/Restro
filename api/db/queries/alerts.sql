@@ -124,12 +124,14 @@ ORDER BY a.id;
 -- name: CountDayAlertPushes :one
 SELECT count(*)::int FROM alert_pushes WHERE business_date = @business_date AND kind = @kind;
 
--- name: InsertAlertPush :exec
--- MORE and SUMMARY are once per business day (unique index): a repeat is a no-op.
+-- name: InsertAlertPush :many
+-- MORE and SUMMARY are once per business day (unique index): a repeat is a no-op
+-- (no row returned). The returned row is handed to the Web Push sender.
 INSERT INTO alert_pushes (at, business_date, kind, rule, amount_paisa, count, alert_id, exclude_ids)
 VALUES (@at, @business_date, @kind, @rule, sqlc.narg('amount_paisa')::bigint, sqlc.narg('count')::int,
         sqlc.narg('alert_id')::uuid, @exclude_ids::uuid[])
-ON CONFLICT DO NOTHING;
+ON CONFLICT DO NOTHING
+RETURNING *;
 
 -- name: AlertPushExists :one
 SELECT EXISTS (SELECT 1 FROM alert_pushes WHERE business_date = @business_date AND kind = @kind)::bool;
@@ -229,3 +231,35 @@ FROM invoices WHERE status = 'CANCELLED' AND cancelled_at >= @from_ts AND cancel
 SELECT s.*, u.name AS user_name FROM shifts s JOIN users u ON u.id = s.cashier_user_id
 WHERE s.opened_at >= @from_ts AND s.opened_at < @to_ts
 ORDER BY s.opened_at, s.id;
+
+-- --- Web Push ---
+
+-- name: GetAlertPush :one
+SELECT * FROM alert_pushes WHERE id = $1;
+
+-- name: UpsertPushSubscription :one
+-- A device re-subscribing (or now used by another user) replaces its row.
+INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, device_label)
+VALUES (@user_id, @endpoint, @p256dh, @auth, @device_label)
+ON CONFLICT (endpoint) DO UPDATE
+SET user_id = EXCLUDED.user_id, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth,
+    device_label = EXCLUDED.device_label, created_at = now()
+RETURNING *;
+
+-- name: DeleteUserPushSubscription :execrows
+DELETE FROM push_subscriptions WHERE endpoint = @endpoint AND user_id = @user_id;
+
+-- name: DeletePushSubscriptionByEndpoint :exec
+DELETE FROM push_subscriptions WHERE endpoint = $1;
+
+-- name: ListPushTargets :many
+-- Subscriptions of active users with one of the given ids, with their language.
+SELECT s.*, u.language, u.role FROM push_subscriptions s JOIN users u ON u.id = s.user_id
+WHERE u.active AND s.user_id = ANY (@user_ids::uuid[])
+ORDER BY s.created_at;
+
+-- name: ActiveOwnerIDs :many
+SELECT id FROM users WHERE role = 'OWNER' AND active;
+
+-- name: CountUserPushSubscriptions :one
+SELECT count(*)::int FROM push_subscriptions WHERE user_id = $1;

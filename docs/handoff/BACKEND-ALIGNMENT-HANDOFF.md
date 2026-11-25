@@ -1,20 +1,17 @@
 # Backend alignment — handoff
 
-Branch `backend-alignment` (from `master` at `2194648`). Written 2026-11-25 for whoever continues the backend.
+Originally branch `backend-alignment` (merged as PR #1). Continued on `feat/wave-2` (from `master` at `2fca449`). Updated 2026-11-25 for whoever continues the backend.
 
-The web frontend (Next.js, repo BsalRbh/POS, branch `feat/real-backend`) talks to this backend through Connect with generated TS clients. Its in-browser fake backend (`web/src/lib/api/mock/`) encodes every business rule and has ~950 tests — **treat it as the executable spec** when in doubt.
+The web frontend (Next.js, repo BsalRbh/POS) talks to this backend through Connect with generated TS clients. Its in-browser fake backend (`web/src/lib/api/mock/`) encodes every business rule and has ~1000 tests — **treat it as the executable spec** when in doubt. With `NEXT_PUBLIC_API_MODE=real` every feature, wave 2 included, now uses this backend.
 
-## ⚠️ Must be done before this branch is merged
+## Status of `feat/wave-2`
 
-Do **not** merge `backend-alignment` into `master` until all three are finished (details under "Remaining work" below):
+- **Full test suite green** on a fresh database (all packages, migrations 001–019 from scratch) on 2026-11-25.
+- **Stage 3 wave 2 built**: purchases + suppliers, reservations, loyalty, guest table ordering, plus the alert rules that waited on them (loyalty rules 19–22, LARGE_PAID_OUT 23).
+- ⚠️ **Deploy order:** deploy this backend before the matching frontend — the new frontend sends line client ids to item RPCs, which the old backend rejects.
+- ⚠️ **Merging into `master` deploys to Render and runs migrations 015–019 on the live database on boot.** They are additive (new tables; new columns on `customers`, `invoices`, `orders`, `order_items`, `dining_tables`), but tell whoever runs the live deploy before merging, and take a Neon backup/branch first.
 
-1. **Full test suite green** on a fresh database — it was not re-run after `a1197fb`.
-2. **Stage 3 wave 2 built and tested**: purchases + suppliers, reservations, loyalty, guest table ordering — plus the alert rules waiting on them (loyalty rules, LARGE_PAID_OUT).
-3. **The smaller gaps closed**: server preview for counter lines / item subsets, one audit action vocabulary, READY → PREPARING, live view alerts + bill-requested + `audit.created`, the missing ErrorReasons, Web Push for alerts.
-
-Multi-tenancy and go-live (items 4–5) come after the merge.
-
-## What this branch contains
+## What has been built
 
 | Commit | Contents |
 |---|---|
@@ -24,7 +21,16 @@ Multi-tenancy and go-live (items 4–5) come after the merge.
 | `7d41194` | Stage 2: invoice seller snapshot + display number + print log (mig 007); shift history, all-method payments, cancel adjustments, closing note (mig 008); report fields + richer audit log; stable variant/modifier ids, moves within category/area, settings logo/QR images, guest_ordering, staff phone/has_password, NOT_FOUND errors (mig 009); order label/waiter/times/billed, SetGuestCount, transfer to takeaway, user_id check, merge rules, kitchen RPCs return the order, WebSocket requires a session (mig 010) |
 | `433261b` | Wiring: cancel adjusts shifts, counter-sale label, sales-book last print, audit device label |
 | `9f9a3eb` | Stage 3 wave 1a: credit customers (mig 011), inventory + wastage + recipes (mig 012) |
-| `a1197fb` | Stage 3 wave 1b: suspicious-activity alerts (mig 013), live view + analytics + calendar (mig 014). **The combined test suite was not re-run after this commit** (each part's suite passed separately) — run it first. |
+| `a1197fb` | Stage 3 wave 1b: suspicious-activity alerts (mig 013), live view + analytics + calendar (mig 014) |
+| `e6ff3f3` | Wave 2: purchases + suppliers (mig 015; till paid-outs in shifts, LARGE_PAID_OUT alert), reservations (mig 016) |
+| `d21ab5a` | Wave 2b: loyalty stamp card (mig 017; reward = pre-VAT discount, pending stamps on on-account bills), guest table ordering (mig 018; public `GuestService` without a session, staff `GuestDeskService`, call waiter / ask for bill → `Order.bill_requested_at`, public socket `/api/guest/ws?t=<code>`) |
+
+### Deliberate deviations the frontend maps back
+
+- ErrorReason numbers ran short, so some reasons go out as existing ones with a field: `PAID_OUT_LIMIT` → MANAGER_APPROVAL_REQUIRED `amount`; `SUPPLIER_INACTIVE` → INVALID `supplier_id`; `ITEM_INACTIVE` → ITEM_UNTRACKED `lines`; `PURCHASE_HAS_RETURNS` → IN_USE; reservations `TABLE_OCCUPIED` → IN_USE `table_ids`; `PHONE_TAKEN` → DUPLICATE `phone`; `CONSENT_REQUIRED` → INVALID `consent`; `CARD_LINK_INVALID` → NOT_FOUND `token`.
+- Audit names: some packages use dotted names (`invoice.issue`, `guest.accept`, `reservation.*`), others the web names (`PURCHASE_RECORDED`, `LOYALTY_*`). The frontend maps both (`web/src/lib/api/real/real-reports-api.ts`).
+- Loyalty-only members have `credit_account=false` and are hidden from ListCustomers; existing customers must come back as `credit_account=true`.
+- Ask-for-bill sets/clears `bill_requested_at` without bumping the order version.
 
 ## Running it
 
@@ -32,34 +38,44 @@ Multi-tenancy and go-live (items 4–5) come after the merge.
 - Local Postgres: `docker run -d --name restro-pg -e POSTGRES_USER=restro -e POSTGRES_PASSWORD=restro -e POSTGRES_DB=restro -p 55432:5432 postgres:17-alpine`
 - Tests: `cd api && TEST_DATABASE_URL=postgres://restro:restro@localhost:55432/restro_test?sslmode=disable go test -count=1 -p 1 ./...` (`-p 1` is required: packages share the test DB). If a migration was edited, drop/recreate the test DB.
 - Run: `DATABASE_URL=… PORT=8091 go run ./cmd/api` (env overrides `api/.env` — **api/.env points at a live Neon DB; don't run tests against it**).
-- Proto: `buf generate proto`, `buf lint proto`, `buf breaking proto --against '.git#branch=master,subdir=proto'`. All proto changes on this branch are additive.
+- Proto: `buf generate proto`, `buf lint proto`, `buf breaking proto --against '.git#branch=master,subdir=proto'`. All proto changes are additive.
 - Frontend live end-to-end test (16 steps, a full service day): in the web repo, `RESTRO_LIVE_API=http://localhost:8092/api pnpm vitest run src/lib/api/real/live.e2e.test.ts` with this backend running on 8092.
+
+## Deploy settings (Render)
+
+| Variable | Value | Notes |
+|---|---|---|
+| `COOKIE_SAMESITE` | `none` | Needed while the web app is on Vercel and the API on Render (different sites). Cookies become `SameSite=None; Secure` (HTTPS only). Leave unset for same-origin hosting / local dev (stays `Lax`). |
+| `CORS_ORIGINS` | the Vercel URL(s), comma-separated | Must be exact origins, no `*` (cookies ride on credentialed CORS). |
+| `VAPID_PUBLIC_KEY` | generated, see below | Web Push for alerts. Not secret: sent to the browser when a user turns notifications on. |
+| `VAPID_PRIVATE_KEY` | generated, see below | **Secret.** Signs every push. Store only in Render's env, never in git. |
+| `VAPID_SUBJECT` | `mailto:<owner or ops email>` | Contact the push services (Google/Apple/Mozilla) use if there is a problem with our pushes. |
+
+### VAPID (Web Push) — what and how
+
+Alert pushes go through the browser vendor's push service, not directly to the phone. When an owner/manager taps "Allow notifications", the browser ties the subscription to our **public** key; the push service then only accepts messages signed with the matching **private** key, so a leaked subscription can't be used by anyone else.
+
+- Generate the pair **once** (free, no account): `npx web-push generate-vapid-keys` (or `go run github.com/SherClockHolmes/webpush-go/...` equivalent). Put both keys and the subject on Render and redeploy.
+- **Never rotate them casually:** new keys invalidate every existing subscription; users must turn notifications on again.
+- If the three variables are unset, Web Push is disabled and alerts still appear in the app (polling `ListNotifications`).
+- Subscriptions are stored per user + device; ones the push service reports gone (404/410) are deleted automatically.
+- Quiet hours, the daily push cap, the recipient list and "never about your own action" are applied before sending, the same as for in-app notifications.
 
 ## Plans (all in `docs/`)
 
-- `docs/handoff/backend-gap-report-2026-11-25.md` — original frontend↔backend comparison (most items now fixed; see below).
-- `docs/superpowers/specs/` — design docs (owner decisions included) for every feature:
-  credit-customers, inventory-wastage, suspicious-activity-alerts, analytics (live + analytics), **purchases-suppliers, reservations, loyalty, guest-table-ordering** (not built yet), and the MVP design.
+- `docs/handoff/backend-gap-report-2026-11-25.md` — original frontend↔backend comparison (most items now fixed).
+- `docs/superpowers/specs/` — design docs (owner decisions included) for every feature: credit-customers, inventory-wastage, suspicious-activity-alerts, analytics (live + analytics), purchases-suppliers, reservations, loyalty, guest-table-ordering, and the MVP design.
 
 ## Remaining work, in order
 
-1. **Run the full test suite** on a fresh DB (see above) and fix anything wave 1b broke.
-2. **Stage 3 wave 2** — build from the specs, mirroring the web fakes (`web/src/lib/api/mock/mock-*.ts` + tests):
-   - purchases + suppliers (builds on inventory: PURCHASE/PURCHASE_RETURN movements, moving average via `inventory.MovingAverageE4`, till paid-outs in shifts),
-   - reservations (customers from credit; phone normalised + unique),
-   - loyalty (stamp card on Customer; reward is a discount before VAT; pending stamps on on-account bills until repaid),
-   - guest table ordering (public guest API by table code, staff accept/reject, call waiter / ask for bill → `Order.bill_requested_at`).
-   - Then add the alert rules left as planned: loyalty rules and LARGE_PAID_OUT.
-3. **Smaller gaps still open** (frontend has `// GAP:` comments for each):
-   - no server preview for counter lines / item-subset bills (frontend estimates client-side);
-   - audit action names are dotted (`invoice.issue`) vs the frontend's (`BILL_ISSUED`) — agree one vocabulary or keep the frontend mapping; credit actions need mapping (`customer.change`, `customer.credit_limit`, `credit.give`, `credit.repay`, `credit.repay_void`);
-   - kitchen `StartItems` ignores READY → PREPARING;
-   - item-level RPCs take server item ids (frontend keeps a client↔server id map);
-   - live view: alert counts / exception alert ids not wired, no bill-requested state, no `audit.created` event;
-   - missing ErrorReasons the frontend uses (WRONG_USER, ITEM_BILLED, PAYMENT_MISMATCH, …) are sent as existing reasons with a field + message;
-   - Web Push for alerts not implemented (in-app polling via `ListNotifications`).
-4. **Multi-tenancy (decided)** — before go-live, move from one deployment per restaurant to one shared deployment: `restaurant_id` on every row, Postgres row-level security (FORCE RLS + non-owner app role) behind app-level filtering; invoice numbering per restaurant/fiscal year/mode; organisation → restaurants hierarchy (makes multi-branch cheap). Needs a short design first (restaurant selection at login, cross-restaurant staff, onboarding, per-restaurant backup/export).
-5. **Go-live** — same-origin hosting (Caddy: `/` → web static export, `/api` + `/api/ws` → Go; cookies are SameSite=Lax and there is no CORS), production secrets, deploy; frontend switches with `NEXT_PUBLIC_API_MODE=real`.
+1. **Login from the Vercel frontend**: set `COOKIE_SAMESITE=none` on Render (cookies become `SameSite=None; Secure`) and make sure `CORS_ORIGINS` lists the Vercel URL. Default stays `Lax` for same-origin hosting and local dev.
+2. **Smaller gaps** — closed on this branch: server previews for item subsets and counter lines (with loyalty), sales-book / daily-sales reward + dashboard "rewards today", kitchen READY → PREPARING, live view alert counts + `audit.created` event, item RPCs accept the line `client_id`, every audit name mapped in the frontend, Web Push for alerts (mig 019). Still open:
+   - loyalty not on the older `IssueFullBill` / `SplitByItem` RPCs (frontend doesn't use them);
+   - `audit.created` goes to every session (mock: owner/manager only) — harmless refetch;
+   - untested: supplier statement, purchase book, buy list, loyalty expiry/birthday/leave/report, guest rate limits and socket forwarding, the service worker's push handlers.
+3. **Multi-tenancy (decided)** — before go-live, move from one deployment per restaurant to one shared deployment: `restaurant_id` on every row, Postgres row-level security (FORCE RLS + non-owner app role) behind app-level filtering; invoice numbering per restaurant/fiscal year/mode; organisation → restaurants hierarchy (makes multi-branch cheap). Needs a short design first (restaurant selection at login, cross-restaurant staff, onboarding, per-restaurant backup/export).
+4. **Go-live** — production secrets, backups, deploy; frontend switches with `NEXT_PUBLIC_API_MODE=real`.
+5. Optional: same-origin hosting (Caddy: `/` → web static export, `/api` + `/api/ws` → Go) removes the cookie/CORS issue entirely.
 
 ## Open questions for the owner / accountant
 

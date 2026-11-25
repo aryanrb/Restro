@@ -34,6 +34,10 @@ message DashboardResponse {
   int64 credit_given_today_paisa = 13;
   int64 repayments_today_paisa = 14;
   int64 credit_owed_paisa = 15;
+  // Loyalty: today's issued bills that used a reward, and the rewards' sum
+  // (apart from discount_paisa).
+  int32 reward_count = 16;
+  int64 reward_paisa = 17;
 }
 
 message RangeRequest {
@@ -65,6 +69,7 @@ message SalesBookRow {
   // 0 / "" when it was never printed.
   int64 last_printed_at_unix = 18;
   string last_printed_by_name = 19;
+  int64 reward_paisa = 20;      // loyalty reward (a discount before VAT, apart from discount_paisa)
 }
 message SalesBookResponse {
   repeated SalesBookRow rows = 1;
@@ -81,6 +86,7 @@ message DailySalesRow {
   int64 service_charge_paisa = 8;
   repeated MethodTotal by_method = 9; // confirmed payments on the day's issued bills
   int32 cancelled_count = 10;         // bills issued that day and since cancelled
+  int64 reward_paisa = 11;            // loyalty rewards on the day's issued bills (apart from discount_paisa)
 }
 message DailySalesResponse {
   repeated DailySalesRow rows = 1;

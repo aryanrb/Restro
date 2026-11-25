@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -56,6 +57,8 @@ func triggered(action string) bool {
 }
 
 func (e *engine) onAudit(ctx context.Context, q *sqlc.Queries, row sqlc.AuditLog) {
+	// Every audit row pokes the live view (sent with the alert events, after the request).
+	queueEvent(ctx, realtime.Event{Type: EventAuditCreated, ID: strconv.FormatInt(row.ID, 10)})
 	if !triggered(row.Action) {
 		return
 	}
@@ -245,7 +248,18 @@ func queueAlertPush(ctx context.Context, q *sqlc.Queries, cfg Config, a sqlc.Ale
 			p.AmountPaisa = pgtype.Int8{Int64: *amount, Valid: true}
 		}
 	}
-	return q.InsertAlertPush(ctx, p)
+	return insertPush(ctx, q, p)
+}
+
+// insertPush records the push (what ListNotifications shows) and queues it for Web
+// Push delivery after commit (push.go).
+func insertPush(ctx context.Context, q *sqlc.Queries, p sqlc.InsertAlertPushParams) error {
+	rows, err := q.InsertAlertPush(ctx, p)
+	if err != nil {
+		return err
+	}
+	queuePush(ctx, rows)
+	return nil
 }
 
 // queueSummary sends the day-summary push when the last open shift closes, once a
@@ -280,7 +294,7 @@ func insertSummaryPush(ctx context.Context, q *sqlc.Queries, cfg Config, day str
 	for _, r := range byRule {
 		openAlerts += r.Open
 	}
-	return q.InsertAlertPush(ctx, sqlc.InsertAlertPushParams{
+	return insertPush(ctx, q, sqlc.InsertAlertPushParams{
 		At: at, BusinessDate: dateOf(day), Kind: "SUMMARY", AmountPaisa: pgtype.Int8{Int64: sales.Sales, Valid: true},
 		Count: pgtype.Int4{Int32: openAlerts, Valid: true}, ExcludeIds: []uuid.UUID{},
 	})
@@ -291,8 +305,9 @@ func insertSummaryPush(ctx context.Context, q *sqlc.Queries, cfg Config, day str
 type eventsKey struct{}
 
 type collector struct {
-	mu  sync.Mutex
-	evs []realtime.Event
+	mu     sync.Mutex
+	evs    []realtime.Event
+	pushes []uuid.UUID // alert_pushes rows to deliver by Web Push (push.go)
 }
 
 func queueEvent(ctx context.Context, ev realtime.Event) {
@@ -327,7 +342,8 @@ func WithEvents(ctx context.Context) (context.Context, func() []realtime.Event) 
 // while handling a request once the handler returned. On success its transaction
 // committed; on failure they are sent too, because some audited writes commit on
 // their own (a PIN lockout) — an event for a rolled-back alert only makes clients
-// refetch.
+// refetch. Queued pushes then go out by Web Push (each is re-read first, so a
+// rolled-back one is never sent).
 func EventsInterceptor(hub *realtime.Hub) connect.UnaryInterceptorFunc {
 	return func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
@@ -338,6 +354,7 @@ func EventsInterceptor(hub *realtime.Hub) connect.UnaryInterceptorFunc {
 					hub.Broadcast(ev)
 				}
 			}
+			SendQueuedPushes(ctx)
 			return resp, err
 		}
 	}

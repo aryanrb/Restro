@@ -118,3 +118,7 @@ SELECT COALESCE(sum(amount_paisa), 0)::bigint FROM repayments WHERE voided_at IS
 -- Dashboard: everything owed now (positive balances only).
 -- name: TotalCreditOwed :one
 SELECT COALESCE(sum(balance_paisa) FILTER (WHERE balance_paisa > 0), 0)::bigint FROM customer_balances;
+
+-- Loyalty: a loyalty-only member gets a credit account (same record, one per phone).
+-- name: OpenCreditAccount :exec
+UPDATE customers SET credit_account = true, updated_at = now() WHERE id = $1;

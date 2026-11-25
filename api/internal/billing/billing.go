@@ -18,6 +18,7 @@ import (
 	"github.com/oneaccord/restro/api/internal/auth"
 	"github.com/oneaccord/restro/api/internal/connecterr"
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
+	"github.com/oneaccord/restro/api/internal/loyalty"
 	"github.com/oneaccord/restro/api/internal/realtime"
 )
 
@@ -108,6 +109,8 @@ func toInvoice(inv sqlc.Invoice, lines []sqlc.InvoiceLine, payments []sqlc.Payme
 		Place:        inv.Place,
 		CancelReason: inv.CancelReason, CancelledByUserId: uuidStr(inv.CancelledByUserID),
 		CancelApprovedByUserId: uuidStr(inv.CancelApprovedByUserID),
+		RewardPaisa:            inv.RewardPaisa, CustomerId: uuidStr(inv.LoyaltyCustomerID),
+		LoyaltySnapshot: loyalty.SnapshotProto(inv.LoyaltySnapshot),
 	}
 	if out.DisplayNumber == "" {
 		out.DisplayNumber = displayNumber(inv.Mode, inv.FiscalYear, inv.Number)

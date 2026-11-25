@@ -55,6 +55,46 @@ func (q *Queries) LiveCoversSince(ctx context.Context, createdAt time.Time) (int
 	return column_1, err
 }
 
+const liveExceptionAlerts = `-- name: LiveExceptionAlerts :many
+SELECT DISTINCT ON (x.audit_id) x.audit_id::bigint AS audit_id, al.id AS alert_id
+FROM alerts al, unnest(al.audit_ids) AS x(audit_id)
+WHERE x.audit_id = ANY($1::bigint[])
+  AND ($2::uuid IS NULL OR NOT ($2::uuid = ANY (al.involved_ids)))
+ORDER BY x.audit_id, al.seq DESC
+`
+
+type LiveExceptionAlertsParams struct {
+	AuditIds []int64     `json:"audit_ids"`
+	HideFor  pgtype.UUID `json:"hide_for"`
+}
+
+type LiveExceptionAlertsRow struct {
+	AuditID int64     `json:"audit_id"`
+	AlertID uuid.UUID `json:"alert_id"`
+}
+
+// The newest alert each of the given audit entries fed (alerts.audit_ids), minus
+// alerts about hide_for (a manager never sees alerts involving themselves).
+func (q *Queries) LiveExceptionAlerts(ctx context.Context, arg LiveExceptionAlertsParams) ([]LiveExceptionAlertsRow, error) {
+	rows, err := q.db.Query(ctx, liveExceptionAlerts, arg.AuditIds, arg.HideFor)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LiveExceptionAlertsRow{}
+	for rows.Next() {
+		var i LiveExceptionAlertsRow
+		if err := rows.Scan(&i.AuditID, &i.AlertID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const liveExceptions = `-- name: LiveExceptions :many
 SELECT a.id, a.actor_user_id, a.action, a.entity, a.entity_id, a.after, a.reason,
        a.approver_user_id, a.device_label, a.created_at,
@@ -223,7 +263,7 @@ func (q *Queries) LiveItemsOfOrders(ctx context.Context, orderIds []uuid.UUID) (
 
 const liveOpenOrders = `-- name: LiveOpenOrders :many
 
-SELECT o.id, o.type, o.table_id, o.guest_count, o.created_at, o.label, o.status,
+SELECT o.id, o.type, o.table_id, o.guest_count, o.created_at, o.label, o.status, o.bill_requested_at,
        COALESCE(t.name, '')::text AS table_name,
        COALESCE(u.name, '')::text AS waiter_name
 FROM orders o
@@ -234,15 +274,16 @@ ORDER BY o.created_at, o.id
 `
 
 type LiveOpenOrdersRow struct {
-	ID         uuid.UUID   `json:"id"`
-	Type       string      `json:"type"`
-	TableID    pgtype.UUID `json:"table_id"`
-	GuestCount int32       `json:"guest_count"`
-	CreatedAt  time.Time   `json:"created_at"`
-	Label      string      `json:"label"`
-	Status     string      `json:"status"`
-	TableName  string      `json:"table_name"`
-	WaiterName string      `json:"waiter_name"`
+	ID              uuid.UUID          `json:"id"`
+	Type            string             `json:"type"`
+	TableID         pgtype.UUID        `json:"table_id"`
+	GuestCount      int32              `json:"guest_count"`
+	CreatedAt       time.Time          `json:"created_at"`
+	Label           string             `json:"label"`
+	Status          string             `json:"status"`
+	BillRequestedAt pgtype.Timestamptz `json:"bill_requested_at"`
+	TableName       string             `json:"table_name"`
+	WaiterName      string             `json:"waiter_name"`
 }
 
 // Live view (owner/manager, read-only). Open = OPEN or BILLED (not closed yet).
@@ -263,6 +304,7 @@ func (q *Queries) LiveOpenOrders(ctx context.Context) ([]LiveOpenOrdersRow, erro
 			&i.CreatedAt,
 			&i.Label,
 			&i.Status,
+			&i.BillRequestedAt,
 			&i.TableName,
 			&i.WaiterName,
 		); err != nil {
@@ -277,7 +319,7 @@ func (q *Queries) LiveOpenOrders(ctx context.Context) ([]LiveOpenOrdersRow, erro
 }
 
 const liveOrderByID = `-- name: LiveOrderByID :one
-SELECT o.id, o.type, o.table_id, o.guest_count, o.created_at, o.label, o.status,
+SELECT o.id, o.type, o.table_id, o.guest_count, o.created_at, o.label, o.status, o.bill_requested_at,
        COALESCE(t.name, '')::text AS table_name,
        COALESCE(u.name, '')::text AS waiter_name
 FROM orders o
@@ -287,15 +329,16 @@ WHERE o.id = $1
 `
 
 type LiveOrderByIDRow struct {
-	ID         uuid.UUID   `json:"id"`
-	Type       string      `json:"type"`
-	TableID    pgtype.UUID `json:"table_id"`
-	GuestCount int32       `json:"guest_count"`
-	CreatedAt  time.Time   `json:"created_at"`
-	Label      string      `json:"label"`
-	Status     string      `json:"status"`
-	TableName  string      `json:"table_name"`
-	WaiterName string      `json:"waiter_name"`
+	ID              uuid.UUID          `json:"id"`
+	Type            string             `json:"type"`
+	TableID         pgtype.UUID        `json:"table_id"`
+	GuestCount      int32              `json:"guest_count"`
+	CreatedAt       time.Time          `json:"created_at"`
+	Label           string             `json:"label"`
+	Status          string             `json:"status"`
+	BillRequestedAt pgtype.Timestamptz `json:"bill_requested_at"`
+	TableName       string             `json:"table_name"`
+	WaiterName      string             `json:"waiter_name"`
 }
 
 func (q *Queries) LiveOrderByID(ctx context.Context, id uuid.UUID) (LiveOrderByIDRow, error) {
@@ -309,6 +352,7 @@ func (q *Queries) LiveOrderByID(ctx context.Context, id uuid.UUID) (LiveOrderByI
 		&i.CreatedAt,
 		&i.Label,
 		&i.Status,
+		&i.BillRequestedAt,
 		&i.TableName,
 		&i.WaiterName,
 	)

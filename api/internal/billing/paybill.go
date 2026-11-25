@@ -20,6 +20,7 @@ import (
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
 	"github.com/oneaccord/restro/api/internal/dbx"
 	"github.com/oneaccord/restro/api/internal/idem"
+	"github.com/oneaccord/restro/api/internal/loyalty"
 	"github.com/oneaccord/restro/api/internal/orders"
 	"github.com/oneaccord/restro/api/internal/realtime"
 )
@@ -92,7 +93,8 @@ func lockShift(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) (sqlc.Shi
 // customer before the invoice is numbered; a business account fills a blank buyer
 // name/PAN. Their ids are returned for the customer.updated event.
 func (s *Service) payBill(ctx context.Context, q *sqlc.Queries, actor *auth.Actor, shift sqlc.Shift, order sqlc.Order, items []sqlc.OrderItem, settings sqlc.Setting,
-	disc *restaurantv1.DiscountInput, buyerName, buyerPan, label string, tenders []tender, creditApproval *restaurantv1.ManagerApproval) (sqlc.Invoice, bool, []string, error) {
+	disc *restaurantv1.DiscountInput, buyerName, buyerPan, label string, tenders []tender, creditApproval *restaurantv1.ManagerApproval,
+	loyReq loyalty.Request) (sqlc.Invoice, bool, []string, error) {
 	subtotal, byItem, err := s.subtotalOf(ctx, q, order.ID, items)
 	if err != nil {
 		return sqlc.Invoice{}, false, nil, err
@@ -101,7 +103,13 @@ func (s *Service) payBill(ctx context.Context, q *sqlc.Queries, actor *auth.Acto
 	if err != nil {
 		return sqlc.Invoice{}, false, nil, err
 	}
-	total := s.compute(settings, subtotal, discount).Total
+	// Loyalty: the member and reward are checked under a lock on the member, so
+	// the reward check and the invoice number commit together.
+	loy, err := loyalty.Check(ctx, q, actor, loyReq, subtotal-discount, true)
+	if err != nil {
+		return sqlc.Invoice{}, false, nil, err
+	}
+	total := s.compute(settings, subtotal, discount, loy.RewardPaisa()).Total
 	var paid int64
 	for _, t := range tenders {
 		paid += t.amount
@@ -128,7 +136,10 @@ func (s *Service) payBill(ctx context.Context, q *sqlc.Queries, actor *auth.Acto
 		}
 	}
 
-	inv, err := s.issueInvoiceForItems(ctx, q, order, items, byItem, subtotal, settings, discount, reason, approvedBy, buyerName, buyerPan, actor, label)
+	if err := loy.Plan(ctx, q, order.ID, subtotal-discount-loy.RewardPaisa(), len(onAccount) > 0); err != nil {
+		return sqlc.Invoice{}, false, nil, err
+	}
+	inv, err := s.issueInvoiceForItems(ctx, q, order, items, byItem, subtotal, settings, discount, reason, approvedBy, buyerName, buyerPan, actor, label, loy)
 	if err != nil {
 		return sqlc.Invoice{}, false, nil, err
 	}
@@ -156,9 +167,12 @@ func (s *Service) payBill(ctx context.Context, q *sqlc.Queries, actor *auth.Acto
 			return sqlc.Invoice{}, false, nil, e
 		}
 	}
-	customers := make([]string, 0, len(checks))
+	customers := make([]string, 0, len(checks)+1)
 	for _, c := range checks {
 		customers = append(customers, c.Customer.ID.String())
+	}
+	if id := loy.CustomerID(); id != uuid.Nil {
+		customers = append(customers, id.String())
 	}
 
 	remaining, err := q.ListUnbilledOrderItems(ctx, order.ID)
@@ -213,7 +227,7 @@ func (s *Service) IssueBill(ctx context.Context, req *restaurantv1.IssueBillRequ
 		if e != nil {
 			return e
 		}
-		inv, closed, cust, e := s.payBill(ctx, q, actor, shift, order, items, settings, req.GetDiscount(), req.GetBuyerName(), req.GetBuyerPan(), "", tenders, req.GetCreditApproval())
+		inv, closed, cust, e := s.payBill(ctx, q, actor, shift, order, items, settings, req.GetDiscount(), req.GetBuyerName(), req.GetBuyerPan(), "", tenders, req.GetCreditApproval(), loyaltyRequest(req))
 		if e != nil {
 			return e
 		}
@@ -333,7 +347,7 @@ func (s *Service) CounterSale(ctx context.Context, req *restaurantv1.CounterSale
 		if e != nil {
 			return e
 		}
-		inv, _, cust, e := s.payBill(ctx, q, actor, shift, order, items, settings, req.GetDiscount(), req.GetBuyerName(), req.GetBuyerPan(), req.GetLabel(), tenders, req.GetCreditApproval())
+		inv, _, cust, e := s.payBill(ctx, q, actor, shift, order, items, settings, req.GetDiscount(), req.GetBuyerName(), req.GetBuyerPan(), req.GetLabel(), tenders, req.GetCreditApproval(), loyaltyRequest(req))
 		if e != nil {
 			return e
 		}

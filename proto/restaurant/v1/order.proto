@@ -91,6 +91,7 @@ message OrderItem {
   string invoice_id = 17;       // invoice the line is billed on; "" when unbilled
                                 // (cleared again when that invoice is cancelled)
   bool billed = 18;             // invoice_id != ""
+  string source = 19;           // "GUEST" when accepted from a guest order (guest.proto); "" otherwise
 }
 
 message Order {
@@ -107,6 +108,10 @@ message Order {
   string label = 10;            // free text, e.g. a takeaway customer name; "" when none
   string waiter_name = 11;      // display name of waiter_user_id
   int64 created_at_unix = 12;
+  string reservation_id = 13;    // the booking seated onto this order (reservations.proto); "" when none
+  // When a guest tapped Ask for bill (guest.proto); 0 = none. Cleared when staff mark
+  // the alert Done or a bill is issued on the order.
+  int64 bill_requested_at_unix = 14;
 }
 
 // ---- queries ----
@@ -182,6 +187,8 @@ message SendItemsRequest {
   optional string user_id = 4; // see WRONG USER above
 }
 
+// item_id (VoidItem) and item_ids (MarkServed, SendItems) accept a line's server id
+// or its client_id (OrderItem.client_id).
 message VoidItemRequest {
   string command_id = 1 [(buf.validate.field).string.min_len = 1];
   string order_client_id = 2 [(buf.validate.field).string.min_len = 1];

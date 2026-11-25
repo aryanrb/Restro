@@ -45,7 +45,7 @@ func (q *Queries) CreateArea(ctx context.Context, arg CreateAreaParams) (Area, e
 }
 
 const createTable = `-- name: CreateTable :one
-INSERT INTO dining_tables (area_id, name, seats, active, sort) VALUES ($1, $2, $3, $4, $5) RETURNING id, area_id, name, seats, sort, active
+INSERT INTO dining_tables (area_id, name, seats, active, sort) VALUES ($1, $2, $3, $4, $5) RETURNING id, area_id, name, seats, sort, active, guest_code, guest_ordering
 `
 
 type CreateTableParams struct {
@@ -72,6 +72,8 @@ func (q *Queries) CreateTable(ctx context.Context, arg CreateTableParams) (Dinin
 		&i.Seats,
 		&i.Sort,
 		&i.Active,
+		&i.GuestCode,
+		&i.GuestOrdering,
 	)
 	return i, err
 }
@@ -102,7 +104,7 @@ func (q *Queries) GetArea(ctx context.Context, id uuid.UUID) (Area, error) {
 }
 
 const getTable = `-- name: GetTable :one
-SELECT id, area_id, name, seats, sort, active FROM dining_tables WHERE id = $1
+SELECT id, area_id, name, seats, sort, active, guest_code, guest_ordering FROM dining_tables WHERE id = $1
 `
 
 func (q *Queries) GetTable(ctx context.Context, id uuid.UUID) (DiningTable, error) {
@@ -115,6 +117,8 @@ func (q *Queries) GetTable(ctx context.Context, id uuid.UUID) (DiningTable, erro
 		&i.Seats,
 		&i.Sort,
 		&i.Active,
+		&i.GuestCode,
+		&i.GuestOrdering,
 	)
 	return i, err
 }
@@ -149,7 +153,7 @@ func (q *Queries) ListAreas(ctx context.Context) ([]Area, error) {
 }
 
 const listTables = `-- name: ListTables :many
-SELECT id, area_id, name, seats, sort, active FROM dining_tables ORDER BY sort, name
+SELECT id, area_id, name, seats, sort, active, guest_code, guest_ordering FROM dining_tables ORDER BY sort, name
 `
 
 func (q *Queries) ListTables(ctx context.Context) ([]DiningTable, error) {
@@ -168,6 +172,8 @@ func (q *Queries) ListTables(ctx context.Context) ([]DiningTable, error) {
 			&i.Seats,
 			&i.Sort,
 			&i.Active,
+			&i.GuestCode,
+			&i.GuestOrdering,
 		); err != nil {
 			return nil, err
 		}
@@ -180,7 +186,7 @@ func (q *Queries) ListTables(ctx context.Context) ([]DiningTable, error) {
 }
 
 const listTablesInArea = `-- name: ListTablesInArea :many
-SELECT id, area_id, name, seats, sort, active FROM dining_tables WHERE area_id = $1 ORDER BY sort, name
+SELECT id, area_id, name, seats, sort, active, guest_code, guest_ordering FROM dining_tables WHERE area_id = $1 ORDER BY sort, name
 `
 
 func (q *Queries) ListTablesInArea(ctx context.Context, areaID uuid.UUID) ([]DiningTable, error) {
@@ -199,6 +205,8 @@ func (q *Queries) ListTablesInArea(ctx context.Context, areaID uuid.UUID) ([]Din
 			&i.Seats,
 			&i.Sort,
 			&i.Active,
+			&i.GuestCode,
+			&i.GuestOrdering,
 		); err != nil {
 			return nil, err
 		}
@@ -270,7 +278,7 @@ func (q *Queries) UpdateAreaSort(ctx context.Context, arg UpdateAreaSortParams) 
 }
 
 const updateTable = `-- name: UpdateTable :one
-UPDATE dining_tables SET area_id = $2, name = $3, seats = $4, active = $5, sort = $6 WHERE id = $1 RETURNING id, area_id, name, seats, sort, active
+UPDATE dining_tables SET area_id = $2, name = $3, seats = $4, active = $5, sort = $6 WHERE id = $1 RETURNING id, area_id, name, seats, sort, active, guest_code, guest_ordering
 `
 
 type UpdateTableParams struct {
@@ -299,6 +307,8 @@ func (q *Queries) UpdateTable(ctx context.Context, arg UpdateTableParams) (Dinin
 		&i.Seats,
 		&i.Sort,
 		&i.Active,
+		&i.GuestCode,
+		&i.GuestOrdering,
 	)
 	return i, err
 }

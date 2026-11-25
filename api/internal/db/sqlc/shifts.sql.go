@@ -201,6 +201,69 @@ func (q *Queries) ListShiftAdjustments(ctx context.Context, shiftID uuid.UUID) (
 	return items, nil
 }
 
+const listShiftPaidOuts = `-- name: ListShiftPaidOuts :many
+SELECT t.kind::text AS kind, t.ref_id::uuid AS ref_id, t.ref::text AS ref, t.supplier_name::text AS supplier_name,
+       t.amount::bigint AS amount_paisa, COALESCE(u.name, '')::text AS by_name, t.at::timestamptz AS at
+FROM (
+    SELECT 'SUPPLIER_PAYMENT' AS kind, sp.id AS ref_id, 'SP-' || sp.number AS ref, sp.supplier_name, sp.amount_paisa AS amount,
+           sp.paid_by_user_id AS by_id, sp.at
+    FROM supplier_payments sp
+    WHERE sp.method = 'TILL' AND sp.shift_id = $1::uuid
+      AND NOT (sp.voided_at IS NOT NULL AND sp.void_shift_id IS NULL)
+    UNION ALL
+    SELECT 'SUPPLIER_PAYMENT_VOID', sp.id, 'SP-' || sp.number, sp.supplier_name, -sp.amount_paisa, sp.voided_by_user_id, sp.voided_at
+    FROM supplier_payments sp
+    WHERE sp.void_shift_id = $1::uuid
+    UNION ALL
+    SELECT 'SUPPLIER_REFUND', r.id, 'P-' || p.number, p.supplier_name, -r.refund_paisa, r.by_user_id, r.at
+    FROM purchase_returns r JOIN purchases p ON p.id = r.purchase_id
+    WHERE r.refund_shift_id = $1::uuid AND r.refund_paisa > 0
+) t
+LEFT JOIN users u ON u.id = t.by_id
+ORDER BY t.at, t.ref_id
+`
+
+type ListShiftPaidOutsRow struct {
+	Kind         string    `json:"kind"`
+	RefID        uuid.UUID `json:"ref_id"`
+	Ref          string    `json:"ref"`
+	SupplierName string    `json:"supplier_name"`
+	AmountPaisa  int64     `json:"amount_paisa"`
+	ByName       string    `json:"by_name"`
+	At           time.Time `json:"at"`
+}
+
+// Supplier cash out of / back into the shift's drawer (purchases): till payments
+// (+; one voided while its shift was still open never counts), till payments from
+// a closed shift voided in this one (-), and refunds handed back on returns (-).
+func (q *Queries) ListShiftPaidOuts(ctx context.Context, shiftID uuid.UUID) ([]ListShiftPaidOutsRow, error) {
+	rows, err := q.db.Query(ctx, listShiftPaidOuts, shiftID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListShiftPaidOutsRow{}
+	for rows.Next() {
+		var i ListShiftPaidOutsRow
+		if err := rows.Scan(
+			&i.Kind,
+			&i.RefID,
+			&i.Ref,
+			&i.SupplierName,
+			&i.AmountPaisa,
+			&i.ByName,
+			&i.At,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listShiftPayments = `-- name: ListShiftPayments :many
 SELECT p.id, p.invoice_id, p.method, p.amount_paisa, p.reference, p.status, p.created_at,
        i.number AS invoice_number, i.fiscal_year, i.mode, i.status AS invoice_status

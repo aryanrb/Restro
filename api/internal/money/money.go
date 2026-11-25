@@ -1,7 +1,7 @@
 // Package money computes invoice totals in integer paisa. All tax maths is here
 // and nowhere else; clients only display what this returns.
 //
-// Order of operations (design §8): subtotal − discount + service charge → VAT → total.
+// Order of operations (design §8): subtotal − discount − loyalty reward + service charge → VAT → total.
 // VAT is rounded half-up once, at the invoice level. Prices are VAT-inclusive by
 // default (VAT = gross × rate/(10000+rate), i.e. 13/113 at 13%).
 //
@@ -16,6 +16,7 @@ package money
 type Input struct {
 	Subtotal             int64
 	Discount             int64
+	Reward               int64 // loyalty reward: a price reduction before VAT, after the discount
 	ServiceChargeEnabled bool
 	ServiceChargeRateBp  int32
 	VatRegistered        bool
@@ -28,6 +29,7 @@ type Input struct {
 type Result struct {
 	Subtotal           int64
 	Discount           int64
+	Reward             int64
 	ServiceCharge      int64
 	Taxable            int64
 	Vat                int64
@@ -45,6 +47,10 @@ func Compute(in Input) Result {
 	if discounted < 0 {
 		discounted = 0
 	}
+	// Loyalty reward (loyalty design "On the bill"): subtotal − discount − reward →
+	// service charge → VAT. Never more than what is left after the discount.
+	r.Reward = min(max(in.Reward, 0), discounted)
+	discounted -= r.Reward
 	if in.ServiceChargeEnabled && in.ServiceChargeRateBp > 0 {
 		r.ServiceCharge = roundDiv(discounted*int64(in.ServiceChargeRateBp), 10000)
 	}

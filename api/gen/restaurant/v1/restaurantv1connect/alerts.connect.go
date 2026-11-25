@@ -55,6 +55,15 @@ const (
 	// AlertServiceListNotificationsProcedure is the fully-qualified name of the AlertService's
 	// ListNotifications RPC.
 	AlertServiceListNotificationsProcedure = "/restaurant.v1.AlertService/ListNotifications"
+	// AlertServiceGetPushConfigProcedure is the fully-qualified name of the AlertService's
+	// GetPushConfig RPC.
+	AlertServiceGetPushConfigProcedure = "/restaurant.v1.AlertService/GetPushConfig"
+	// AlertServiceSavePushSubscriptionProcedure is the fully-qualified name of the AlertService's
+	// SavePushSubscription RPC.
+	AlertServiceSavePushSubscriptionProcedure = "/restaurant.v1.AlertService/SavePushSubscription"
+	// AlertServiceDeletePushSubscriptionProcedure is the fully-qualified name of the AlertService's
+	// DeletePushSubscription RPC.
+	AlertServiceDeletePushSubscriptionProcedure = "/restaurant.v1.AlertService/DeletePushSubscription"
 )
 
 // AlertServiceClient is a client for the restaurant.v1.AlertService service.
@@ -68,6 +77,11 @@ type AlertServiceClient interface {
 	UpdateAlertConfig(context.Context, *connect.Request[v1.UpdateAlertConfigRequest]) (*connect.Response[v1.AlertConfig], error)
 	GetDaySummary(context.Context, *connect.Request[v1.GetDaySummaryRequest]) (*connect.Response[v1.DaySummary], error)
 	ListNotifications(context.Context, *connect.Request[v1.ListNotificationsRequest]) (*connect.Response[v1.ListNotificationsResponse], error)
+	// Web Push: owner or manager. Sending applies quiet hours, the daily cap and
+	// the recipient list exactly like ListNotifications.
+	GetPushConfig(context.Context, *connect.Request[v1.GetPushConfigRequest]) (*connect.Response[v1.GetPushConfigResponse], error)
+	SavePushSubscription(context.Context, *connect.Request[v1.SavePushSubscriptionRequest]) (*connect.Response[v1.SavePushSubscriptionResponse], error)
+	DeletePushSubscription(context.Context, *connect.Request[v1.DeletePushSubscriptionRequest]) (*connect.Response[v1.DeletePushSubscriptionResponse], error)
 }
 
 // NewAlertServiceClient constructs a client for the restaurant.v1.AlertService service. By default,
@@ -129,19 +143,40 @@ func NewAlertServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(alertServiceMethods.ByName("ListNotifications")),
 			connect.WithClientOptions(opts...),
 		),
+		getPushConfig: connect.NewClient[v1.GetPushConfigRequest, v1.GetPushConfigResponse](
+			httpClient,
+			baseURL+AlertServiceGetPushConfigProcedure,
+			connect.WithSchema(alertServiceMethods.ByName("GetPushConfig")),
+			connect.WithClientOptions(opts...),
+		),
+		savePushSubscription: connect.NewClient[v1.SavePushSubscriptionRequest, v1.SavePushSubscriptionResponse](
+			httpClient,
+			baseURL+AlertServiceSavePushSubscriptionProcedure,
+			connect.WithSchema(alertServiceMethods.ByName("SavePushSubscription")),
+			connect.WithClientOptions(opts...),
+		),
+		deletePushSubscription: connect.NewClient[v1.DeletePushSubscriptionRequest, v1.DeletePushSubscriptionResponse](
+			httpClient,
+			baseURL+AlertServiceDeletePushSubscriptionProcedure,
+			connect.WithSchema(alertServiceMethods.ByName("DeletePushSubscription")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // alertServiceClient implements AlertServiceClient.
 type alertServiceClient struct {
-	listAlerts        *connect.Client[v1.ListAlertsRequest, v1.ListAlertsResponse]
-	getAlert          *connect.Client[v1.GetAlertRequest, v1.GetAlertResponse]
-	resolveAlerts     *connect.Client[v1.ResolveAlertsRequest, v1.ResolveAlertsResponse]
-	getAlertCounts    *connect.Client[v1.GetAlertCountsRequest, v1.GetAlertCountsResponse]
-	getAlertConfig    *connect.Client[v1.GetAlertConfigRequest, v1.AlertConfig]
-	updateAlertConfig *connect.Client[v1.UpdateAlertConfigRequest, v1.AlertConfig]
-	getDaySummary     *connect.Client[v1.GetDaySummaryRequest, v1.DaySummary]
-	listNotifications *connect.Client[v1.ListNotificationsRequest, v1.ListNotificationsResponse]
+	listAlerts             *connect.Client[v1.ListAlertsRequest, v1.ListAlertsResponse]
+	getAlert               *connect.Client[v1.GetAlertRequest, v1.GetAlertResponse]
+	resolveAlerts          *connect.Client[v1.ResolveAlertsRequest, v1.ResolveAlertsResponse]
+	getAlertCounts         *connect.Client[v1.GetAlertCountsRequest, v1.GetAlertCountsResponse]
+	getAlertConfig         *connect.Client[v1.GetAlertConfigRequest, v1.AlertConfig]
+	updateAlertConfig      *connect.Client[v1.UpdateAlertConfigRequest, v1.AlertConfig]
+	getDaySummary          *connect.Client[v1.GetDaySummaryRequest, v1.DaySummary]
+	listNotifications      *connect.Client[v1.ListNotificationsRequest, v1.ListNotificationsResponse]
+	getPushConfig          *connect.Client[v1.GetPushConfigRequest, v1.GetPushConfigResponse]
+	savePushSubscription   *connect.Client[v1.SavePushSubscriptionRequest, v1.SavePushSubscriptionResponse]
+	deletePushSubscription *connect.Client[v1.DeletePushSubscriptionRequest, v1.DeletePushSubscriptionResponse]
 }
 
 // ListAlerts calls restaurant.v1.AlertService.ListAlerts.
@@ -184,6 +219,21 @@ func (c *alertServiceClient) ListNotifications(ctx context.Context, req *connect
 	return c.listNotifications.CallUnary(ctx, req)
 }
 
+// GetPushConfig calls restaurant.v1.AlertService.GetPushConfig.
+func (c *alertServiceClient) GetPushConfig(ctx context.Context, req *connect.Request[v1.GetPushConfigRequest]) (*connect.Response[v1.GetPushConfigResponse], error) {
+	return c.getPushConfig.CallUnary(ctx, req)
+}
+
+// SavePushSubscription calls restaurant.v1.AlertService.SavePushSubscription.
+func (c *alertServiceClient) SavePushSubscription(ctx context.Context, req *connect.Request[v1.SavePushSubscriptionRequest]) (*connect.Response[v1.SavePushSubscriptionResponse], error) {
+	return c.savePushSubscription.CallUnary(ctx, req)
+}
+
+// DeletePushSubscription calls restaurant.v1.AlertService.DeletePushSubscription.
+func (c *alertServiceClient) DeletePushSubscription(ctx context.Context, req *connect.Request[v1.DeletePushSubscriptionRequest]) (*connect.Response[v1.DeletePushSubscriptionResponse], error) {
+	return c.deletePushSubscription.CallUnary(ctx, req)
+}
+
 // AlertServiceHandler is an implementation of the restaurant.v1.AlertService service.
 type AlertServiceHandler interface {
 	ListAlerts(context.Context, *connect.Request[v1.ListAlertsRequest]) (*connect.Response[v1.ListAlertsResponse], error)
@@ -195,6 +245,11 @@ type AlertServiceHandler interface {
 	UpdateAlertConfig(context.Context, *connect.Request[v1.UpdateAlertConfigRequest]) (*connect.Response[v1.AlertConfig], error)
 	GetDaySummary(context.Context, *connect.Request[v1.GetDaySummaryRequest]) (*connect.Response[v1.DaySummary], error)
 	ListNotifications(context.Context, *connect.Request[v1.ListNotificationsRequest]) (*connect.Response[v1.ListNotificationsResponse], error)
+	// Web Push: owner or manager. Sending applies quiet hours, the daily cap and
+	// the recipient list exactly like ListNotifications.
+	GetPushConfig(context.Context, *connect.Request[v1.GetPushConfigRequest]) (*connect.Response[v1.GetPushConfigResponse], error)
+	SavePushSubscription(context.Context, *connect.Request[v1.SavePushSubscriptionRequest]) (*connect.Response[v1.SavePushSubscriptionResponse], error)
+	DeletePushSubscription(context.Context, *connect.Request[v1.DeletePushSubscriptionRequest]) (*connect.Response[v1.DeletePushSubscriptionResponse], error)
 }
 
 // NewAlertServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -252,6 +307,24 @@ func NewAlertServiceHandler(svc AlertServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(alertServiceMethods.ByName("ListNotifications")),
 		connect.WithHandlerOptions(opts...),
 	)
+	alertServiceGetPushConfigHandler := connect.NewUnaryHandler(
+		AlertServiceGetPushConfigProcedure,
+		svc.GetPushConfig,
+		connect.WithSchema(alertServiceMethods.ByName("GetPushConfig")),
+		connect.WithHandlerOptions(opts...),
+	)
+	alertServiceSavePushSubscriptionHandler := connect.NewUnaryHandler(
+		AlertServiceSavePushSubscriptionProcedure,
+		svc.SavePushSubscription,
+		connect.WithSchema(alertServiceMethods.ByName("SavePushSubscription")),
+		connect.WithHandlerOptions(opts...),
+	)
+	alertServiceDeletePushSubscriptionHandler := connect.NewUnaryHandler(
+		AlertServiceDeletePushSubscriptionProcedure,
+		svc.DeletePushSubscription,
+		connect.WithSchema(alertServiceMethods.ByName("DeletePushSubscription")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/restaurant.v1.AlertService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AlertServiceListAlertsProcedure:
@@ -270,6 +343,12 @@ func NewAlertServiceHandler(svc AlertServiceHandler, opts ...connect.HandlerOpti
 			alertServiceGetDaySummaryHandler.ServeHTTP(w, r)
 		case AlertServiceListNotificationsProcedure:
 			alertServiceListNotificationsHandler.ServeHTTP(w, r)
+		case AlertServiceGetPushConfigProcedure:
+			alertServiceGetPushConfigHandler.ServeHTTP(w, r)
+		case AlertServiceSavePushSubscriptionProcedure:
+			alertServiceSavePushSubscriptionHandler.ServeHTTP(w, r)
+		case AlertServiceDeletePushSubscriptionProcedure:
+			alertServiceDeletePushSubscriptionHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -309,4 +388,16 @@ func (UnimplementedAlertServiceHandler) GetDaySummary(context.Context, *connect.
 
 func (UnimplementedAlertServiceHandler) ListNotifications(context.Context, *connect.Request[v1.ListNotificationsRequest]) (*connect.Response[v1.ListNotificationsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.AlertService.ListNotifications is not implemented"))
+}
+
+func (UnimplementedAlertServiceHandler) GetPushConfig(context.Context, *connect.Request[v1.GetPushConfigRequest]) (*connect.Response[v1.GetPushConfigResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.AlertService.GetPushConfig is not implemented"))
+}
+
+func (UnimplementedAlertServiceHandler) SavePushSubscription(context.Context, *connect.Request[v1.SavePushSubscriptionRequest]) (*connect.Response[v1.SavePushSubscriptionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.AlertService.SavePushSubscription is not implemented"))
+}
+
+func (UnimplementedAlertServiceHandler) DeletePushSubscription(context.Context, *connect.Request[v1.DeletePushSubscriptionRequest]) (*connect.Response[v1.DeletePushSubscriptionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.AlertService.DeletePushSubscription is not implemented"))
 }

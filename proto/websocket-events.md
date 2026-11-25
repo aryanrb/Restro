@@ -50,6 +50,7 @@ query via Connect; a missed or out-of-order event can only delay state, never co
 | `station.updated`  | station id          | station added/renamed/removed                             | admin, kitchen   |
 | `invoice.issued`   | invoice id          | `IssueBill` / `CounterSale` issued (and paid) an invoice  | cashier, owner   |
 | `customer.updated` | customer id         | credit account created/edited/limit/(de)activated; its balance changed (on-account bill issued or cancelled, repayment taken or voided) | cashier, owner |
+| `reservation.updated` | reservation id, or `settings` | booking created/changed/cancelled/no-show/restored/seated/keep-waiting/messaged; reservation settings saved (floor screens also refetch on a minute tick for hold/late) | all but kitchen |
 
 ### Inventory (InventoryService, recipes on MenuService)
 
@@ -71,9 +72,27 @@ request's transaction committed (server-side `inventory.EventsInterceptor`).
 |-----------------|-----------|----------------------------------------------------------------------|-------------|
 | `alert.created` | alert id  | an audited write fired a rule and opened a new alert (`version` = alert version) | owner, manager recipients |
 | `alert.updated` | alert id  | a repeat firing grouped into the open alert, or it was resolved      | owner, manager recipients |
+| `audit.created` | audit_log id | any audit_log row was written (voids, discounts, cancels, reprints, 86s, logins, settings…); sent after the request like the alert events | owner, manager (live view) |
 
 `settings.updated` with id `alerts` when the alert config changes. Like every event
 these are broadcast to all sessions (see Scoping); the alert RPCs enforce who may read.
+
+### Guest table ordering (GuestService, GuestDeskService)
+
+| `type`          | `id` is…         | When                                                                 | Who listens |
+|-----------------|------------------|----------------------------------------------------------------------|-------------|
+| `guest.request` | guest request id | a guest order / Call waiter / Ask for bill was created, accepted, rejected or done | floor, counter |
+| `guest.status`  | table id         | that table's guest requests changed, its per-table switch changed or its code was regenerated | guest page |
+
+Accept also sends `ticket.created` + `order.updated`; Ask for bill and its Done send
+`order.updated` (bill_requested_at). A bill issued on the order clears the request in
+its transaction (no `guest.request` then; staff screens refetch on `order.updated`).
+
+**Public guest socket** `GET /api/guest/ws?t=<table code>` — no session; 404 for an
+unknown code. It only ever sends `{"type":"guest.status","id":<table id>}` for that
+table: on its `guest.status`, on `order.updated` of one of its orders, and on
+`settings.updated`. It closes (policy violation) once the code stops working. Fallback:
+poll `GetGuestStatus` every 15 s.
 
 ### Later plans (reserved names — do not reuse)
 

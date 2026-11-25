@@ -243,7 +243,7 @@ func (s *Service) SendItems(ctx context.Context, req *restaurantv1.SendItemsRequ
 			if it.Status != "DRAFT" {
 				continue
 			}
-			if len(want) == 0 || want[it.ID.String()] {
+			if len(want) == 0 || want[it.ID.String()] || want[it.ClientID.String()] {
 				sendIDs = append(sendIDs, it.ID)
 			}
 		}
@@ -311,6 +311,11 @@ func (s *Service) VoidItem(ctx context.Context, req *restaurantv1.VoidItemReques
 		if e := requireOpen(order); e != nil {
 			return e
 		}
+		resolved, e := ResolveItemIDs(ctx, q, []uuid.UUID{itemID})
+		if e != nil {
+			return e
+		}
+		itemID = resolved[0]
 		item, e := q.GetOrderItem(ctx, itemID)
 		if errors.Is(e, pgx.ErrNoRows) || (e == nil && item.OrderID != order.ID) {
 			return connecterr.NotFound("item not found on this order")
@@ -432,6 +437,9 @@ func (s *Service) MarkServed(ctx context.Context, req *restaurantv1.MarkServedRe
 			return connecterr.Internal(e)
 		}
 		if e := requireServable(order); e != nil {
+			return e
+		}
+		if ids, e = ResolveItemIDs(ctx, q, ids); e != nil {
 			return e
 		}
 		if e := q.SetOrderItemStatus(ctx, sqlc.SetOrderItemStatusParams{

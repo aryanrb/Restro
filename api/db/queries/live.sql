@@ -1,7 +1,7 @@
 -- Live view (owner/manager, read-only). Open = OPEN or BILLED (not closed yet).
 
 -- name: LiveOpenOrders :many
-SELECT o.id, o.type, o.table_id, o.guest_count, o.created_at, o.label, o.status,
+SELECT o.id, o.type, o.table_id, o.guest_count, o.created_at, o.label, o.status, o.bill_requested_at,
        COALESCE(t.name, '')::text AS table_name,
        COALESCE(u.name, '')::text AS waiter_name
 FROM orders o
@@ -11,7 +11,7 @@ WHERE o.status IN ('OPEN', 'BILLED')
 ORDER BY o.created_at, o.id;
 
 -- name: LiveOrderByID :one
-SELECT o.id, o.type, o.table_id, o.guest_count, o.created_at, o.label, o.status,
+SELECT o.id, o.type, o.table_id, o.guest_count, o.created_at, o.label, o.status, o.bill_requested_at,
        COALESCE(t.name, '')::text AS table_name,
        COALESCE(u.name, '')::text AS waiter_name
 FROM orders o
@@ -72,3 +72,12 @@ WHERE a.created_at >= @since
        OR (a.action = 'invoice.issue' AND inv.discount_paisa > 0))
 ORDER BY a.created_at DESC, a.id DESC
 LIMIT 50;
+
+-- The newest alert each of the given audit entries fed (alerts.audit_ids), minus
+-- alerts about hide_for (a manager never sees alerts involving themselves).
+-- name: LiveExceptionAlerts :many
+SELECT DISTINCT ON (x.audit_id) x.audit_id::bigint AS audit_id, al.id AS alert_id
+FROM alerts al, unnest(al.audit_ids) AS x(audit_id)
+WHERE x.audit_id = ANY(@audit_ids::bigint[])
+  AND (sqlc.narg('hide_for')::uuid IS NULL OR NOT (sqlc.narg('hide_for')::uuid = ANY (al.involved_ids)))
+ORDER BY x.audit_id, al.seq DESC;

@@ -4,6 +4,7 @@ package restaurant.v1;
 
 import "buf/validate/validate.proto";
 import "restaurant/v1/common.proto";
+import "restaurant/v1/loyalty.proto";
 import "restaurant/v1/order.proto";
 import "restaurant/v1/settings.proto";
 
@@ -124,6 +125,10 @@ message Invoice {
   string cancel_approved_by_user_id = 31;
   // Every print, oldest first; prints[0] is the original.
   repeated InvoicePrint prints = 32;
+  // --- loyalty (captured at issue time, immutable) ---
+  int64 reward_paisa = 33;               // loyalty reward: a discount before VAT, apart from discount_paisa
+  string customer_id = 34;               // the loyalty member on the bill ("" = none)
+  LoyaltySnapshot loyalty_snapshot = 35; // the card as printed on this bill
 }
 
 // Computed-but-not-persisted preview of a bill.
@@ -135,11 +140,32 @@ message BillPreview {
   int64 vat_paisa = 5;
   int64 rounding_paisa = 6;
   int64 total_paisa = 7;
+  // loyalty (only with a member): the reward used, whether this bill earns a
+  // stamp (an on-account bill's stamp waits until repaid) and the stamps after it.
+  int64 reward_paisa = 8;
+  optional bool earns_stamp = 9;
+  optional int32 stamps_after = 10;
 }
 
 message PreviewBillRequest {
   string order_client_id = 1 [(buf.validate.field).string.min_len = 1];
   optional DiscountInput discount = 2;
+  string customer_id = 3;  // loyalty member (as IssueBillRequest)
+  bool redeem_reward = 4;
+  bool redeem_birthday = 5;
+  // Empty = every unbilled, non-voided item; otherwise exactly these (a split
+  // bill, as IssueBillRequest.item_ids; same INVALID field "item_ids" errors).
+  repeated string item_ids = 6;
+}
+
+// Counter (pay first) preview: prices the lines against the live menu without
+// creating anything. Any rejected line is INVALID field "lines" (as CounterSale).
+message PreviewCounterSaleRequest {
+  repeated NewItem lines = 1;
+  optional DiscountInput discount = 2;
+  string customer_id = 3; // loyalty, as CounterSaleRequest
+  bool redeem_reward = 4;
+  bool redeem_birthday = 5;
 }
 
 message IssueFullBillRequest {
@@ -222,6 +248,11 @@ message IssueBillRequest {
   // this bill (separate from the discount approval). A bad PIN is reported with
   // field "credit_approval".
   optional ManagerApproval credit_approval = 8;
+  // Loyalty: the member (attached before issue only) and whether to use a ready
+  // reward or the birthday reward (one per bill; see loyalty.proto).
+  string customer_id = 9;
+  bool redeem_reward = 10;
+  bool redeem_birthday = 11;
 }
 
 // Counter (pay first): creates a TAKEAWAY order, its lines already SENT, and the
@@ -237,6 +268,9 @@ message CounterSaleRequest {
   string buyer_pan = 7;
   repeated PaymentInput payments = 8;
   optional ManagerApproval credit_approval = 9; // as IssueBillRequest.credit_approval
+  string customer_id = 10; // loyalty, as IssueBillRequest
+  bool redeem_reward = 11;
+  bool redeem_birthday = 12;
 }
 
 // AD half-open range [from_unix, to_unix) in unix seconds.
@@ -269,4 +303,5 @@ service BillingService {
   rpc IssueBill(IssueBillRequest) returns (Invoice);                // issue + pay in one step
   rpc CounterSale(CounterSaleRequest) returns (Invoice);            // takeaway order + paid invoice in one step
   rpc ListInvoices(ListInvoicesRequest) returns (ListInvoicesResponse);
+  rpc PreviewCounterSale(PreviewCounterSaleRequest) returns (BillPreview); // counter cart, nothing persisted
 }

@@ -30,7 +30,7 @@ func (q *Queries) AllocateRepaymentNumber(ctx context.Context) (int32, error) {
 const createCustomer = `-- name: CreateCustomer :one
 INSERT INTO customers (name, phone, notes, pan, address, contact_person, created_by_user_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, name, phone, notes, credit_limit_paisa, active, pan, address, contact_person, created_by_user_id, created_at, updated_at
+RETURNING id, name, phone, notes, credit_limit_paisa, active, pan, address, contact_person, created_by_user_id, created_at, updated_at, credit_account, loyalty_member, loyalty_joined_at, loyalty_joined_by_user_id, loyalty_consent_at, birth_month_bs, card_token
 `
 
 type CreateCustomerParams struct {
@@ -67,6 +67,13 @@ func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) 
 		&i.CreatedByUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CreditAccount,
+		&i.LoyaltyMember,
+		&i.LoyaltyJoinedAt,
+		&i.LoyaltyJoinedByUserID,
+		&i.LoyaltyConsentAt,
+		&i.BirthMonthBs,
+		&i.CardToken,
 	)
 	return i, err
 }
@@ -223,25 +230,32 @@ func (q *Queries) CustomerIDByPhone(ctx context.Context, phone string) (uuid.UUI
 }
 
 const getCustomerWithBalance = `-- name: GetCustomerWithBalance :one
-SELECT c.id, c.name, c.phone, c.notes, c.credit_limit_paisa, c.active, c.pan, c.address, c.contact_person, c.created_by_user_id, c.created_at, c.updated_at, b.balance_paisa
+SELECT c.id, c.name, c.phone, c.notes, c.credit_limit_paisa, c.active, c.pan, c.address, c.contact_person, c.created_by_user_id, c.created_at, c.updated_at, c.credit_account, c.loyalty_member, c.loyalty_joined_at, c.loyalty_joined_by_user_id, c.loyalty_consent_at, c.birth_month_bs, c.card_token, b.balance_paisa
 FROM customers c JOIN customer_balances b ON b.customer_id = c.id
 WHERE c.id = $1
 `
 
 type GetCustomerWithBalanceRow struct {
-	ID               uuid.UUID   `json:"id"`
-	Name             string      `json:"name"`
-	Phone            string      `json:"phone"`
-	Notes            string      `json:"notes"`
-	CreditLimitPaisa int64       `json:"credit_limit_paisa"`
-	Active           bool        `json:"active"`
-	Pan              string      `json:"pan"`
-	Address          string      `json:"address"`
-	ContactPerson    string      `json:"contact_person"`
-	CreatedByUserID  pgtype.UUID `json:"created_by_user_id"`
-	CreatedAt        time.Time   `json:"created_at"`
-	UpdatedAt        time.Time   `json:"updated_at"`
-	BalancePaisa     int64       `json:"balance_paisa"`
+	ID                    uuid.UUID          `json:"id"`
+	Name                  string             `json:"name"`
+	Phone                 string             `json:"phone"`
+	Notes                 string             `json:"notes"`
+	CreditLimitPaisa      int64              `json:"credit_limit_paisa"`
+	Active                bool               `json:"active"`
+	Pan                   string             `json:"pan"`
+	Address               string             `json:"address"`
+	ContactPerson         string             `json:"contact_person"`
+	CreatedByUserID       pgtype.UUID        `json:"created_by_user_id"`
+	CreatedAt             time.Time          `json:"created_at"`
+	UpdatedAt             time.Time          `json:"updated_at"`
+	CreditAccount         bool               `json:"credit_account"`
+	LoyaltyMember         bool               `json:"loyalty_member"`
+	LoyaltyJoinedAt       pgtype.Timestamptz `json:"loyalty_joined_at"`
+	LoyaltyJoinedByUserID pgtype.UUID        `json:"loyalty_joined_by_user_id"`
+	LoyaltyConsentAt      pgtype.Timestamptz `json:"loyalty_consent_at"`
+	BirthMonthBs          pgtype.Int2        `json:"birth_month_bs"`
+	CardToken             pgtype.Text        `json:"card_token"`
+	BalancePaisa          int64              `json:"balance_paisa"`
 }
 
 func (q *Queries) GetCustomerWithBalance(ctx context.Context, id uuid.UUID) (GetCustomerWithBalanceRow, error) {
@@ -260,6 +274,13 @@ func (q *Queries) GetCustomerWithBalance(ctx context.Context, id uuid.UUID) (Get
 		&i.CreatedByUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CreditAccount,
+		&i.LoyaltyMember,
+		&i.LoyaltyJoinedAt,
+		&i.LoyaltyJoinedByUserID,
+		&i.LoyaltyConsentAt,
+		&i.BirthMonthBs,
+		&i.CardToken,
 		&i.BalancePaisa,
 	)
 	return i, err
@@ -375,25 +396,32 @@ func (q *Queries) ListCreditCharges(ctx context.Context, customerID pgtype.UUID)
 
 const listCustomersWithBalance = `-- name: ListCustomersWithBalance :many
 
-SELECT c.id, c.name, c.phone, c.notes, c.credit_limit_paisa, c.active, c.pan, c.address, c.contact_person, c.created_by_user_id, c.created_at, c.updated_at, b.balance_paisa
+SELECT c.id, c.name, c.phone, c.notes, c.credit_limit_paisa, c.active, c.pan, c.address, c.contact_person, c.created_by_user_id, c.created_at, c.updated_at, c.credit_account, c.loyalty_member, c.loyalty_joined_at, c.loyalty_joined_by_user_id, c.loyalty_consent_at, c.birth_month_bs, c.card_token, b.balance_paisa
 FROM customers c JOIN customer_balances b ON b.customer_id = c.id
 ORDER BY lower(c.name), c.created_at, c.id
 `
 
 type ListCustomersWithBalanceRow struct {
-	ID               uuid.UUID   `json:"id"`
-	Name             string      `json:"name"`
-	Phone            string      `json:"phone"`
-	Notes            string      `json:"notes"`
-	CreditLimitPaisa int64       `json:"credit_limit_paisa"`
-	Active           bool        `json:"active"`
-	Pan              string      `json:"pan"`
-	Address          string      `json:"address"`
-	ContactPerson    string      `json:"contact_person"`
-	CreatedByUserID  pgtype.UUID `json:"created_by_user_id"`
-	CreatedAt        time.Time   `json:"created_at"`
-	UpdatedAt        time.Time   `json:"updated_at"`
-	BalancePaisa     int64       `json:"balance_paisa"`
+	ID                    uuid.UUID          `json:"id"`
+	Name                  string             `json:"name"`
+	Phone                 string             `json:"phone"`
+	Notes                 string             `json:"notes"`
+	CreditLimitPaisa      int64              `json:"credit_limit_paisa"`
+	Active                bool               `json:"active"`
+	Pan                   string             `json:"pan"`
+	Address               string             `json:"address"`
+	ContactPerson         string             `json:"contact_person"`
+	CreatedByUserID       pgtype.UUID        `json:"created_by_user_id"`
+	CreatedAt             time.Time          `json:"created_at"`
+	UpdatedAt             time.Time          `json:"updated_at"`
+	CreditAccount         bool               `json:"credit_account"`
+	LoyaltyMember         bool               `json:"loyalty_member"`
+	LoyaltyJoinedAt       pgtype.Timestamptz `json:"loyalty_joined_at"`
+	LoyaltyJoinedByUserID pgtype.UUID        `json:"loyalty_joined_by_user_id"`
+	LoyaltyConsentAt      pgtype.Timestamptz `json:"loyalty_consent_at"`
+	BirthMonthBs          pgtype.Int2        `json:"birth_month_bs"`
+	CardToken             pgtype.Text        `json:"card_token"`
+	BalancePaisa          int64              `json:"balance_paisa"`
 }
 
 // Credit customers (udharo): accounts, balances, repayments, statements.
@@ -419,6 +447,13 @@ func (q *Queries) ListCustomersWithBalance(ctx context.Context) ([]ListCustomers
 			&i.CreatedByUserID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CreditAccount,
+			&i.LoyaltyMember,
+			&i.LoyaltyJoinedAt,
+			&i.LoyaltyJoinedByUserID,
+			&i.LoyaltyConsentAt,
+			&i.BirthMonthBs,
+			&i.CardToken,
 			&i.BalancePaisa,
 		); err != nil {
 			return nil, err
@@ -569,7 +604,7 @@ func (q *Queries) ListRepaymentDetails(ctx context.Context, customerID uuid.UUID
 }
 
 const lockCustomer = `-- name: LockCustomer :one
-SELECT id, name, phone, notes, credit_limit_paisa, active, pan, address, contact_person, created_by_user_id, created_at, updated_at FROM customers WHERE id = $1 FOR UPDATE
+SELECT id, name, phone, notes, credit_limit_paisa, active, pan, address, contact_person, created_by_user_id, created_at, updated_at, credit_account, loyalty_member, loyalty_joined_at, loyalty_joined_by_user_id, loyalty_consent_at, birth_month_bs, card_token FROM customers WHERE id = $1 FOR UPDATE
 `
 
 // Locks the account for the billing / repayment transaction, so two tills can't
@@ -590,6 +625,13 @@ func (q *Queries) LockCustomer(ctx context.Context, id uuid.UUID) (Customer, err
 		&i.CreatedByUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CreditAccount,
+		&i.LoyaltyMember,
+		&i.LoyaltyJoinedAt,
+		&i.LoyaltyJoinedByUserID,
+		&i.LoyaltyConsentAt,
+		&i.BirthMonthBs,
+		&i.CardToken,
 	)
 	return i, err
 }
@@ -621,6 +663,16 @@ func (q *Queries) LockRepayment(ctx context.Context, id uuid.UUID) (Repayment, e
 	return i, err
 }
 
+const openCreditAccount = `-- name: OpenCreditAccount :exec
+UPDATE customers SET credit_account = true, updated_at = now() WHERE id = $1
+`
+
+// Loyalty: a loyalty-only member gets a credit account (same record, one per phone).
+func (q *Queries) OpenCreditAccount(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, openCreditAccount, id)
+	return err
+}
+
 const repaymentsSince = `-- name: RepaymentsSince :one
 SELECT COALESCE(sum(amount_paisa), 0)::bigint FROM repayments WHERE voided_at IS NULL AND created_at >= $1
 `
@@ -634,7 +686,7 @@ func (q *Queries) RepaymentsSince(ctx context.Context, createdAt time.Time) (int
 }
 
 const setCustomerActive = `-- name: SetCustomerActive :one
-UPDATE customers SET active = $2, updated_at = now() WHERE id = $1 RETURNING id, name, phone, notes, credit_limit_paisa, active, pan, address, contact_person, created_by_user_id, created_at, updated_at
+UPDATE customers SET active = $2, updated_at = now() WHERE id = $1 RETURNING id, name, phone, notes, credit_limit_paisa, active, pan, address, contact_person, created_by_user_id, created_at, updated_at, credit_account, loyalty_member, loyalty_joined_at, loyalty_joined_by_user_id, loyalty_consent_at, birth_month_bs, card_token
 `
 
 type SetCustomerActiveParams struct {
@@ -658,6 +710,13 @@ func (q *Queries) SetCustomerActive(ctx context.Context, arg SetCustomerActivePa
 		&i.CreatedByUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CreditAccount,
+		&i.LoyaltyMember,
+		&i.LoyaltyJoinedAt,
+		&i.LoyaltyJoinedByUserID,
+		&i.LoyaltyConsentAt,
+		&i.BirthMonthBs,
+		&i.CardToken,
 	)
 	return i, err
 }
@@ -679,7 +738,7 @@ UPDATE customers
 SET name = $2, phone = $3, notes = $4, pan = $5, address = $6, contact_person = $7,
     credit_limit_paisa = $8, updated_at = now()
 WHERE id = $1
-RETURNING id, name, phone, notes, credit_limit_paisa, active, pan, address, contact_person, created_by_user_id, created_at, updated_at
+RETURNING id, name, phone, notes, credit_limit_paisa, active, pan, address, contact_person, created_by_user_id, created_at, updated_at, credit_account, loyalty_member, loyalty_joined_at, loyalty_joined_by_user_id, loyalty_consent_at, birth_month_bs, card_token
 `
 
 type UpdateCustomerParams struct {
@@ -718,6 +777,13 @@ func (q *Queries) UpdateCustomer(ctx context.Context, arg UpdateCustomerParams) 
 		&i.CreatedByUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CreditAccount,
+		&i.LoyaltyMember,
+		&i.LoyaltyJoinedAt,
+		&i.LoyaltyJoinedByUserID,
+		&i.LoyaltyConsentAt,
+		&i.BirthMonthBs,
+		&i.CardToken,
 	)
 	return i, err
 }

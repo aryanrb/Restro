@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
+	"github.com/oneaccord/restro/api/internal/loyalty"
 	"github.com/oneaccord/restro/api/internal/shift"
 )
 
@@ -125,12 +126,18 @@ var registry = []ruleDef{
 	},
 	{
 		// A manager approving their own void / bill cancel / discount with their own PIN.
-		rule: "SELF_APPROVED", triggers: []string{"order.void", "invoice.cancel", "invoice.issue"},
+		rule: "SELF_APPROVED", triggers: []string{"order.void", "invoice.cancel", "invoice.issue", loyalty.ActionAdjusted},
 		eval: func(c *ruleCtx) ([]firing, error) {
 			actor, approver, text := c.actor(), c.approver(), ""
 			var invoiceID uuid.UUID
 			action := c.row.Action
 			switch c.row.Action {
+			case loyalty.ActionAdjusted:
+				// A manager's own stamp adjustment (no one else's PIN) is self-approved.
+				if approver == uuid.Nil || approver != actor {
+					return nil, nil
+				}
+				text = c.str("subject")
 			case "order.void":
 				if approver == uuid.Nil || approver != actor {
 					return nil, nil
@@ -385,6 +392,35 @@ var registry = []ruleDef{
 			f.approvers = []uuid.UUID{c.approver()}
 			f.dedupKey = "new-account:" + cust.ID.String()
 			return one(f)
+		},
+	},
+	{
+		// Supplier cash from the till: one payment above the till limit, or one
+		// person's till paid-outs in a shift reaching shiftTotal (one alert per shift, updated).
+		rule: "LARGE_PAID_OUT", triggers: []string{"SUPPLIER_PAID"},
+		eval: func(c *ruleCtx) ([]firing, error) {
+			p, err := c.q.GetSupplierPaymentRow(c.ctx, c.entityID())
+			if err != nil || p.Method != "TILL" || !p.ShiftID.Valid {
+				return nil, err
+			}
+			shiftID := uuid.UUID(p.ShiftID.Bytes)
+			var out []firing
+			if p.AmountPaisa > c.t["amount"] {
+				key := "payout:" + p.ID.String()
+				out = append(out, firing{subject: p.PaidByUserID, approvers: []uuid.UUID{c.approver()}, text: "SP-" + itoa(int64(p.Number)),
+					num: map[string]int64{"paid": p.AmountPaisa}, str: map[string]string{"variant": "single", "supplier": p.SupplierName},
+					amount: amountOf(p.AmountPaisa), shiftID: shiftID, groupKey: key, dedupKey: key})
+			}
+			sum, err := c.q.AlertTillPaidOutsInShift(c.ctx, sqlc.AlertTillPaidOutsInShiftParams{ShiftID: shiftID, PaidByUserID: p.PaidByUserID})
+			if err != nil {
+				return nil, err
+			}
+			if sum.Total >= c.t["shiftTotal"] {
+				out = append(out, firing{subject: p.PaidByUserID, text: p.PaidByName,
+					num: map[string]int64{"total": sum.Total, "payments": int64(sum.Payments)}, str: map[string]string{"variant": "shift"},
+					amount: amountOf(sum.Total), shiftID: shiftID, groupKey: "shift:" + shiftID.String()})
+			}
+			return out, nil
 		},
 	},
 	{

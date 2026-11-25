@@ -63,6 +63,9 @@ const (
 	// BillingServiceListInvoicesProcedure is the fully-qualified name of the BillingService's
 	// ListInvoices RPC.
 	BillingServiceListInvoicesProcedure = "/restaurant.v1.BillingService/ListInvoices"
+	// BillingServicePreviewCounterSaleProcedure is the fully-qualified name of the BillingService's
+	// PreviewCounterSale RPC.
+	BillingServicePreviewCounterSaleProcedure = "/restaurant.v1.BillingService/PreviewCounterSale"
 )
 
 // BillingServiceClient is a client for the restaurant.v1.BillingService service.
@@ -77,6 +80,7 @@ type BillingServiceClient interface {
 	IssueBill(context.Context, *connect.Request[v1.IssueBillRequest]) (*connect.Response[v1.Invoice], error)
 	CounterSale(context.Context, *connect.Request[v1.CounterSaleRequest]) (*connect.Response[v1.Invoice], error)
 	ListInvoices(context.Context, *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error)
+	PreviewCounterSale(context.Context, *connect.Request[v1.PreviewCounterSaleRequest]) (*connect.Response[v1.BillPreview], error)
 }
 
 // NewBillingServiceClient constructs a client for the restaurant.v1.BillingService service. By
@@ -150,21 +154,28 @@ func NewBillingServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(billingServiceMethods.ByName("ListInvoices")),
 			connect.WithClientOptions(opts...),
 		),
+		previewCounterSale: connect.NewClient[v1.PreviewCounterSaleRequest, v1.BillPreview](
+			httpClient,
+			baseURL+BillingServicePreviewCounterSaleProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("PreviewCounterSale")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // billingServiceClient implements BillingServiceClient.
 type billingServiceClient struct {
-	previewBill   *connect.Client[v1.PreviewBillRequest, v1.BillPreview]
-	issueFullBill *connect.Client[v1.IssueFullBillRequest, v1.Invoice]
-	splitByItem   *connect.Client[v1.SplitByItemRequest, v1.SplitByItemResponse]
-	recordPayment *connect.Client[v1.RecordPaymentRequest, v1.Payment]
-	cancelInvoice *connect.Client[v1.CancelInvoiceRequest, v1.Invoice]
-	markPrinted   *connect.Client[v1.MarkPrintedRequest, v1.PrintInfo]
-	getInvoice    *connect.Client[v1.GetInvoiceRequest, v1.Invoice]
-	issueBill     *connect.Client[v1.IssueBillRequest, v1.Invoice]
-	counterSale   *connect.Client[v1.CounterSaleRequest, v1.Invoice]
-	listInvoices  *connect.Client[v1.ListInvoicesRequest, v1.ListInvoicesResponse]
+	previewBill        *connect.Client[v1.PreviewBillRequest, v1.BillPreview]
+	issueFullBill      *connect.Client[v1.IssueFullBillRequest, v1.Invoice]
+	splitByItem        *connect.Client[v1.SplitByItemRequest, v1.SplitByItemResponse]
+	recordPayment      *connect.Client[v1.RecordPaymentRequest, v1.Payment]
+	cancelInvoice      *connect.Client[v1.CancelInvoiceRequest, v1.Invoice]
+	markPrinted        *connect.Client[v1.MarkPrintedRequest, v1.PrintInfo]
+	getInvoice         *connect.Client[v1.GetInvoiceRequest, v1.Invoice]
+	issueBill          *connect.Client[v1.IssueBillRequest, v1.Invoice]
+	counterSale        *connect.Client[v1.CounterSaleRequest, v1.Invoice]
+	listInvoices       *connect.Client[v1.ListInvoicesRequest, v1.ListInvoicesResponse]
+	previewCounterSale *connect.Client[v1.PreviewCounterSaleRequest, v1.BillPreview]
 }
 
 // PreviewBill calls restaurant.v1.BillingService.PreviewBill.
@@ -217,6 +228,11 @@ func (c *billingServiceClient) ListInvoices(ctx context.Context, req *connect.Re
 	return c.listInvoices.CallUnary(ctx, req)
 }
 
+// PreviewCounterSale calls restaurant.v1.BillingService.PreviewCounterSale.
+func (c *billingServiceClient) PreviewCounterSale(ctx context.Context, req *connect.Request[v1.PreviewCounterSaleRequest]) (*connect.Response[v1.BillPreview], error) {
+	return c.previewCounterSale.CallUnary(ctx, req)
+}
+
 // BillingServiceHandler is an implementation of the restaurant.v1.BillingService service.
 type BillingServiceHandler interface {
 	PreviewBill(context.Context, *connect.Request[v1.PreviewBillRequest]) (*connect.Response[v1.BillPreview], error)
@@ -229,6 +245,7 @@ type BillingServiceHandler interface {
 	IssueBill(context.Context, *connect.Request[v1.IssueBillRequest]) (*connect.Response[v1.Invoice], error)
 	CounterSale(context.Context, *connect.Request[v1.CounterSaleRequest]) (*connect.Response[v1.Invoice], error)
 	ListInvoices(context.Context, *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error)
+	PreviewCounterSale(context.Context, *connect.Request[v1.PreviewCounterSaleRequest]) (*connect.Response[v1.BillPreview], error)
 }
 
 // NewBillingServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -298,6 +315,12 @@ func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.Handler
 		connect.WithSchema(billingServiceMethods.ByName("ListInvoices")),
 		connect.WithHandlerOptions(opts...),
 	)
+	billingServicePreviewCounterSaleHandler := connect.NewUnaryHandler(
+		BillingServicePreviewCounterSaleProcedure,
+		svc.PreviewCounterSale,
+		connect.WithSchema(billingServiceMethods.ByName("PreviewCounterSale")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/restaurant.v1.BillingService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case BillingServicePreviewBillProcedure:
@@ -320,6 +343,8 @@ func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.Handler
 			billingServiceCounterSaleHandler.ServeHTTP(w, r)
 		case BillingServiceListInvoicesProcedure:
 			billingServiceListInvoicesHandler.ServeHTTP(w, r)
+		case BillingServicePreviewCounterSaleProcedure:
+			billingServicePreviewCounterSaleHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -367,4 +392,8 @@ func (UnimplementedBillingServiceHandler) CounterSale(context.Context, *connect.
 
 func (UnimplementedBillingServiceHandler) ListInvoices(context.Context, *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.BillingService.ListInvoices is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) PreviewCounterSale(context.Context, *connect.Request[v1.PreviewCounterSaleRequest]) (*connect.Response[v1.BillPreview], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.BillingService.PreviewCounterSale is not implemented"))
 }
