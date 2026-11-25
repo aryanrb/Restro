@@ -4,6 +4,16 @@ Branch `backend-alignment` (from `master` at `2194648`). Written 2026-11-25 for 
 
 The web frontend (Next.js, repo BsalRbh/POS, branch `feat/real-backend`) talks to this backend through Connect with generated TS clients. Its in-browser fake backend (`web/src/lib/api/mock/`) encodes every business rule and has ~950 tests — **treat it as the executable spec** when in doubt.
 
+## ⚠️ Must be done before this branch is merged
+
+Do **not** merge `backend-alignment` into `master` until all three are finished (details under "Remaining work" below):
+
+1. **Full test suite green** on a fresh database — it was not re-run after `a1197fb`.
+2. **Stage 3 wave 2 built and tested**: purchases + suppliers, reservations, loyalty, guest table ordering — plus the alert rules waiting on them (loyalty rules, LARGE_PAID_OUT).
+3. **The smaller gaps closed**: server preview for counter lines / item subsets, one audit action vocabulary, READY → PREPARING, live view alerts + bill-requested + `audit.created`, the missing ErrorReasons, Web Push for alerts.
+
+Multi-tenancy and go-live (items 4–5) come after the merge.
+
 ## What this branch contains
 
 | Commit | Contents |
