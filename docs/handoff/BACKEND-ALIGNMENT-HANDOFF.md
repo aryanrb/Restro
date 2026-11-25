@@ -47,7 +47,7 @@ The web frontend (Next.js, repo BsalRbh/POS) talks to this backend through Conne
 
 ## Remaining work, in order
 
-1. **Login from the Vercel frontend**: the session cookie is `SameSite=Lax` (`api/internal/auth/handler.go`), so a browser on the Vercel domain won't send it to Render. Either `SameSite=None; Secure` (with the existing credentialed CORS), or serve web + API from one domain (see 5).
+1. **Login from the Vercel frontend**: set `COOKIE_SAMESITE=none` on Render (cookies become `SameSite=None; Secure`) and make sure `CORS_ORIGINS` lists the Vercel URL. Default stays `Lax` for same-origin hosting and local dev.
 2. **Smaller gaps still open** (frontend has `// GAP:` comments for each):
    - no server preview for counter lines / item-subset bills (frontend estimates client-side; with a loyalty reward it can't show whether a stamp is earned);
    - loyalty not on the older `IssueFullBill` / `SplitByItem` RPCs; no reward column in the sales book; no "rewards today" on the dashboard;

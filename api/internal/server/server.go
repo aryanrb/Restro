@@ -84,7 +84,7 @@ func New(d Deps) *echo.Echo {
 		alerts.EventsInterceptor(d.Hub),
 	)
 
-	authHandler := auth.NewHandler(authSvc, d.Cfg.Env == "prod")
+	authHandler := auth.NewHandler(authSvc, d.Cfg.Env == "prod").WithCrossSiteCookies(d.Cfg.CookieCrossSite)
 	authPath, authH := restaurantv1connect.NewAuthServiceHandler(authHandler, ic)
 	mount(e, authPath, authH)
 	staffPath, staffH := restaurantv1connect.NewStaffServiceHandler(authHandler, ic)
