@@ -6,7 +6,8 @@ depend on it. **Draft — agree with the frontends before the hub is built.**
 ## Transport
 
 - One endpoint: `GET /api/ws` on the same origin as the Connect API (upgrade to WebSocket).
-- Auth: the same session (web cookie / mobile bearer). Unauthenticated upgrades are rejected.
+- Auth: the same session as Connect — web `rm_session` cookie, or mobile `Authorization: Bearer <token>`.
+  An upgrade without a valid session is rejected with HTTP 401 before the socket opens.
 - Server library: `coder/websocket`. One in-process hub per deployment (one process = one restaurant).
 - **Server → client only.** No mutations over the socket. Every mutation is a Connect RPC.
 
@@ -20,8 +21,9 @@ JSON text frames. This matches the web's assumption
 ```
 
 - `type` (string, required) — the event name below.
-- `id` (string) — the primary entity id the change is about. Omitted for broadcast-only events.
+- `id` (string, always present) — the primary entity id the change is about; `""` for broadcast-only events.
 - `version` (int, optional) — the aggregate version after the change, when the entity has one.
+  Every `order.updated` carries it (order commands and kitchen actions alike).
 
 Events are **"something changed" pokes, not state.** Clients refetch the affected
 query via Connect; a missed or out-of-order event can only delay state, never corrupt it.
@@ -38,7 +40,7 @@ query via Connect; a missed or out-of-order event can only delay state, never co
 
 | `type`             | `id` is…            | Emitted when                                               | Primary audience |
 |--------------------|---------------------|-----------------------------------------------------------|------------------|
-| `order.updated`    | order id            | create / add items / void / transfer / merge / status flow| waiter, cashier  |
+| `order.updated`    | order id            | create / add items / send / void / serve / transfer / merge (both orders) / guest count / kitchen start, ready, bump | waiter, cashier  |
 | `ticket.created`   | order id            | items sent to a station (`SendItems`)                     | kitchen (station)|
 | `item.ready`       | order item id       | KDS marks an item READY                                    | waiter           |
 | `item.86d`         | menu item id        | an item is 86'd or un-86'd (`Set86`)                      | everyone         |

@@ -64,8 +64,10 @@ message Menu {
 
 // ---- inputs ----
 
+// Variants and modifiers are upserted by id: a set id updates that row in place
+// (its id stays stable), an unset id creates one, and rows left out are deleted.
 message VariantInput {
-  optional string id = 1;
+  optional string id = 1; // must belong to this item
   LocalText name = 2;
   int64 price_paisa = 3;
 }
@@ -75,7 +77,7 @@ message MenuItemInput {
   string category_id = 2 [(buf.validate.field).string.min_len = 1];
   LocalText name = 3;
   int64 price_paisa = 4; // required > 0 only when variants is empty
-  string color = 5;
+  string color = 5; // one of the web ITEM_COLORS palette, else INVALID(color)
   string station_id = 6 [(buf.validate.field).string.min_len = 1];
   bool active = 7;
   repeated VariantInput variants = 8;
@@ -83,7 +85,7 @@ message MenuItemInput {
 }
 
 message ModifierInput {
-  optional string id = 1;
+  optional string id = 1; // must belong to this group; upserted like VariantInput
   LocalText name = 2;
   int64 price_delta_paisa = 3 [(buf.validate.field).int64.gte = 0];
 }
@@ -119,6 +121,7 @@ message SaveItemRequest {
   MenuItemInput input = 1;
   optional int64 version = 2; // required when input.id is set
 }
+// Moves within the item's category. Changing category on SaveItem puts the item last there.
 message MoveItemRequest {
   string id = 1;
   Move move = 2;

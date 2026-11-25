@@ -52,3 +52,11 @@ func (h *Handler) GetShiftReport(ctx context.Context, req *connect.Request[resta
 	}
 	return connect.NewResponse(rep), nil
 }
+
+func (h *Handler) ListShifts(ctx context.Context, req *connect.Request[restaurantv1.ListShiftsRequest]) (*connect.Response[restaurantv1.ListShiftsResponse], error) {
+	shifts, err := h.svc.ListShifts(ctx, req.Msg.GetLimit())
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&restaurantv1.ListShiftsResponse{Shifts: shifts}), nil
+}

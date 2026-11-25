@@ -10,7 +10,7 @@ import (
 )
 
 const getSettings = `-- name: GetSettings :one
-SELECT id, version, name_en, name_ne, address, phone, pan_number, vat_registered, prices_include_vat, vat_rate_bp, service_charge_enabled, service_charge_rate_bp, billing_mode, receipt_width, round_total_to_rupee, default_language, kds_yellow_minutes, kds_red_minutes, logo_url, updated_at FROM settings WHERE id = 1
+SELECT id, version, name_en, name_ne, address, phone, pan_number, vat_registered, prices_include_vat, vat_rate_bp, service_charge_enabled, service_charge_rate_bp, billing_mode, receipt_width, round_total_to_rupee, default_language, kds_yellow_minutes, kds_red_minutes, logo_url, updated_at, qr_fonepay_url, qr_other_url, guest_ordering FROM settings WHERE id = 1
 `
 
 func (q *Queries) GetSettings(ctx context.Context) (Setting, error) {
@@ -37,6 +37,116 @@ func (q *Queries) GetSettings(ctx context.Context) (Setting, error) {
 		&i.KdsRedMinutes,
 		&i.LogoUrl,
 		&i.UpdatedAt,
+		&i.QrFonepayUrl,
+		&i.QrOtherUrl,
+		&i.GuestOrdering,
+	)
+	return i, err
+}
+
+const setSettingsLogo = `-- name: SetSettingsLogo :one
+
+UPDATE settings SET logo_url = $1, updated_at = now() WHERE id = 1 RETURNING id, version, name_en, name_ne, address, phone, pan_number, vat_registered, prices_include_vat, vat_rate_bp, service_charge_enabled, service_charge_rate_bp, billing_mode, receipt_width, round_total_to_rupee, default_language, kds_yellow_minutes, kds_red_minutes, logo_url, updated_at, qr_fonepay_url, qr_other_url, guest_ordering
+`
+
+// Images are not part of the settings form, so they do not bump version.
+func (q *Queries) SetSettingsLogo(ctx context.Context, logoUrl string) (Setting, error) {
+	row := q.db.QueryRow(ctx, setSettingsLogo, logoUrl)
+	var i Setting
+	err := row.Scan(
+		&i.ID,
+		&i.Version,
+		&i.NameEn,
+		&i.NameNe,
+		&i.Address,
+		&i.Phone,
+		&i.PanNumber,
+		&i.VatRegistered,
+		&i.PricesIncludeVat,
+		&i.VatRateBp,
+		&i.ServiceChargeEnabled,
+		&i.ServiceChargeRateBp,
+		&i.BillingMode,
+		&i.ReceiptWidth,
+		&i.RoundTotalToRupee,
+		&i.DefaultLanguage,
+		&i.KdsYellowMinutes,
+		&i.KdsRedMinutes,
+		&i.LogoUrl,
+		&i.UpdatedAt,
+		&i.QrFonepayUrl,
+		&i.QrOtherUrl,
+		&i.GuestOrdering,
+	)
+	return i, err
+}
+
+const setSettingsQrFonepay = `-- name: SetSettingsQrFonepay :one
+UPDATE settings SET qr_fonepay_url = $1, updated_at = now() WHERE id = 1 RETURNING id, version, name_en, name_ne, address, phone, pan_number, vat_registered, prices_include_vat, vat_rate_bp, service_charge_enabled, service_charge_rate_bp, billing_mode, receipt_width, round_total_to_rupee, default_language, kds_yellow_minutes, kds_red_minutes, logo_url, updated_at, qr_fonepay_url, qr_other_url, guest_ordering
+`
+
+func (q *Queries) SetSettingsQrFonepay(ctx context.Context, qrFonepayUrl string) (Setting, error) {
+	row := q.db.QueryRow(ctx, setSettingsQrFonepay, qrFonepayUrl)
+	var i Setting
+	err := row.Scan(
+		&i.ID,
+		&i.Version,
+		&i.NameEn,
+		&i.NameNe,
+		&i.Address,
+		&i.Phone,
+		&i.PanNumber,
+		&i.VatRegistered,
+		&i.PricesIncludeVat,
+		&i.VatRateBp,
+		&i.ServiceChargeEnabled,
+		&i.ServiceChargeRateBp,
+		&i.BillingMode,
+		&i.ReceiptWidth,
+		&i.RoundTotalToRupee,
+		&i.DefaultLanguage,
+		&i.KdsYellowMinutes,
+		&i.KdsRedMinutes,
+		&i.LogoUrl,
+		&i.UpdatedAt,
+		&i.QrFonepayUrl,
+		&i.QrOtherUrl,
+		&i.GuestOrdering,
+	)
+	return i, err
+}
+
+const setSettingsQrOther = `-- name: SetSettingsQrOther :one
+UPDATE settings SET qr_other_url = $1, updated_at = now() WHERE id = 1 RETURNING id, version, name_en, name_ne, address, phone, pan_number, vat_registered, prices_include_vat, vat_rate_bp, service_charge_enabled, service_charge_rate_bp, billing_mode, receipt_width, round_total_to_rupee, default_language, kds_yellow_minutes, kds_red_minutes, logo_url, updated_at, qr_fonepay_url, qr_other_url, guest_ordering
+`
+
+func (q *Queries) SetSettingsQrOther(ctx context.Context, qrOtherUrl string) (Setting, error) {
+	row := q.db.QueryRow(ctx, setSettingsQrOther, qrOtherUrl)
+	var i Setting
+	err := row.Scan(
+		&i.ID,
+		&i.Version,
+		&i.NameEn,
+		&i.NameNe,
+		&i.Address,
+		&i.Phone,
+		&i.PanNumber,
+		&i.VatRegistered,
+		&i.PricesIncludeVat,
+		&i.VatRateBp,
+		&i.ServiceChargeEnabled,
+		&i.ServiceChargeRateBp,
+		&i.BillingMode,
+		&i.ReceiptWidth,
+		&i.RoundTotalToRupee,
+		&i.DefaultLanguage,
+		&i.KdsYellowMinutes,
+		&i.KdsRedMinutes,
+		&i.LogoUrl,
+		&i.UpdatedAt,
+		&i.QrFonepayUrl,
+		&i.QrOtherUrl,
+		&i.GuestOrdering,
 	)
 	return i, err
 }
@@ -48,9 +158,9 @@ UPDATE settings SET
     vat_registered = $7, prices_include_vat = $8, vat_rate_bp = $9,
     service_charge_enabled = $10, service_charge_rate_bp = $11,
     receipt_width = $12, round_total_to_rupee = $13, default_language = $14,
-    kds_yellow_minutes = $15, kds_red_minutes = $16, updated_at = now()
+    kds_yellow_minutes = $15, kds_red_minutes = $16, guest_ordering = $17, updated_at = now()
 WHERE id = 1 AND version = $1
-RETURNING id, version, name_en, name_ne, address, phone, pan_number, vat_registered, prices_include_vat, vat_rate_bp, service_charge_enabled, service_charge_rate_bp, billing_mode, receipt_width, round_total_to_rupee, default_language, kds_yellow_minutes, kds_red_minutes, logo_url, updated_at
+RETURNING id, version, name_en, name_ne, address, phone, pan_number, vat_registered, prices_include_vat, vat_rate_bp, service_charge_enabled, service_charge_rate_bp, billing_mode, receipt_width, round_total_to_rupee, default_language, kds_yellow_minutes, kds_red_minutes, logo_url, updated_at, qr_fonepay_url, qr_other_url, guest_ordering
 `
 
 type UpdateSettingsParams struct {
@@ -70,6 +180,7 @@ type UpdateSettingsParams struct {
 	DefaultLanguage      string `json:"default_language"`
 	KdsYellowMinutes     int32  `json:"kds_yellow_minutes"`
 	KdsRedMinutes        int32  `json:"kds_red_minutes"`
+	GuestOrdering        bool   `json:"guest_ordering"`
 }
 
 func (q *Queries) UpdateSettings(ctx context.Context, arg UpdateSettingsParams) (Setting, error) {
@@ -90,6 +201,7 @@ func (q *Queries) UpdateSettings(ctx context.Context, arg UpdateSettingsParams) 
 		arg.DefaultLanguage,
 		arg.KdsYellowMinutes,
 		arg.KdsRedMinutes,
+		arg.GuestOrdering,
 	)
 	var i Setting
 	err := row.Scan(
@@ -113,6 +225,9 @@ func (q *Queries) UpdateSettings(ctx context.Context, arg UpdateSettingsParams) 
 		&i.KdsRedMinutes,
 		&i.LogoUrl,
 		&i.UpdatedAt,
+		&i.QrFonepayUrl,
+		&i.QrOtherUrl,
+		&i.GuestOrdering,
 	)
 	return i, err
 }

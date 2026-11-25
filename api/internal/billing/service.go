@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -91,7 +92,7 @@ func (s *Service) IssueFullBill(ctx context.Context, req *restaurantv1.IssueFull
 		if e != nil {
 			return e
 		}
-		inv, e := s.issueInvoiceForItems(ctx, q, order, items, byItem, subtotal, settings, discount, reason, approvedBy, req.GetBuyerName(), req.GetBuyerPan(), actor.User.ID)
+		inv, e := s.issueInvoiceForItems(ctx, q, order, items, byItem, subtotal, settings, discount, reason, approvedBy, req.GetBuyerName(), req.GetBuyerPan(), actor, "")
 		if e != nil {
 			return e
 		}
@@ -166,7 +167,7 @@ func (s *Service) SplitByItem(ctx context.Context, req *restaurantv1.SplitByItem
 			if e != nil {
 				return e
 			}
-			inv, e := s.issueInvoiceForItems(ctx, q, order, groupItems, byItem, subtotal, settings, 0, "", uuid.Nil, "", "", actor.User.ID)
+			inv, e := s.issueInvoiceForItems(ctx, q, order, groupItems, byItem, subtotal, settings, 0, "", uuid.Nil, "", "", actor, "")
 			if e != nil {
 				return e
 			}
@@ -363,6 +364,10 @@ func (s *Service) MarkPrinted(ctx context.Context, req *restaurantv1.MarkPrinted
 			return connecterr.Internal(e)
 		}
 		count = c
+		// Every print is logged (the first is the original) for the IRD sales book.
+		if e := q.CreateInvoicePrint(ctx, sqlc.CreateInvoicePrintParams{InvoiceID: invID, PrintedByUserID: actor.User.ID}); e != nil {
+			return connecterr.Internal(e)
+		}
 		if c > 1 {
 			return audit.Write(ctx, q, audit.Entry{ActorID: actor.User.ID, Action: "invoice.reprint", Entity: "invoice", EntityID: invID.String(), After: audit.JSON(map[string]int32{"print_count": c})})
 		}
@@ -459,8 +464,34 @@ func (s *Service) compute(settings sqlc.Setting, subtotal, discount int64) money
 	})
 }
 
-func (s *Service) issueInvoiceForItems(ctx context.Context, q *sqlc.Queries, order sqlc.Order, items []sqlc.OrderItem, byItem map[uuid.UUID][]sqlc.OrderItemModifier, subtotal int64, settings sqlc.Setting, discount int64, discountReason string, discountApprovedBy uuid.UUID, buyerName, buyerPan string, actorID uuid.UUID) (sqlc.Invoice, error) {
+// placeOf is what the invoice prints as its place: the table's name for a
+// dine-in order, else the counter-sale label, else "Takeaway".
+func placeOf(ctx context.Context, q *sqlc.Queries, order sqlc.Order, label string) (string, error) {
+	if order.TableID.Valid {
+		name, err := q.GetDiningTableName(ctx, uuid.UUID(order.TableID.Bytes))
+		if err == nil {
+			return name, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return "", connecterr.Internal(err)
+		}
+	}
+	if label = strings.TrimSpace(label); label != "" {
+		return label, nil
+	}
+	return "Takeaway", nil
+}
+
+// issueInvoiceForItems allocates the next number and writes the immutable invoice:
+// totals, lines, and the issue-time snapshot (seller details from settings,
+// display number, issuer, place). label is the counter-sale label ("" otherwise).
+func (s *Service) issueInvoiceForItems(ctx context.Context, q *sqlc.Queries, order sqlc.Order, items []sqlc.OrderItem, byItem map[uuid.UUID][]sqlc.OrderItemModifier, subtotal int64, settings sqlc.Setting, discount int64, discountReason string, discountApprovedBy uuid.UUID, buyerName, buyerPan string, actor *auth.Actor, label string) (sqlc.Invoice, error) {
 	r := s.compute(settings, subtotal, discount)
+	actorID := actor.User.ID
+	place, err := placeOf(ctx, q, order, label)
+	if err != nil {
+		return sqlc.Invoice{}, err
+	}
 
 	bsd, err := bsdate.FromAD(time.Now())
 	if err != nil {
@@ -480,6 +511,10 @@ func (s *Service) issueInvoiceForItems(ctx context.Context, q *sqlc.Queries, ord
 		SubtotalPaisa: r.Subtotal, DiscountPaisa: r.Discount, ServiceChargePaisa: r.ServiceCharge,
 		TaxablePaisa: r.Taxable, VatPaisa: r.Vat, RoundingPaisa: r.RoundingAdjustment, TotalPaisa: r.Total,
 		DiscountReason: discountReason, DiscountApprovedByUserID: dbx.UUIDOpt(discountApprovedBy), CreatedByUserID: dbx.UUID(actorID),
+		DisplayNumber: displayNumber(mode, fy, number),
+		SellerNameEn:  settings.NameEn, SellerNameNe: settings.NameNe, SellerAddress: settings.Address,
+		SellerPanNumber: settings.PanNumber, SellerVatRateBp: settings.VatRateBp, SellerVatRegistered: settings.VatRegistered,
+		SellerLogoUrl: settings.LogoUrl, IssuedByName: actor.User.Name, Place: place, OrderClientID: dbx.UUID(order.ClientID),
 	})
 	if err != nil {
 		return sqlc.Invoice{}, connecterr.Internal(err)
@@ -495,8 +530,8 @@ func (s *Service) issueInvoiceForItems(ctx context.Context, q *sqlc.Queries, ord
 		modJSON, _ := json.Marshal(snap)
 		if _, e := q.CreateInvoiceLine(ctx, sqlc.CreateInvoiceLineParams{
 			InvoiceID: inv.ID, OrderItemID: dbx.UUID(it.ID), NameEn: it.NameEn, NameNe: it.NameNe,
-			VariantName: it.VariantNameEn, Quantity: it.Quantity, UnitPricePaisa: it.UnitPricePaisa,
-			ModifiersJson: modJSON, LineTotalPaisa: lineTotal(it, mods),
+			VariantName: it.VariantNameEn, VariantNameNe: it.VariantNameNe, Quantity: it.Quantity, UnitPricePaisa: it.UnitPricePaisa,
+			ModifiersJson: modJSON, LineTotalPaisa: lineTotal(it, mods), OrderItemClientID: dbx.UUID(it.ClientID),
 		}); e != nil {
 			return sqlc.Invoice{}, connecterr.Internal(e)
 		}
@@ -535,7 +570,11 @@ func (s *Service) loadInvoice(ctx context.Context, q *sqlc.Queries, id uuid.UUID
 	if err != nil {
 		return nil, connecterr.Internal(err)
 	}
-	return toInvoice(inv, lines, payments), nil
+	prints, err := q.ListInvoicePrints(ctx, id)
+	if err != nil {
+		return nil, connecterr.Internal(err)
+	}
+	return toInvoice(inv, lines, payments, prints), nil
 }
 
 // computeDiscount applies the role limit and returns the discount amount in paisa.

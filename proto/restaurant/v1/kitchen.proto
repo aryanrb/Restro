@@ -48,7 +48,13 @@ message BumpTicketRequest {
   string order_id = 1 [(buf.validate.field).string.min_len = 1];
   string station_id = 2 [(buf.validate.field).string.min_len = 1];
 }
-message KitchenActionResponse {}
+// The order(s) the action changed, after the change (so the KDS/waiter view can
+// update without a refetch). `order` is the first affected order (the only one for
+// BumpTicket); `orders` lists every affected order. Empty when nothing matched.
+message KitchenActionResponse {
+  Order order = 1;
+  repeated Order orders = 2;
+}
 
 service KitchenService {
   rpc ListStationTickets(ListStationTicketsRequest) returns (ListStationTicketsResponse);

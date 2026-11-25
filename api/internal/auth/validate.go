@@ -28,9 +28,10 @@ type StaffInput struct {
 	Name     string
 	Role     string
 	Active   bool
-	Username string // "" = none (non-privileged roles)
-	Password string // "" = unchanged
-	Pin      string // "" = unchanged
+	Username string  // "" = none (non-privileged roles)
+	Password string  // "" = unchanged
+	Pin      string  // "" = unchanged
+	Phone    *string // nil = unchanged; "" clears; normalised by validate
 }
 
 func (in StaffInput) isNew() bool { return in.ID == "" }
@@ -59,6 +60,11 @@ func (in StaffInput) validate() *connecterr.Error {
 	}
 	if in.Pin != "" && !pinRe.MatchString(in.Pin) {
 		return connecterr.Invalid("pin", "PIN must be 4–6 digits")
+	}
+	if in.Phone != nil {
+		if _, ok := NormalisePhone(*in.Phone); !ok {
+			return connecterr.Invalid("phone", "enter a Nepali mobile or landline number")
+		}
 	}
 	return nil
 }

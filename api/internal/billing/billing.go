@@ -6,8 +6,11 @@ package billing
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 
@@ -60,22 +63,66 @@ type lineMod struct {
 
 func local(en, ne string) *restaurantv1.LocalText { return &restaurantv1.LocalText{En: en, Ne: ne} }
 
-func toInvoice(inv sqlc.Invoice, lines []sqlc.InvoiceLine, payments []sqlc.Payment) *restaurantv1.Invoice {
+// displayNumber is the printed invoice number: "E-2083/84-12" for an estimate,
+// "2083/84-12" for a tax invoice. fy is the stored fiscal year ("2083.084").
+func displayNumber(mode, fy string, n int32) string {
+	prefix := ""
+	if mode == "ESTIMATE" {
+		prefix = "E-"
+	}
+	return fmt.Sprintf("%s%s-%d", prefix, displayFiscalYear(fy), n)
+}
+
+// displayFiscalYear turns the stored "2083.084" into the printed "2083/84";
+// anything else passes through unchanged.
+func displayFiscalYear(fy string) string {
+	start, end, ok := strings.Cut(fy, ".")
+	if !ok || len(end) < 2 {
+		return fy
+	}
+	return start + "/" + end[len(end)-2:]
+}
+
+func uuidStr(id pgtype.UUID) string {
+	if !id.Valid {
+		return ""
+	}
+	return uuid.UUID(id.Bytes).String()
+}
+
+func toInvoice(inv sqlc.Invoice, lines []sqlc.InvoiceLine, payments []sqlc.Payment, prints []sqlc.ListInvoicePrintsRow) *restaurantv1.Invoice {
 	out := &restaurantv1.Invoice{
 		Id: inv.ID.String(), FiscalYear: inv.FiscalYear, Number: inv.Number, Mode: billingModeEnum(inv.Mode),
 		BsDate: inv.BsDate, AdDatetimeUnix: inv.AdDatetime.Unix(), BuyerName: inv.BuyerName, BuyerPan: inv.BuyerPan,
 		SubtotalPaisa: inv.SubtotalPaisa, DiscountPaisa: inv.DiscountPaisa, ServiceChargePaisa: inv.ServiceChargePaisa,
 		TaxablePaisa: inv.TaxablePaisa, VatPaisa: inv.VatPaisa, RoundingPaisa: inv.RoundingPaisa, TotalPaisa: inv.TotalPaisa,
 		Status: invoiceStatusEnum(inv.Status), PrintCount: inv.PrintCount,
+		OrderId: uuidStr(inv.OrderID), OrderClientId: uuidStr(inv.OrderClientID),
+		Seller: &restaurantv1.InvoiceSeller{
+			Name: local(inv.SellerNameEn, inv.SellerNameNe), Address: inv.SellerAddress, PanNumber: inv.SellerPanNumber,
+			VatRateBp: inv.SellerVatRateBp, LogoUrl: inv.SellerLogoUrl, VatRegistered: inv.SellerVatRegistered,
+		},
+		DisplayNumber:  inv.DisplayNumber,
+		DiscountReason: inv.DiscountReason,
+		IssuedByUserId: uuidStr(inv.CreatedByUserID), IssuedByName: inv.IssuedByName,
+		Place:        inv.Place,
+		CancelReason: inv.CancelReason, CancelledByUserId: uuidStr(inv.CancelledByUserID),
+		CancelApprovedByUserId: uuidStr(inv.CancelApprovedByUserID),
 	}
-	if inv.OrderID.Valid {
-		out.OrderId = uuid.UUID(inv.OrderID.Bytes).String()
+	if out.DisplayNumber == "" {
+		out.DisplayNumber = displayNumber(inv.Mode, inv.FiscalYear, inv.Number)
+	}
+	if inv.CancelledAt.Valid {
+		out.CancelledAtUnix = inv.CancelledAt.Time.Unix()
 	}
 	for _, l := range lines {
 		out.Lines = append(out.Lines, toLine(l))
 	}
 	for _, p := range payments {
 		out.Payments = append(out.Payments, toPayment(p))
+	}
+	for _, p := range prints {
+		out.Prints = append(out.Prints, &restaurantv1.InvoicePrint{AtUnix: p.PrintedAt.Unix(), ByUserId: p.PrintedByUserID.String(), ByName: p.PrintedByName})
 	}
 	return out
 }
@@ -84,6 +131,10 @@ func toLine(l sqlc.InvoiceLine) *restaurantv1.InvoiceLine {
 	out := &restaurantv1.InvoiceLine{
 		Name: local(l.NameEn, l.NameNe), VariantName: l.VariantName, Quantity: l.Quantity,
 		UnitPricePaisa: l.UnitPricePaisa, LineTotalPaisa: l.LineTotalPaisa,
+		OrderItemId: uuidStr(l.OrderItemID), OrderItemClientId: uuidStr(l.OrderItemClientID),
+	}
+	if l.VariantName != "" || l.VariantNameNe != "" {
+		out.Variant = local(l.VariantName, l.VariantNameNe)
 	}
 	var mods []lineMod
 	if len(l.ModifiersJson) > 0 {
@@ -99,6 +150,7 @@ func toPayment(p sqlc.Payment) *restaurantv1.Payment {
 	return &restaurantv1.Payment{
 		Id: p.ID.String(), Method: paymentMethodEnum(p.Method), AmountPaisa: p.AmountPaisa,
 		Reference: p.Reference, ConfirmedByUserId: p.ConfirmedByUserID.String(), CreatedAtUnix: p.CreatedAt.Unix(),
+		ShiftId: p.ShiftID.String(),
 	}
 }
 

@@ -14,9 +14,10 @@ import (
 )
 
 // Event is a poke. It is marshalled to a JSON text frame: {"type","id","version"}.
+// "id" is always present ("" for broadcast-only events) so clients parse one shape.
 type Event struct {
 	Type    string `json:"type"`
-	ID      string `json:"id,omitempty"`
+	ID      string `json:"id"`
 	Version int64  `json:"version,omitempty"`
 }
 
@@ -30,10 +31,26 @@ type client struct {
 type Hub struct {
 	mu      sync.Mutex
 	clients map[*client]struct{}
+	subs    map[chan Event]struct{}
 }
 
 func NewHub() *Hub {
-	return &Hub{clients: make(map[*client]struct{})}
+	return &Hub{clients: make(map[*client]struct{}), subs: make(map[chan Event]struct{})}
+}
+
+// Subscribe registers an in-process listener (tests, future server-side
+// consumers). Like socket clients it never blocks the hub: an event that does not
+// fit in the buffer is dropped for that listener. cancel unregisters it.
+func (h *Hub) Subscribe(buffer int) (<-chan Event, func()) {
+	ch := make(chan Event, buffer)
+	h.mu.Lock()
+	h.subs[ch] = struct{}{}
+	h.mu.Unlock()
+	return ch, func() {
+		h.mu.Lock()
+		delete(h.subs, ch)
+		h.mu.Unlock()
+	}
 }
 
 // Broadcast delivers ev to every client with room in its buffer. Clients whose
@@ -46,6 +63,12 @@ func (h *Hub) Broadcast(ev Event) {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	for ch := range h.subs {
+		select {
+		case ch <- ev:
+		default:
+		}
+	}
 	for c := range h.clients {
 		select {
 		case c.send <- data:
@@ -74,9 +97,9 @@ func (h *Hub) remove(c *client) {
 	h.mu.Unlock()
 }
 
-// ServeHTTP upgrades the request and registers the connection.
-// NOTE: step 4 adds session auth on the upgrade (reject unauthenticated). For now
-// any client may connect; in deploy, Caddy enforces same-origin.
+// ServeHTTP upgrades the request and registers the connection. It does not
+// authenticate: the server mounts it behind a session check (see server.wsAuth),
+// which rejects an upgrade without a valid session cookie / bearer token.
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		InsecureSkipVerify: true, // ponytail: origin checked by Caddy in deploy; tighten with OriginPatterns there

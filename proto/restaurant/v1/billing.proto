@@ -47,6 +47,9 @@ message InvoiceLine {
   int32 quantity = 4;
   int64 unit_price_paisa = 5;
   int64 line_total_paisa = 6;
+  string order_item_id = 7;        // server id of the billed order line
+  string order_item_client_id = 8; // client id of the billed order line
+  LocalText variant = 9;           // bilingual variant name (unset when the line has no variant)
 }
 
 message Payment {
@@ -56,6 +59,26 @@ message Payment {
   string reference = 4;
   string confirmed_by_user_id = 5;
   int64 created_at_unix = 6;
+  string shift_id = 7; // the collector's shift the payment was taken in
+}
+
+// The seller's details captured when the invoice was issued; reprints show these,
+// never today's settings.
+message InvoiceSeller {
+  LocalText name = 1;
+  string address = 2;
+  string pan_number = 3;
+  int32 vat_rate_bp = 4;
+  string logo_url = 5;
+  bool vat_registered = 6;
+}
+
+// One print of an invoice (the first is the original). Feeds the IRD sales book's
+// Printed_Time / Printed_by columns.
+message InvoicePrint {
+  int64 at_unix = 1;
+  string by_user_id = 2;
+  string by_name = 3;
 }
 
 message Invoice {
@@ -79,6 +102,21 @@ message Invoice {
   int32 print_count = 18;
   repeated InvoiceLine lines = 19;
   repeated Payment payments = 20;
+  // --- captured at issue time, immutable ---
+  InvoiceSeller seller = 21;
+  string display_number = 22;       // "E-2083/84-12" (estimate) or "2083/84-12" (tax invoice)
+  string discount_reason = 23;
+  string issued_by_user_id = 24;
+  string issued_by_name = 25;
+  string place = 26;                // table name, counter-sale label, or "Takeaway"
+  string order_client_id = 27;
+  // --- cancellation (empty / 0 while ISSUED) ---
+  string cancel_reason = 28;
+  int64 cancelled_at_unix = 29;
+  string cancelled_by_user_id = 30;
+  string cancel_approved_by_user_id = 31;
+  // Every print, oldest first; prints[0] is the original.
+  repeated InvoicePrint prints = 32;
 }
 
 // Computed-but-not-persisted preview of a bill.
@@ -174,7 +212,7 @@ message IssueBillRequest {
 message CounterSaleRequest {
   string command_id = 1 [(buf.validate.field).string.min_len = 1];
   string order_client_id = 2;
-  string label = 3; // not stored yet (orders have no label column)
+  string label = 3; // printed as the invoice's place (blank = "Takeaway")
   repeated NewItem lines = 4;
   optional DiscountInput discount = 5;
   string buyer_name = 6;

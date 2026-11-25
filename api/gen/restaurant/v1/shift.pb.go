@@ -131,8 +131,10 @@ type Shift struct {
 	ClosedAtUnix      int64                  `protobuf:"varint,4,opt,name=closed_at_unix,json=closedAtUnix,proto3" json:"closed_at_unix,omitempty"`
 	OpeningFloatPaisa int64                  `protobuf:"varint,5,opt,name=opening_float_paisa,json=openingFloatPaisa,proto3" json:"opening_float_paisa,omitempty"`
 	CountedCashPaisa  int64                  `protobuf:"varint,6,opt,name=counted_cash_paisa,json=countedCashPaisa,proto3" json:"counted_cash_paisa,omitempty"`
-	Note              string                 `protobuf:"bytes,7,opt,name=note,proto3" json:"note,omitempty"`
+	Note              string                 `protobuf:"bytes,7,opt,name=note,proto3" json:"note,omitempty"` // the opening note (never overwritten by CloseShift)
 	Status            ShiftStatus            `protobuf:"varint,8,opt,name=status,proto3,enum=restaurant.v1.ShiftStatus" json:"status,omitempty"`
+	ClosingNote       string                 `protobuf:"bytes,9,opt,name=closing_note,json=closingNote,proto3" json:"closing_note,omitempty"` // the note given at close-out
+	CashierName       string                 `protobuf:"bytes,10,opt,name=cashier_name,json=cashierName,proto3" json:"cashier_name,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -223,6 +225,20 @@ func (x *Shift) GetStatus() ShiftStatus {
 	return ShiftStatus_SHIFT_STATUS_UNSPECIFIED
 }
 
+func (x *Shift) GetClosingNote() string {
+	if x != nil {
+		return x.ClosingNote
+	}
+	return ""
+}
+
+func (x *Shift) GetCashierName() string {
+	if x != nil {
+		return x.CashierName
+	}
+	return ""
+}
+
 type QrPaymentRow struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PaymentId     string                 `protobuf:"bytes,1,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"`
@@ -299,21 +315,253 @@ func (x *QrPaymentRow) GetCreatedAtUnix() int64 {
 	return 0
 }
 
+// One payment taken in the shift (any method).
+type ShiftPaymentRow struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	PaymentId        string                 `protobuf:"bytes,1,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"`
+	InvoiceId        string                 `protobuf:"bytes,2,opt,name=invoice_id,json=invoiceId,proto3" json:"invoice_id,omitempty"`
+	InvoiceNumber    int32                  `protobuf:"varint,3,opt,name=invoice_number,json=invoiceNumber,proto3" json:"invoice_number,omitempty"`
+	DisplayNumber    string                 `protobuf:"bytes,4,opt,name=display_number,json=displayNumber,proto3" json:"display_number,omitempty"` // "E-2083/84-12" (estimate) or "2083/84-12" (tax invoice)
+	Method           PaymentMethod          `protobuf:"varint,5,opt,name=method,proto3,enum=restaurant.v1.PaymentMethod" json:"method,omitempty"`
+	AmountPaisa      int64                  `protobuf:"varint,6,opt,name=amount_paisa,json=amountPaisa,proto3" json:"amount_paisa,omitempty"`
+	Reference        string                 `protobuf:"bytes,7,opt,name=reference,proto3" json:"reference,omitempty"`
+	CreatedAtUnix    int64                  `protobuf:"varint,8,opt,name=created_at_unix,json=createdAtUnix,proto3" json:"created_at_unix,omitempty"`
+	Confirmed        bool                   `protobuf:"varint,9,opt,name=confirmed,proto3" json:"confirmed,omitempty"`                                        // false while a QR payment is still AWAITING
+	InvoiceCancelled bool                   `protobuf:"varint,10,opt,name=invoice_cancelled,json=invoiceCancelled,proto3" json:"invoice_cancelled,omitempty"` // the bill has since been cancelled
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ShiftPaymentRow) Reset() {
+	*x = ShiftPaymentRow{}
+	mi := &file_restaurant_v1_shift_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShiftPaymentRow) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShiftPaymentRow) ProtoMessage() {}
+
+func (x *ShiftPaymentRow) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_shift_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShiftPaymentRow.ProtoReflect.Descriptor instead.
+func (*ShiftPaymentRow) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ShiftPaymentRow) GetPaymentId() string {
+	if x != nil {
+		return x.PaymentId
+	}
+	return ""
+}
+
+func (x *ShiftPaymentRow) GetInvoiceId() string {
+	if x != nil {
+		return x.InvoiceId
+	}
+	return ""
+}
+
+func (x *ShiftPaymentRow) GetInvoiceNumber() int32 {
+	if x != nil {
+		return x.InvoiceNumber
+	}
+	return 0
+}
+
+func (x *ShiftPaymentRow) GetDisplayNumber() string {
+	if x != nil {
+		return x.DisplayNumber
+	}
+	return ""
+}
+
+func (x *ShiftPaymentRow) GetMethod() PaymentMethod {
+	if x != nil {
+		return x.Method
+	}
+	return PaymentMethod_PAYMENT_METHOD_UNSPECIFIED
+}
+
+func (x *ShiftPaymentRow) GetAmountPaisa() int64 {
+	if x != nil {
+		return x.AmountPaisa
+	}
+	return 0
+}
+
+func (x *ShiftPaymentRow) GetReference() string {
+	if x != nil {
+		return x.Reference
+	}
+	return ""
+}
+
+func (x *ShiftPaymentRow) GetCreatedAtUnix() int64 {
+	if x != nil {
+		return x.CreatedAtUnix
+	}
+	return 0
+}
+
+func (x *ShiftPaymentRow) GetConfirmed() bool {
+	if x != nil {
+		return x.Confirmed
+	}
+	return false
+}
+
+func (x *ShiftPaymentRow) GetInvoiceCancelled() bool {
+	if x != nil {
+		return x.InvoiceCancelled
+	}
+	return false
+}
+
+// A bill cancelled after the shift that took its payment had closed is counted
+// back (subtracted) here, in the canceller's shift open at the time of the cancel.
+type ShiftAdjustment struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	InvoiceId       string                 `protobuf:"bytes,2,opt,name=invoice_id,json=invoiceId,proto3" json:"invoice_id,omitempty"`
+	InvoiceNumber   int32                  `protobuf:"varint,3,opt,name=invoice_number,json=invoiceNumber,proto3" json:"invoice_number,omitempty"`
+	DisplayNumber   string                 `protobuf:"bytes,4,opt,name=display_number,json=displayNumber,proto3" json:"display_number,omitempty"`
+	Method          PaymentMethod          `protobuf:"varint,5,opt,name=method,proto3,enum=restaurant.v1.PaymentMethod" json:"method,omitempty"`
+	AmountPaisa     int64                  `protobuf:"varint,6,opt,name=amount_paisa,json=amountPaisa,proto3" json:"amount_paisa,omitempty"`              // positive; subtracted from this shift's takings
+	CreatedAtUnix   int64                  `protobuf:"varint,7,opt,name=created_at_unix,json=createdAtUnix,proto3" json:"created_at_unix,omitempty"`      // when the bill was cancelled
+	OriginalShiftId string                 `protobuf:"bytes,8,opt,name=original_shift_id,json=originalShiftId,proto3" json:"original_shift_id,omitempty"` // the closed shift the payment was taken in
+	PaymentId       string                 `protobuf:"bytes,9,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ShiftAdjustment) Reset() {
+	*x = ShiftAdjustment{}
+	mi := &file_restaurant_v1_shift_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShiftAdjustment) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShiftAdjustment) ProtoMessage() {}
+
+func (x *ShiftAdjustment) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_shift_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShiftAdjustment.ProtoReflect.Descriptor instead.
+func (*ShiftAdjustment) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ShiftAdjustment) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ShiftAdjustment) GetInvoiceId() string {
+	if x != nil {
+		return x.InvoiceId
+	}
+	return ""
+}
+
+func (x *ShiftAdjustment) GetInvoiceNumber() int32 {
+	if x != nil {
+		return x.InvoiceNumber
+	}
+	return 0
+}
+
+func (x *ShiftAdjustment) GetDisplayNumber() string {
+	if x != nil {
+		return x.DisplayNumber
+	}
+	return ""
+}
+
+func (x *ShiftAdjustment) GetMethod() PaymentMethod {
+	if x != nil {
+		return x.Method
+	}
+	return PaymentMethod_PAYMENT_METHOD_UNSPECIFIED
+}
+
+func (x *ShiftAdjustment) GetAmountPaisa() int64 {
+	if x != nil {
+		return x.AmountPaisa
+	}
+	return 0
+}
+
+func (x *ShiftAdjustment) GetCreatedAtUnix() int64 {
+	if x != nil {
+		return x.CreatedAtUnix
+	}
+	return 0
+}
+
+func (x *ShiftAdjustment) GetOriginalShiftId() string {
+	if x != nil {
+		return x.OriginalShiftId
+	}
+	return ""
+}
+
+func (x *ShiftAdjustment) GetPaymentId() string {
+	if x != nil {
+		return x.PaymentId
+	}
+	return ""
+}
+
 // Close-out / report view of a shift.
 type ShiftReport struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	Shift             *Shift                 `protobuf:"bytes,1,opt,name=shift,proto3" json:"shift,omitempty"`
-	Totals            []*MethodTotal         `protobuf:"bytes,2,rep,name=totals,proto3" json:"totals,omitempty"`                                                   // confirmed payments by method
-	ExpectedCashPaisa int64                  `protobuf:"varint,3,opt,name=expected_cash_paisa,json=expectedCashPaisa,proto3" json:"expected_cash_paisa,omitempty"` // opening float + cash payments
-	DifferencePaisa   int64                  `protobuf:"varint,4,opt,name=difference_paisa,json=differencePaisa,proto3" json:"difference_paisa,omitempty"`         // counted - expected (0 unless closed)
-	QrPayments        []*QrPaymentRow        `protobuf:"bytes,5,rep,name=qr_payments,json=qrPayments,proto3" json:"qr_payments,omitempty"`                         // for reconciliation against the Fonepay statement
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Shift *Shift                 `protobuf:"bytes,1,opt,name=shift,proto3" json:"shift,omitempty"`
+	// Takings by method: confirmed payments, excluding bills cancelled while this
+	// shift was open, minus this shift's adjustments.
+	Totals            []*MethodTotal `protobuf:"bytes,2,rep,name=totals,proto3" json:"totals,omitempty"`
+	ExpectedCashPaisa int64          `protobuf:"varint,3,opt,name=expected_cash_paisa,json=expectedCashPaisa,proto3" json:"expected_cash_paisa,omitempty"` // opening float + cash takings (after adjustments)
+	DifferencePaisa   int64          `protobuf:"varint,4,opt,name=difference_paisa,json=differencePaisa,proto3" json:"difference_paisa,omitempty"`         // counted - expected (0 unless closed)
+	// Deprecated: use payments (QR only, no method or invoice id).
+	QrPayments    []*QrPaymentRow    `protobuf:"bytes,5,rep,name=qr_payments,json=qrPayments,proto3" json:"qr_payments,omitempty"`
+	Payments      []*ShiftPaymentRow `protobuf:"bytes,6,rep,name=payments,proto3" json:"payments,omitempty"`
+	Adjustments   []*ShiftAdjustment `protobuf:"bytes,7,rep,name=adjustments,proto3" json:"adjustments,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ShiftReport) Reset() {
 	*x = ShiftReport{}
-	mi := &file_restaurant_v1_shift_proto_msgTypes[3]
+	mi := &file_restaurant_v1_shift_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -325,7 +573,7 @@ func (x *ShiftReport) String() string {
 func (*ShiftReport) ProtoMessage() {}
 
 func (x *ShiftReport) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_shift_proto_msgTypes[3]
+	mi := &file_restaurant_v1_shift_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -338,7 +586,7 @@ func (x *ShiftReport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShiftReport.ProtoReflect.Descriptor instead.
 func (*ShiftReport) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{3}
+	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ShiftReport) GetShift() *Shift {
@@ -376,6 +624,20 @@ func (x *ShiftReport) GetQrPayments() []*QrPaymentRow {
 	return nil
 }
 
+func (x *ShiftReport) GetPayments() []*ShiftPaymentRow {
+	if x != nil {
+		return x.Payments
+	}
+	return nil
+}
+
+func (x *ShiftReport) GetAdjustments() []*ShiftAdjustment {
+	if x != nil {
+		return x.Adjustments
+	}
+	return nil
+}
+
 type OpenShiftRequest struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	OpeningFloatPaisa int64                  `protobuf:"varint,1,opt,name=opening_float_paisa,json=openingFloatPaisa,proto3" json:"opening_float_paisa,omitempty"`
@@ -386,7 +648,7 @@ type OpenShiftRequest struct {
 
 func (x *OpenShiftRequest) Reset() {
 	*x = OpenShiftRequest{}
-	mi := &file_restaurant_v1_shift_proto_msgTypes[4]
+	mi := &file_restaurant_v1_shift_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -398,7 +660,7 @@ func (x *OpenShiftRequest) String() string {
 func (*OpenShiftRequest) ProtoMessage() {}
 
 func (x *OpenShiftRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_shift_proto_msgTypes[4]
+	mi := &file_restaurant_v1_shift_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -411,7 +673,7 @@ func (x *OpenShiftRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenShiftRequest.ProtoReflect.Descriptor instead.
 func (*OpenShiftRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{4}
+	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *OpenShiftRequest) GetOpeningFloatPaisa() int64 {
@@ -436,7 +698,7 @@ type GetMyOpenShiftRequest struct {
 
 func (x *GetMyOpenShiftRequest) Reset() {
 	*x = GetMyOpenShiftRequest{}
-	mi := &file_restaurant_v1_shift_proto_msgTypes[5]
+	mi := &file_restaurant_v1_shift_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -448,7 +710,7 @@ func (x *GetMyOpenShiftRequest) String() string {
 func (*GetMyOpenShiftRequest) ProtoMessage() {}
 
 func (x *GetMyOpenShiftRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_shift_proto_msgTypes[5]
+	mi := &file_restaurant_v1_shift_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -461,7 +723,7 @@ func (x *GetMyOpenShiftRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMyOpenShiftRequest.ProtoReflect.Descriptor instead.
 func (*GetMyOpenShiftRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{5}
+	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{7}
 }
 
 type MyOpenShiftResponse struct {
@@ -473,7 +735,7 @@ type MyOpenShiftResponse struct {
 
 func (x *MyOpenShiftResponse) Reset() {
 	*x = MyOpenShiftResponse{}
-	mi := &file_restaurant_v1_shift_proto_msgTypes[6]
+	mi := &file_restaurant_v1_shift_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -485,7 +747,7 @@ func (x *MyOpenShiftResponse) String() string {
 func (*MyOpenShiftResponse) ProtoMessage() {}
 
 func (x *MyOpenShiftResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_shift_proto_msgTypes[6]
+	mi := &file_restaurant_v1_shift_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -498,7 +760,7 @@ func (x *MyOpenShiftResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MyOpenShiftResponse.ProtoReflect.Descriptor instead.
 func (*MyOpenShiftResponse) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{6}
+	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *MyOpenShiftResponse) GetShift() *Shift {
@@ -516,7 +778,7 @@ type ListOpenShiftsRequest struct {
 
 func (x *ListOpenShiftsRequest) Reset() {
 	*x = ListOpenShiftsRequest{}
-	mi := &file_restaurant_v1_shift_proto_msgTypes[7]
+	mi := &file_restaurant_v1_shift_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -528,7 +790,7 @@ func (x *ListOpenShiftsRequest) String() string {
 func (*ListOpenShiftsRequest) ProtoMessage() {}
 
 func (x *ListOpenShiftsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_shift_proto_msgTypes[7]
+	mi := &file_restaurant_v1_shift_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -541,7 +803,7 @@ func (x *ListOpenShiftsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOpenShiftsRequest.ProtoReflect.Descriptor instead.
 func (*ListOpenShiftsRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{7}
+	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{9}
 }
 
 type ListOpenShiftsResponse struct {
@@ -553,7 +815,7 @@ type ListOpenShiftsResponse struct {
 
 func (x *ListOpenShiftsResponse) Reset() {
 	*x = ListOpenShiftsResponse{}
-	mi := &file_restaurant_v1_shift_proto_msgTypes[8]
+	mi := &file_restaurant_v1_shift_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -565,7 +827,7 @@ func (x *ListOpenShiftsResponse) String() string {
 func (*ListOpenShiftsResponse) ProtoMessage() {}
 
 func (x *ListOpenShiftsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_shift_proto_msgTypes[8]
+	mi := &file_restaurant_v1_shift_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -578,7 +840,7 @@ func (x *ListOpenShiftsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOpenShiftsResponse.ProtoReflect.Descriptor instead.
 func (*ListOpenShiftsResponse) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{8}
+	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ListOpenShiftsResponse) GetShifts() []*Shift {
@@ -599,7 +861,7 @@ type CloseShiftRequest struct {
 
 func (x *CloseShiftRequest) Reset() {
 	*x = CloseShiftRequest{}
-	mi := &file_restaurant_v1_shift_proto_msgTypes[9]
+	mi := &file_restaurant_v1_shift_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -611,7 +873,7 @@ func (x *CloseShiftRequest) String() string {
 func (*CloseShiftRequest) ProtoMessage() {}
 
 func (x *CloseShiftRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_shift_proto_msgTypes[9]
+	mi := &file_restaurant_v1_shift_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -624,7 +886,7 @@ func (x *CloseShiftRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseShiftRequest.ProtoReflect.Descriptor instead.
 func (*CloseShiftRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{9}
+	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CloseShiftRequest) GetShiftId() string {
@@ -648,6 +910,94 @@ func (x *CloseShiftRequest) GetNote() string {
 	return ""
 }
 
+type ListShiftsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Limit         int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"` // 0 -> 50
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListShiftsRequest) Reset() {
+	*x = ListShiftsRequest{}
+	mi := &file_restaurant_v1_shift_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListShiftsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListShiftsRequest) ProtoMessage() {}
+
+func (x *ListShiftsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_shift_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListShiftsRequest.ProtoReflect.Descriptor instead.
+func (*ListShiftsRequest) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ListShiftsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type ListShiftsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Shifts        []*ShiftReport         `protobuf:"bytes,1,rep,name=shifts,proto3" json:"shifts,omitempty"` // newest first
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListShiftsResponse) Reset() {
+	*x = ListShiftsResponse{}
+	mi := &file_restaurant_v1_shift_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListShiftsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListShiftsResponse) ProtoMessage() {}
+
+func (x *ListShiftsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_shift_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListShiftsResponse.ProtoReflect.Descriptor instead.
+func (*ListShiftsResponse) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ListShiftsResponse) GetShifts() []*ShiftReport {
+	if x != nil {
+		return x.Shifts
+	}
+	return nil
+}
+
 type GetShiftReportRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ShiftId       string                 `protobuf:"bytes,1,opt,name=shift_id,json=shiftId,proto3" json:"shift_id,omitempty"`
@@ -657,7 +1007,7 @@ type GetShiftReportRequest struct {
 
 func (x *GetShiftReportRequest) Reset() {
 	*x = GetShiftReportRequest{}
-	mi := &file_restaurant_v1_shift_proto_msgTypes[10]
+	mi := &file_restaurant_v1_shift_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -669,7 +1019,7 @@ func (x *GetShiftReportRequest) String() string {
 func (*GetShiftReportRequest) ProtoMessage() {}
 
 func (x *GetShiftReportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_shift_proto_msgTypes[10]
+	mi := &file_restaurant_v1_shift_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -682,7 +1032,7 @@ func (x *GetShiftReportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetShiftReportRequest.ProtoReflect.Descriptor instead.
 func (*GetShiftReportRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{10}
+	return file_restaurant_v1_shift_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GetShiftReportRequest) GetShiftId() string {
@@ -700,7 +1050,7 @@ const file_restaurant_v1_shift_proto_rawDesc = "" +
 	"\vMethodTotal\x124\n" +
 	"\x06method\x18\x01 \x01(\x0e2\x1c.restaurant.v1.PaymentMethodR\x06method\x12\x1f\n" +
 	"\vtotal_paisa\x18\x02 \x01(\x03R\n" +
-	"totalPaisa\"\xb1\x02\n" +
+	"totalPaisa\"\xf7\x02\n" +
 	"\x05Shift\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12&\n" +
 	"\x0fcashier_user_id\x18\x02 \x01(\tR\rcashierUserId\x12$\n" +
@@ -709,21 +1059,52 @@ const file_restaurant_v1_shift_proto_rawDesc = "" +
 	"\x13opening_float_paisa\x18\x05 \x01(\x03R\x11openingFloatPaisa\x12,\n" +
 	"\x12counted_cash_paisa\x18\x06 \x01(\x03R\x10countedCashPaisa\x12\x12\n" +
 	"\x04note\x18\a \x01(\tR\x04note\x122\n" +
-	"\x06status\x18\b \x01(\x0e2\x1a.restaurant.v1.ShiftStatusR\x06status\"\xbd\x01\n" +
+	"\x06status\x18\b \x01(\x0e2\x1a.restaurant.v1.ShiftStatusR\x06status\x12!\n" +
+	"\fclosing_note\x18\t \x01(\tR\vclosingNote\x12!\n" +
+	"\fcashier_name\x18\n" +
+	" \x01(\tR\vcashierName\"\xbd\x01\n" +
 	"\fQrPaymentRow\x12\x1d\n" +
 	"\n" +
 	"payment_id\x18\x01 \x01(\tR\tpaymentId\x12%\n" +
 	"\x0einvoice_number\x18\x02 \x01(\x05R\rinvoiceNumber\x12!\n" +
 	"\famount_paisa\x18\x03 \x01(\x03R\vamountPaisa\x12\x1c\n" +
 	"\treference\x18\x04 \x01(\tR\treference\x12&\n" +
-	"\x0fcreated_at_unix\x18\x05 \x01(\x03R\rcreatedAtUnix\"\x86\x02\n" +
+	"\x0fcreated_at_unix\x18\x05 \x01(\x03R\rcreatedAtUnix\"\x87\x03\n" +
+	"\x0fShiftPaymentRow\x12\x1d\n" +
+	"\n" +
+	"payment_id\x18\x01 \x01(\tR\tpaymentId\x12\x1d\n" +
+	"\n" +
+	"invoice_id\x18\x02 \x01(\tR\tinvoiceId\x12%\n" +
+	"\x0einvoice_number\x18\x03 \x01(\x05R\rinvoiceNumber\x12%\n" +
+	"\x0edisplay_number\x18\x04 \x01(\tR\rdisplayNumber\x124\n" +
+	"\x06method\x18\x05 \x01(\x0e2\x1c.restaurant.v1.PaymentMethodR\x06method\x12!\n" +
+	"\famount_paisa\x18\x06 \x01(\x03R\vamountPaisa\x12\x1c\n" +
+	"\treference\x18\a \x01(\tR\treference\x12&\n" +
+	"\x0fcreated_at_unix\x18\b \x01(\x03R\rcreatedAtUnix\x12\x1c\n" +
+	"\tconfirmed\x18\t \x01(\bR\tconfirmed\x12+\n" +
+	"\x11invoice_cancelled\x18\n" +
+	" \x01(\bR\x10invoiceCancelled\"\xda\x02\n" +
+	"\x0fShiftAdjustment\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"invoice_id\x18\x02 \x01(\tR\tinvoiceId\x12%\n" +
+	"\x0einvoice_number\x18\x03 \x01(\x05R\rinvoiceNumber\x12%\n" +
+	"\x0edisplay_number\x18\x04 \x01(\tR\rdisplayNumber\x124\n" +
+	"\x06method\x18\x05 \x01(\x0e2\x1c.restaurant.v1.PaymentMethodR\x06method\x12!\n" +
+	"\famount_paisa\x18\x06 \x01(\x03R\vamountPaisa\x12&\n" +
+	"\x0fcreated_at_unix\x18\a \x01(\x03R\rcreatedAtUnix\x12*\n" +
+	"\x11original_shift_id\x18\b \x01(\tR\x0foriginalShiftId\x12\x1d\n" +
+	"\n" +
+	"payment_id\x18\t \x01(\tR\tpaymentId\"\x84\x03\n" +
 	"\vShiftReport\x12*\n" +
 	"\x05shift\x18\x01 \x01(\v2\x14.restaurant.v1.ShiftR\x05shift\x122\n" +
 	"\x06totals\x18\x02 \x03(\v2\x1a.restaurant.v1.MethodTotalR\x06totals\x12.\n" +
 	"\x13expected_cash_paisa\x18\x03 \x01(\x03R\x11expectedCashPaisa\x12)\n" +
 	"\x10difference_paisa\x18\x04 \x01(\x03R\x0fdifferencePaisa\x12<\n" +
 	"\vqr_payments\x18\x05 \x03(\v2\x1b.restaurant.v1.QrPaymentRowR\n" +
-	"qrPayments\"_\n" +
+	"qrPayments\x12:\n" +
+	"\bpayments\x18\x06 \x03(\v2\x1e.restaurant.v1.ShiftPaymentRowR\bpayments\x12@\n" +
+	"\vadjustments\x18\a \x03(\v2\x1e.restaurant.v1.ShiftAdjustmentR\vadjustments\"_\n" +
 	"\x10OpenShiftRequest\x127\n" +
 	"\x13opening_float_paisa\x18\x01 \x01(\x03B\a\xbaH\x04\"\x02(\x00R\x11openingFloatPaisa\x12\x12\n" +
 	"\x04note\x18\x02 \x01(\tR\x04note\"\x17\n" +
@@ -737,20 +1118,27 @@ const file_restaurant_v1_shift_proto_rawDesc = "" +
 	"\x11CloseShiftRequest\x12\"\n" +
 	"\bshift_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\ashiftId\x125\n" +
 	"\x12counted_cash_paisa\x18\x02 \x01(\x03B\a\xbaH\x04\"\x02(\x00R\x10countedCashPaisa\x12\x12\n" +
-	"\x04note\x18\x03 \x01(\tR\x04note\";\n" +
+	"\x04note\x18\x03 \x01(\tR\x04note\"5\n" +
+	"\x11ListShiftsRequest\x12 \n" +
+	"\x05limit\x18\x01 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xc8\x01(\x00R\x05limit\"H\n" +
+	"\x12ListShiftsResponse\x122\n" +
+	"\x06shifts\x18\x01 \x03(\v2\x1a.restaurant.v1.ShiftReportR\x06shifts\";\n" +
 	"\x15GetShiftReportRequest\x12\"\n" +
 	"\bshift_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\ashiftId*[\n" +
 	"\vShiftStatus\x12\x1c\n" +
 	"\x18SHIFT_STATUS_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11SHIFT_STATUS_OPEN\x10\x01\x12\x17\n" +
-	"\x13SHIFT_STATUS_CLOSED\x10\x022\xad\x03\n" +
+	"\x13SHIFT_STATUS_CLOSED\x10\x022\x80\x04\n" +
 	"\fShiftService\x12B\n" +
 	"\tOpenShift\x12\x1f.restaurant.v1.OpenShiftRequest\x1a\x14.restaurant.v1.Shift\x12Z\n" +
 	"\x0eGetMyOpenShift\x12$.restaurant.v1.GetMyOpenShiftRequest\x1a\".restaurant.v1.MyOpenShiftResponse\x12]\n" +
 	"\x0eListOpenShifts\x12$.restaurant.v1.ListOpenShiftsRequest\x1a%.restaurant.v1.ListOpenShiftsResponse\x12J\n" +
 	"\n" +
 	"CloseShift\x12 .restaurant.v1.CloseShiftRequest\x1a\x1a.restaurant.v1.ShiftReport\x12R\n" +
-	"\x0eGetShiftReport\x12$.restaurant.v1.GetShiftReportRequest\x1a\x1a.restaurant.v1.ShiftReportB\xb4\x01\n" +
+	"\x0eGetShiftReport\x12$.restaurant.v1.GetShiftReportRequest\x1a\x1a.restaurant.v1.ShiftReport\x12Q\n" +
+	"\n" +
+	"ListShifts\x12 .restaurant.v1.ListShiftsRequest\x1a!.restaurant.v1.ListShiftsResponseB\xb4\x01\n" +
 	"\x11com.restaurant.v1B\n" +
 	"ShiftProtoP\x01Z>github.com/oneaccord/restro/api/gen/restaurant/v1;restaurantv1\xa2\x02\x03RXX\xaa\x02\rRestaurant.V1\xca\x02\rRestaurant\\V1\xe2\x02\x19Restaurant\\V1\\GPBMetadata\xea\x02\x0eRestaurant::V1b\x06proto3"
 
@@ -767,45 +1155,56 @@ func file_restaurant_v1_shift_proto_rawDescGZIP() []byte {
 }
 
 var file_restaurant_v1_shift_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_restaurant_v1_shift_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_restaurant_v1_shift_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_restaurant_v1_shift_proto_goTypes = []any{
 	(ShiftStatus)(0),               // 0: restaurant.v1.ShiftStatus
 	(*MethodTotal)(nil),            // 1: restaurant.v1.MethodTotal
 	(*Shift)(nil),                  // 2: restaurant.v1.Shift
 	(*QrPaymentRow)(nil),           // 3: restaurant.v1.QrPaymentRow
-	(*ShiftReport)(nil),            // 4: restaurant.v1.ShiftReport
-	(*OpenShiftRequest)(nil),       // 5: restaurant.v1.OpenShiftRequest
-	(*GetMyOpenShiftRequest)(nil),  // 6: restaurant.v1.GetMyOpenShiftRequest
-	(*MyOpenShiftResponse)(nil),    // 7: restaurant.v1.MyOpenShiftResponse
-	(*ListOpenShiftsRequest)(nil),  // 8: restaurant.v1.ListOpenShiftsRequest
-	(*ListOpenShiftsResponse)(nil), // 9: restaurant.v1.ListOpenShiftsResponse
-	(*CloseShiftRequest)(nil),      // 10: restaurant.v1.CloseShiftRequest
-	(*GetShiftReportRequest)(nil),  // 11: restaurant.v1.GetShiftReportRequest
-	(PaymentMethod)(0),             // 12: restaurant.v1.PaymentMethod
+	(*ShiftPaymentRow)(nil),        // 4: restaurant.v1.ShiftPaymentRow
+	(*ShiftAdjustment)(nil),        // 5: restaurant.v1.ShiftAdjustment
+	(*ShiftReport)(nil),            // 6: restaurant.v1.ShiftReport
+	(*OpenShiftRequest)(nil),       // 7: restaurant.v1.OpenShiftRequest
+	(*GetMyOpenShiftRequest)(nil),  // 8: restaurant.v1.GetMyOpenShiftRequest
+	(*MyOpenShiftResponse)(nil),    // 9: restaurant.v1.MyOpenShiftResponse
+	(*ListOpenShiftsRequest)(nil),  // 10: restaurant.v1.ListOpenShiftsRequest
+	(*ListOpenShiftsResponse)(nil), // 11: restaurant.v1.ListOpenShiftsResponse
+	(*CloseShiftRequest)(nil),      // 12: restaurant.v1.CloseShiftRequest
+	(*ListShiftsRequest)(nil),      // 13: restaurant.v1.ListShiftsRequest
+	(*ListShiftsResponse)(nil),     // 14: restaurant.v1.ListShiftsResponse
+	(*GetShiftReportRequest)(nil),  // 15: restaurant.v1.GetShiftReportRequest
+	(PaymentMethod)(0),             // 16: restaurant.v1.PaymentMethod
 }
 var file_restaurant_v1_shift_proto_depIdxs = []int32{
-	12, // 0: restaurant.v1.MethodTotal.method:type_name -> restaurant.v1.PaymentMethod
+	16, // 0: restaurant.v1.MethodTotal.method:type_name -> restaurant.v1.PaymentMethod
 	0,  // 1: restaurant.v1.Shift.status:type_name -> restaurant.v1.ShiftStatus
-	2,  // 2: restaurant.v1.ShiftReport.shift:type_name -> restaurant.v1.Shift
-	1,  // 3: restaurant.v1.ShiftReport.totals:type_name -> restaurant.v1.MethodTotal
-	3,  // 4: restaurant.v1.ShiftReport.qr_payments:type_name -> restaurant.v1.QrPaymentRow
-	2,  // 5: restaurant.v1.MyOpenShiftResponse.shift:type_name -> restaurant.v1.Shift
-	2,  // 6: restaurant.v1.ListOpenShiftsResponse.shifts:type_name -> restaurant.v1.Shift
-	5,  // 7: restaurant.v1.ShiftService.OpenShift:input_type -> restaurant.v1.OpenShiftRequest
-	6,  // 8: restaurant.v1.ShiftService.GetMyOpenShift:input_type -> restaurant.v1.GetMyOpenShiftRequest
-	8,  // 9: restaurant.v1.ShiftService.ListOpenShifts:input_type -> restaurant.v1.ListOpenShiftsRequest
-	10, // 10: restaurant.v1.ShiftService.CloseShift:input_type -> restaurant.v1.CloseShiftRequest
-	11, // 11: restaurant.v1.ShiftService.GetShiftReport:input_type -> restaurant.v1.GetShiftReportRequest
-	2,  // 12: restaurant.v1.ShiftService.OpenShift:output_type -> restaurant.v1.Shift
-	7,  // 13: restaurant.v1.ShiftService.GetMyOpenShift:output_type -> restaurant.v1.MyOpenShiftResponse
-	9,  // 14: restaurant.v1.ShiftService.ListOpenShifts:output_type -> restaurant.v1.ListOpenShiftsResponse
-	4,  // 15: restaurant.v1.ShiftService.CloseShift:output_type -> restaurant.v1.ShiftReport
-	4,  // 16: restaurant.v1.ShiftService.GetShiftReport:output_type -> restaurant.v1.ShiftReport
-	12, // [12:17] is the sub-list for method output_type
-	7,  // [7:12] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	16, // 2: restaurant.v1.ShiftPaymentRow.method:type_name -> restaurant.v1.PaymentMethod
+	16, // 3: restaurant.v1.ShiftAdjustment.method:type_name -> restaurant.v1.PaymentMethod
+	2,  // 4: restaurant.v1.ShiftReport.shift:type_name -> restaurant.v1.Shift
+	1,  // 5: restaurant.v1.ShiftReport.totals:type_name -> restaurant.v1.MethodTotal
+	3,  // 6: restaurant.v1.ShiftReport.qr_payments:type_name -> restaurant.v1.QrPaymentRow
+	4,  // 7: restaurant.v1.ShiftReport.payments:type_name -> restaurant.v1.ShiftPaymentRow
+	5,  // 8: restaurant.v1.ShiftReport.adjustments:type_name -> restaurant.v1.ShiftAdjustment
+	2,  // 9: restaurant.v1.MyOpenShiftResponse.shift:type_name -> restaurant.v1.Shift
+	2,  // 10: restaurant.v1.ListOpenShiftsResponse.shifts:type_name -> restaurant.v1.Shift
+	6,  // 11: restaurant.v1.ListShiftsResponse.shifts:type_name -> restaurant.v1.ShiftReport
+	7,  // 12: restaurant.v1.ShiftService.OpenShift:input_type -> restaurant.v1.OpenShiftRequest
+	8,  // 13: restaurant.v1.ShiftService.GetMyOpenShift:input_type -> restaurant.v1.GetMyOpenShiftRequest
+	10, // 14: restaurant.v1.ShiftService.ListOpenShifts:input_type -> restaurant.v1.ListOpenShiftsRequest
+	12, // 15: restaurant.v1.ShiftService.CloseShift:input_type -> restaurant.v1.CloseShiftRequest
+	15, // 16: restaurant.v1.ShiftService.GetShiftReport:input_type -> restaurant.v1.GetShiftReportRequest
+	13, // 17: restaurant.v1.ShiftService.ListShifts:input_type -> restaurant.v1.ListShiftsRequest
+	2,  // 18: restaurant.v1.ShiftService.OpenShift:output_type -> restaurant.v1.Shift
+	9,  // 19: restaurant.v1.ShiftService.GetMyOpenShift:output_type -> restaurant.v1.MyOpenShiftResponse
+	11, // 20: restaurant.v1.ShiftService.ListOpenShifts:output_type -> restaurant.v1.ListOpenShiftsResponse
+	6,  // 21: restaurant.v1.ShiftService.CloseShift:output_type -> restaurant.v1.ShiftReport
+	6,  // 22: restaurant.v1.ShiftService.GetShiftReport:output_type -> restaurant.v1.ShiftReport
+	14, // 23: restaurant.v1.ShiftService.ListShifts:output_type -> restaurant.v1.ListShiftsResponse
+	18, // [18:24] is the sub-list for method output_type
+	12, // [12:18] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_restaurant_v1_shift_proto_init() }
@@ -814,14 +1213,14 @@ func file_restaurant_v1_shift_proto_init() {
 		return
 	}
 	file_restaurant_v1_billing_proto_init()
-	file_restaurant_v1_shift_proto_msgTypes[6].OneofWrappers = []any{}
+	file_restaurant_v1_shift_proto_msgTypes[8].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_restaurant_v1_shift_proto_rawDesc), len(file_restaurant_v1_shift_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   11,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

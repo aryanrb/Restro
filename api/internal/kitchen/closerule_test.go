@@ -99,13 +99,13 @@ func TestMarkItemsReadyClosesBilledTakeaway(t *testing.T) {
 	svc, pool, ctx := newKitchenTest(t)
 	orderID, _, items := seedBilledOrder(t, ctx, pool, "TAKEAWAY", 2)
 
-	if err := svc.MarkItemsReady(ctx, items[:1]); err != nil {
+	if _, err := svc.MarkItemsReady(ctx, items[:1]); err != nil {
 		t.Fatalf("ready 1: %v", err)
 	}
 	if got := statusOf(t, ctx, pool, orderID); got != "BILLED" {
 		t.Fatalf("after first ready status = %s, want BILLED", got)
 	}
-	if err := svc.MarkItemsReady(ctx, items[1:]); err != nil {
+	if _, err := svc.MarkItemsReady(ctx, items[1:]); err != nil {
 		t.Fatalf("ready 2: %v", err)
 	}
 	if got := statusOf(t, ctx, pool, orderID); got != "CLOSED" {
@@ -116,7 +116,7 @@ func TestMarkItemsReadyClosesBilledTakeaway(t *testing.T) {
 func TestBumpTicketClosesBilledTakeaway(t *testing.T) {
 	svc, pool, ctx := newKitchenTest(t)
 	orderID, stationID, _ := seedBilledOrder(t, ctx, pool, "TAKEAWAY", 2)
-	if err := svc.BumpTicket(ctx, orderID.String(), stationID.String()); err != nil {
+	if _, err := svc.BumpTicket(ctx, orderID.String(), stationID.String()); err != nil {
 		t.Fatalf("bump: %v", err)
 	}
 	if got := statusOf(t, ctx, pool, orderID); got != "CLOSED" {
@@ -128,10 +128,10 @@ func TestBumpTicketClosesBilledTakeaway(t *testing.T) {
 func TestReadyDoesNotCloseDineIn(t *testing.T) {
 	svc, pool, ctx := newKitchenTest(t)
 	orderID, stationID, items := seedBilledOrder(t, ctx, pool, "DINE_IN", 2)
-	if err := svc.MarkItemsReady(ctx, items[:1]); err != nil {
+	if _, err := svc.MarkItemsReady(ctx, items[:1]); err != nil {
 		t.Fatalf("ready: %v", err)
 	}
-	if err := svc.BumpTicket(ctx, orderID.String(), stationID.String()); err != nil {
+	if _, err := svc.BumpTicket(ctx, orderID.String(), stationID.String()); err != nil {
 		t.Fatalf("bump: %v", err)
 	}
 	if got := statusOf(t, ctx, pool, orderID); got != "BILLED" {

@@ -39,12 +39,16 @@ const (
 	// SettingsServiceUpdateSettingsProcedure is the fully-qualified name of the SettingsService's
 	// UpdateSettings RPC.
 	SettingsServiceUpdateSettingsProcedure = "/restaurant.v1.SettingsService/UpdateSettings"
+	// SettingsServiceSetSettingsImageProcedure is the fully-qualified name of the SettingsService's
+	// SetSettingsImage RPC.
+	SettingsServiceSetSettingsImageProcedure = "/restaurant.v1.SettingsService/SetSettingsImage"
 )
 
 // SettingsServiceClient is a client for the restaurant.v1.SettingsService service.
 type SettingsServiceClient interface {
 	GetSettings(context.Context, *connect.Request[v1.GetSettingsRequest]) (*connect.Response[v1.Settings], error)
 	UpdateSettings(context.Context, *connect.Request[v1.UpdateSettingsRequest]) (*connect.Response[v1.Settings], error)
+	SetSettingsImage(context.Context, *connect.Request[v1.SetSettingsImageRequest]) (*connect.Response[v1.Settings], error)
 }
 
 // NewSettingsServiceClient constructs a client for the restaurant.v1.SettingsService service. By
@@ -70,13 +74,20 @@ func NewSettingsServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(settingsServiceMethods.ByName("UpdateSettings")),
 			connect.WithClientOptions(opts...),
 		),
+		setSettingsImage: connect.NewClient[v1.SetSettingsImageRequest, v1.Settings](
+			httpClient,
+			baseURL+SettingsServiceSetSettingsImageProcedure,
+			connect.WithSchema(settingsServiceMethods.ByName("SetSettingsImage")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // settingsServiceClient implements SettingsServiceClient.
 type settingsServiceClient struct {
-	getSettings    *connect.Client[v1.GetSettingsRequest, v1.Settings]
-	updateSettings *connect.Client[v1.UpdateSettingsRequest, v1.Settings]
+	getSettings      *connect.Client[v1.GetSettingsRequest, v1.Settings]
+	updateSettings   *connect.Client[v1.UpdateSettingsRequest, v1.Settings]
+	setSettingsImage *connect.Client[v1.SetSettingsImageRequest, v1.Settings]
 }
 
 // GetSettings calls restaurant.v1.SettingsService.GetSettings.
@@ -89,10 +100,16 @@ func (c *settingsServiceClient) UpdateSettings(ctx context.Context, req *connect
 	return c.updateSettings.CallUnary(ctx, req)
 }
 
+// SetSettingsImage calls restaurant.v1.SettingsService.SetSettingsImage.
+func (c *settingsServiceClient) SetSettingsImage(ctx context.Context, req *connect.Request[v1.SetSettingsImageRequest]) (*connect.Response[v1.Settings], error) {
+	return c.setSettingsImage.CallUnary(ctx, req)
+}
+
 // SettingsServiceHandler is an implementation of the restaurant.v1.SettingsService service.
 type SettingsServiceHandler interface {
 	GetSettings(context.Context, *connect.Request[v1.GetSettingsRequest]) (*connect.Response[v1.Settings], error)
 	UpdateSettings(context.Context, *connect.Request[v1.UpdateSettingsRequest]) (*connect.Response[v1.Settings], error)
+	SetSettingsImage(context.Context, *connect.Request[v1.SetSettingsImageRequest]) (*connect.Response[v1.Settings], error)
 }
 
 // NewSettingsServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -114,12 +131,20 @@ func NewSettingsServiceHandler(svc SettingsServiceHandler, opts ...connect.Handl
 		connect.WithSchema(settingsServiceMethods.ByName("UpdateSettings")),
 		connect.WithHandlerOptions(opts...),
 	)
+	settingsServiceSetSettingsImageHandler := connect.NewUnaryHandler(
+		SettingsServiceSetSettingsImageProcedure,
+		svc.SetSettingsImage,
+		connect.WithSchema(settingsServiceMethods.ByName("SetSettingsImage")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/restaurant.v1.SettingsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SettingsServiceGetSettingsProcedure:
 			settingsServiceGetSettingsHandler.ServeHTTP(w, r)
 		case SettingsServiceUpdateSettingsProcedure:
 			settingsServiceUpdateSettingsHandler.ServeHTTP(w, r)
+		case SettingsServiceSetSettingsImageProcedure:
+			settingsServiceSetSettingsImageHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -135,4 +160,8 @@ func (UnimplementedSettingsServiceHandler) GetSettings(context.Context, *connect
 
 func (UnimplementedSettingsServiceHandler) UpdateSettings(context.Context, *connect.Request[v1.UpdateSettingsRequest]) (*connect.Response[v1.Settings], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.SettingsService.UpdateSettings is not implemented"))
+}
+
+func (UnimplementedSettingsServiceHandler) SetSettingsImage(context.Context, *connect.Request[v1.SetSettingsImageRequest]) (*connect.Response[v1.Settings], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.SettingsService.SetSettingsImage is not implemented"))
 }

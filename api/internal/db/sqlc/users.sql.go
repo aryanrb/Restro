@@ -25,9 +25,9 @@ func (q *Queries) CountActiveOwners(ctx context.Context) (int64, error) {
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (name, role, username, password_hash, pin_hash, language, active)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at, pin_locked_until, pin_lockout_count
+INSERT INTO users (name, role, username, password_hash, pin_hash, language, active, phone)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at, pin_locked_until, pin_lockout_count, phone
 `
 
 type CreateUserParams struct {
@@ -38,6 +38,7 @@ type CreateUserParams struct {
 	PinHash      pgtype.Text `json:"pin_hash"`
 	Language     string      `json:"language"`
 	Active       bool        `json:"active"`
+	Phone        string      `json:"phone"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -49,6 +50,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.PinHash,
 		arg.Language,
 		arg.Active,
+		arg.Phone,
 	)
 	var i User
 	err := row.Scan(
@@ -65,12 +67,13 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.UpdatedAt,
 		&i.PinLockedUntil,
 		&i.PinLockoutCount,
+		&i.Phone,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at, pin_locked_until, pin_lockout_count FROM users WHERE id = $1
+SELECT id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at, pin_locked_until, pin_lockout_count, phone FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -90,12 +93,13 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.UpdatedAt,
 		&i.PinLockedUntil,
 		&i.PinLockoutCount,
+		&i.Phone,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at, pin_locked_until, pin_lockout_count FROM users WHERE username = $1
+SELECT id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at, pin_locked_until, pin_lockout_count, phone FROM users WHERE username = $1
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username pgtype.Text) (User, error) {
@@ -115,6 +119,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username pgtype.Text) (
 		&i.UpdatedAt,
 		&i.PinLockedUntil,
 		&i.PinLockoutCount,
+		&i.Phone,
 	)
 	return i, err
 }
@@ -122,7 +127,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username pgtype.Text) (
 const incrementPinFailure = `-- name: IncrementPinFailure :one
 UPDATE users SET failed_pin_attempts = failed_pin_attempts + 1, updated_at = now()
 WHERE id = $1
-RETURNING id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at, pin_locked_until, pin_lockout_count
+RETURNING id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at, pin_locked_until, pin_lockout_count, phone
 `
 
 func (q *Queries) IncrementPinFailure(ctx context.Context, id uuid.UUID) (User, error) {
@@ -142,12 +147,13 @@ func (q *Queries) IncrementPinFailure(ctx context.Context, id uuid.UUID) (User, 
 		&i.UpdatedAt,
 		&i.PinLockedUntil,
 		&i.PinLockoutCount,
+		&i.Phone,
 	)
 	return i, err
 }
 
 const listActiveUsers = `-- name: ListActiveUsers :many
-SELECT id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at, pin_locked_until, pin_lockout_count FROM users WHERE active = true ORDER BY name
+SELECT id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at, pin_locked_until, pin_lockout_count, phone FROM users WHERE active = true ORDER BY name
 `
 
 func (q *Queries) ListActiveUsers(ctx context.Context) ([]User, error) {
@@ -173,6 +179,7 @@ func (q *Queries) ListActiveUsers(ctx context.Context) ([]User, error) {
 			&i.UpdatedAt,
 			&i.PinLockedUntil,
 			&i.PinLockoutCount,
+			&i.Phone,
 		); err != nil {
 			return nil, err
 		}
@@ -185,7 +192,7 @@ func (q *Queries) ListActiveUsers(ctx context.Context) ([]User, error) {
 }
 
 const listStaff = `-- name: ListStaff :many
-SELECT id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at, pin_locked_until, pin_lockout_count FROM users ORDER BY role, name
+SELECT id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at, pin_locked_until, pin_lockout_count, phone FROM users ORDER BY role, name
 `
 
 func (q *Queries) ListStaff(ctx context.Context) ([]User, error) {
@@ -211,6 +218,7 @@ func (q *Queries) ListStaff(ctx context.Context) ([]User, error) {
 			&i.UpdatedAt,
 			&i.PinLockedUntil,
 			&i.PinLockoutCount,
+			&i.Phone,
 		); err != nil {
 			return nil, err
 		}
@@ -237,7 +245,7 @@ UPDATE users SET
 WHERE id = $4
   AND ((pin_locked_until IS NULL AND failed_pin_attempts < $1::int)
        OR pin_locked_until <= $2::timestamptz)
-RETURNING id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at, pin_locked_until, pin_lockout_count
+RETURNING id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at, pin_locked_until, pin_lockout_count, phone
 `
 
 type ReservePinAttemptParams struct {
@@ -277,6 +285,7 @@ func (q *Queries) ReservePinAttempt(ctx context.Context, arg ReservePinAttemptPa
 		&i.UpdatedAt,
 		&i.PinLockedUntil,
 		&i.PinLockoutCount,
+		&i.Phone,
 	)
 	return i, err
 }
@@ -295,7 +304,7 @@ func (q *Queries) ResetPinFailures(ctx context.Context, id uuid.UUID) error {
 }
 
 const setUserLanguage = `-- name: SetUserLanguage :one
-UPDATE users SET language = $2, updated_at = now() WHERE id = $1 RETURNING id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at, pin_locked_until, pin_lockout_count
+UPDATE users SET language = $2, updated_at = now() WHERE id = $1 RETURNING id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at, pin_locked_until, pin_lockout_count, phone
 `
 
 type SetUserLanguageParams struct {
@@ -320,6 +329,7 @@ func (q *Queries) SetUserLanguage(ctx context.Context, arg SetUserLanguageParams
 		&i.UpdatedAt,
 		&i.PinLockedUntil,
 		&i.PinLockoutCount,
+		&i.Phone,
 	)
 	return i, err
 }
@@ -343,9 +353,9 @@ func (q *Queries) SetUserPin(ctx context.Context, arg SetUserPinParams) error {
 
 const updateUser = `-- name: UpdateUser :one
 UPDATE users
-SET name = $2, role = $3, username = $4, password_hash = $5, pin_hash = $6, active = $7, updated_at = now()
+SET name = $2, role = $3, username = $4, password_hash = $5, pin_hash = $6, active = $7, phone = $8, updated_at = now()
 WHERE id = $1
-RETURNING id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at, pin_locked_until, pin_lockout_count
+RETURNING id, name, role, username, password_hash, pin_hash, language, active, failed_pin_attempts, created_at, updated_at, pin_locked_until, pin_lockout_count, phone
 `
 
 type UpdateUserParams struct {
@@ -356,6 +366,7 @@ type UpdateUserParams struct {
 	PasswordHash pgtype.Text `json:"password_hash"`
 	PinHash      pgtype.Text `json:"pin_hash"`
 	Active       bool        `json:"active"`
+	Phone        string      `json:"phone"`
 }
 
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
@@ -367,6 +378,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		arg.PasswordHash,
 		arg.PinHash,
 		arg.Active,
+		arg.Phone,
 	)
 	var i User
 	err := row.Scan(
@@ -383,6 +395,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.UpdatedAt,
 		&i.PinLockedUntil,
 		&i.PinLockoutCount,
+		&i.Phone,
 	)
 	return i, err
 }

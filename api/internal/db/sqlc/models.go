@@ -90,6 +90,17 @@ type Invoice struct {
 	PrintCount               int32              `json:"print_count"`
 	CreatedByUserID          pgtype.UUID        `json:"created_by_user_id"`
 	CreatedAt                time.Time          `json:"created_at"`
+	DisplayNumber            string             `json:"display_number"`
+	SellerNameEn             string             `json:"seller_name_en"`
+	SellerNameNe             string             `json:"seller_name_ne"`
+	SellerAddress            string             `json:"seller_address"`
+	SellerPanNumber          string             `json:"seller_pan_number"`
+	SellerVatRateBp          int32              `json:"seller_vat_rate_bp"`
+	SellerVatRegistered      bool               `json:"seller_vat_registered"`
+	SellerLogoUrl            string             `json:"seller_logo_url"`
+	IssuedByName             string             `json:"issued_by_name"`
+	Place                    string             `json:"place"`
+	OrderClientID            pgtype.UUID        `json:"order_client_id"`
 }
 
 type InvoiceCounter struct {
@@ -99,16 +110,25 @@ type InvoiceCounter struct {
 }
 
 type InvoiceLine struct {
-	ID             uuid.UUID   `json:"id"`
-	InvoiceID      uuid.UUID   `json:"invoice_id"`
-	OrderItemID    pgtype.UUID `json:"order_item_id"`
-	NameEn         string      `json:"name_en"`
-	NameNe         string      `json:"name_ne"`
-	VariantName    string      `json:"variant_name"`
-	Quantity       int32       `json:"quantity"`
-	UnitPricePaisa int64       `json:"unit_price_paisa"`
-	ModifiersJson  []byte      `json:"modifiers_json"`
-	LineTotalPaisa int64       `json:"line_total_paisa"`
+	ID                uuid.UUID   `json:"id"`
+	InvoiceID         uuid.UUID   `json:"invoice_id"`
+	OrderItemID       pgtype.UUID `json:"order_item_id"`
+	NameEn            string      `json:"name_en"`
+	NameNe            string      `json:"name_ne"`
+	VariantName       string      `json:"variant_name"`
+	Quantity          int32       `json:"quantity"`
+	UnitPricePaisa    int64       `json:"unit_price_paisa"`
+	ModifiersJson     []byte      `json:"modifiers_json"`
+	LineTotalPaisa    int64       `json:"line_total_paisa"`
+	OrderItemClientID pgtype.UUID `json:"order_item_client_id"`
+	VariantNameNe     string      `json:"variant_name_ne"`
+}
+
+type InvoicePrint struct {
+	ID              uuid.UUID `json:"id"`
+	InvoiceID       uuid.UUID `json:"invoice_id"`
+	PrintedAt       time.Time `json:"printed_at"`
+	PrintedByUserID uuid.UUID `json:"printed_by_user_id"`
 }
 
 type ItemModifierGroup struct {
@@ -179,28 +199,31 @@ type Order struct {
 	Version      int64       `json:"version"`
 	CreatedAt    time.Time   `json:"created_at"`
 	UpdatedAt    time.Time   `json:"updated_at"`
+	Label        string      `json:"label"`
 }
 
 type OrderItem struct {
-	ID                   uuid.UUID   `json:"id"`
-	OrderID              uuid.UUID   `json:"order_id"`
-	ClientID             uuid.UUID   `json:"client_id"`
-	MenuItemID           uuid.UUID   `json:"menu_item_id"`
-	NameEn               string      `json:"name_en"`
-	NameNe               string      `json:"name_ne"`
-	VariantNameEn        string      `json:"variant_name_en"`
-	VariantNameNe        string      `json:"variant_name_ne"`
-	HasVariant           bool        `json:"has_variant"`
-	UnitPricePaisa       int64       `json:"unit_price_paisa"`
-	Quantity             int32       `json:"quantity"`
-	Note                 string      `json:"note"`
-	StationID            uuid.UUID   `json:"station_id"`
-	Status               string      `json:"status"`
-	VoidReason           string      `json:"void_reason"`
-	VoidedByUserID       pgtype.UUID `json:"voided_by_user_id"`
-	VoidApprovedByUserID pgtype.UUID `json:"void_approved_by_user_id"`
-	CreatedAt            time.Time   `json:"created_at"`
-	InvoiceID            pgtype.UUID `json:"invoice_id"`
+	ID                   uuid.UUID          `json:"id"`
+	OrderID              uuid.UUID          `json:"order_id"`
+	ClientID             uuid.UUID          `json:"client_id"`
+	MenuItemID           uuid.UUID          `json:"menu_item_id"`
+	NameEn               string             `json:"name_en"`
+	NameNe               string             `json:"name_ne"`
+	VariantNameEn        string             `json:"variant_name_en"`
+	VariantNameNe        string             `json:"variant_name_ne"`
+	HasVariant           bool               `json:"has_variant"`
+	UnitPricePaisa       int64              `json:"unit_price_paisa"`
+	Quantity             int32              `json:"quantity"`
+	Note                 string             `json:"note"`
+	StationID            uuid.UUID          `json:"station_id"`
+	Status               string             `json:"status"`
+	VoidReason           string             `json:"void_reason"`
+	VoidedByUserID       pgtype.UUID        `json:"voided_by_user_id"`
+	VoidApprovedByUserID pgtype.UUID        `json:"void_approved_by_user_id"`
+	CreatedAt            time.Time          `json:"created_at"`
+	InvoiceID            pgtype.UUID        `json:"invoice_id"`
+	SentAt               pgtype.Timestamptz `json:"sent_at"`
+	AddedByUserID        pgtype.UUID        `json:"added_by_user_id"`
 }
 
 type OrderItemModifier struct {
@@ -266,6 +289,9 @@ type Setting struct {
 	KdsRedMinutes        int32     `json:"kds_red_minutes"`
 	LogoUrl              string    `json:"logo_url"`
 	UpdatedAt            time.Time `json:"updated_at"`
+	QrFonepayUrl         string    `json:"qr_fonepay_url"`
+	QrOtherUrl           string    `json:"qr_other_url"`
+	GuestOrdering        bool      `json:"guest_ordering"`
 }
 
 type Shift struct {
@@ -277,6 +303,19 @@ type Shift struct {
 	CountedCashPaisa  pgtype.Int8        `json:"counted_cash_paisa"`
 	Note              string             `json:"note"`
 	Status            string             `json:"status"`
+	ClosingNote       string             `json:"closing_note"`
+}
+
+type ShiftAdjustment struct {
+	ID              uuid.UUID   `json:"id"`
+	ShiftID         uuid.UUID   `json:"shift_id"`
+	OriginalShiftID uuid.UUID   `json:"original_shift_id"`
+	InvoiceID       uuid.UUID   `json:"invoice_id"`
+	PaymentID       uuid.UUID   `json:"payment_id"`
+	Method          string      `json:"method"`
+	AmountPaisa     int64       `json:"amount_paisa"`
+	CreatedByUserID pgtype.UUID `json:"created_by_user_id"`
+	CreatedAt       time.Time   `json:"created_at"`
 }
 
 type Station struct {
@@ -300,4 +339,5 @@ type User struct {
 	UpdatedAt         time.Time          `json:"updated_at"`
 	PinLockedUntil    pgtype.Timestamptz `json:"pin_locked_until"`
 	PinLockoutCount   int32              `json:"pin_lockout_count"`
+	Phone             string             `json:"phone"`
 }

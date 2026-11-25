@@ -67,8 +67,32 @@ func (s *Service) runIdempotent(ctx context.Context, commandID, userID uuid.UUID
 	return idem.Run(ctx, s.pool, s.q, commandID, userID, out, fn)
 }
 
+// checkUser enforces the WRONG USER rule: a command that names the user who
+// queued it (user_id) only runs under that user's session. There is no
+// WRONG_USER reason in the contract yet, so it is NOT_ALLOWED with field
+// "user_id". Callers run it before the idempotent replay so a replay under
+// another session is refused too.
+func checkUser(actor *auth.Actor, userID *string) error {
+	if userID == nil || *userID == "" {
+		return nil
+	}
+	if id, err := uuid.Parse(*userID); err == nil && id == actor.User.ID {
+		return nil
+	}
+	e := connecterr.NotAllowed("this command was queued by a different user; sign in as that user to send it")
+	e.Field = "user_id"
+	return e
+}
+
 // assembleOrder loads an order with its items and their modifier snapshots.
 func (s *Service) assembleOrder(ctx context.Context, q *sqlc.Queries, orderID uuid.UUID) (*restaurantv1.Order, error) {
+	return AssembleOrder(ctx, q, orderID)
+}
+
+// AssembleOrder loads an order with its items, their modifier snapshots and the
+// waiter's name, as the proto Order. Exported for the kitchen and billing
+// services, which return the updated order.
+func AssembleOrder(ctx context.Context, q *sqlc.Queries, orderID uuid.UUID) (*restaurantv1.Order, error) {
 	o, err := q.GetOrderByID(ctx, orderID)
 	if err != nil {
 		return nil, connecterr.Internal(err)
@@ -85,7 +109,13 @@ func (s *Service) assembleOrder(ctx context.Context, q *sqlc.Queries, orderID uu
 	for _, m := range mods {
 		byItem[m.OrderItemID] = append(byItem[m.OrderItemID], m)
 	}
-	return toOrder(o, items, byItem), nil
+	waiter, err := q.GetUserName(ctx, o.WaiterUserID)
+	if err != nil {
+		return nil, connecterr.Internal(err)
+	}
+	out := toOrder(o, items, byItem)
+	out.WaiterName = waiter
+	return out, nil
 }
 
 // --- converters ---
@@ -103,6 +133,7 @@ func toOrder(o sqlc.Order, items []sqlc.OrderItem, mods map[uuid.UUID][]sqlc.Ord
 	out := &restaurantv1.Order{
 		Id: o.ID.String(), ClientId: o.ClientID.String(), Type: orderTypeEnum(o.Type),
 		WaiterUserId: o.WaiterUserID.String(), Status: orderStatusEnum(o.Status), GuestCount: o.GuestCount, Version: o.Version,
+		Label: o.Label, CreatedAtUnix: o.CreatedAt.Unix(),
 	}
 	if o.TableID.Valid {
 		s := pgUUIDStr(o.TableID)
@@ -132,6 +163,12 @@ func toOrderItem(it sqlc.OrderItem, mods []sqlc.OrderItemModifier) *restaurantv1
 	if it.VoidApprovedByUserID.Valid {
 		oi.VoidApprovedByUserId = pgUUIDStr(it.VoidApprovedByUserID)
 	}
+	if it.SentAt.Valid {
+		oi.SentAtUnix = it.SentAt.Time.Unix()
+	}
+	oi.AddedByUserId = pgUUIDStr(it.AddedByUserID)
+	oi.InvoiceId = pgUUIDStr(it.InvoiceID)
+	oi.Billed = it.InvoiceID.Valid
 	return oi
 }
 

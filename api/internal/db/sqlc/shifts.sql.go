@@ -14,19 +14,20 @@ import (
 )
 
 const closeShift = `-- name: CloseShift :one
-UPDATE shifts SET status = 'CLOSED', counted_cash_paisa = $2, note = $3, closed_at = now()
+UPDATE shifts SET status = 'CLOSED', counted_cash_paisa = $2, closing_note = $3, closed_at = now()
 WHERE id = $1 AND status = 'OPEN'
-RETURNING id, cashier_user_id, opened_at, closed_at, opening_float_paisa, counted_cash_paisa, note, status
+RETURNING id, cashier_user_id, opened_at, closed_at, opening_float_paisa, counted_cash_paisa, note, status, closing_note
 `
 
 type CloseShiftParams struct {
 	ID               uuid.UUID   `json:"id"`
 	CountedCashPaisa pgtype.Int8 `json:"counted_cash_paisa"`
-	Note             string      `json:"note"`
+	ClosingNote      string      `json:"closing_note"`
 }
 
+// The opening note is kept; the close-out note goes in closing_note.
 func (q *Queries) CloseShift(ctx context.Context, arg CloseShiftParams) (Shift, error) {
-	row := q.db.QueryRow(ctx, closeShift, arg.ID, arg.CountedCashPaisa, arg.Note)
+	row := q.db.QueryRow(ctx, closeShift, arg.ID, arg.CountedCashPaisa, arg.ClosingNote)
 	var i Shift
 	err := row.Scan(
 		&i.ID,
@@ -37,12 +38,32 @@ func (q *Queries) CloseShift(ctx context.Context, arg CloseShiftParams) (Shift, 
 		&i.CountedCashPaisa,
 		&i.Note,
 		&i.Status,
+		&i.ClosingNote,
 	)
 	return i, err
 }
 
+const countUnplacedCancelAdjustments = `-- name: CountUnplacedCancelAdjustments :one
+SELECT count(*)::int
+FROM invoices i
+JOIN payments p ON p.invoice_id = i.id AND p.status = 'CONFIRMED'
+JOIN shifts os ON os.id = p.shift_id
+WHERE i.id = $1 AND i.status = 'CANCELLED'
+  AND os.closed_at IS NOT NULL AND os.closed_at < i.cancelled_at
+  AND NOT EXISTS (SELECT 1 FROM shift_adjustments a WHERE a.payment_id = p.id)
+`
+
+// Payments of a cancelled bill that need an adjustment but have no canceller
+// shift to land in (the canceller had no shift open at the time).
+func (q *Queries) CountUnplacedCancelAdjustments(ctx context.Context, id uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countUnplacedCancelAdjustments, id)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const getOpenShiftForUser = `-- name: GetOpenShiftForUser :one
-SELECT id, cashier_user_id, opened_at, closed_at, opening_float_paisa, counted_cash_paisa, note, status FROM shifts WHERE cashier_user_id = $1 AND status = 'OPEN'
+SELECT id, cashier_user_id, opened_at, closed_at, opening_float_paisa, counted_cash_paisa, note, status, closing_note FROM shifts WHERE cashier_user_id = $1 AND status = 'OPEN'
 `
 
 func (q *Queries) GetOpenShiftForUser(ctx context.Context, cashierUserID uuid.UUID) (Shift, error) {
@@ -57,12 +78,13 @@ func (q *Queries) GetOpenShiftForUser(ctx context.Context, cashierUserID uuid.UU
 		&i.CountedCashPaisa,
 		&i.Note,
 		&i.Status,
+		&i.ClosingNote,
 	)
 	return i, err
 }
 
 const getShift = `-- name: GetShift :one
-SELECT id, cashier_user_id, opened_at, closed_at, opening_float_paisa, counted_cash_paisa, note, status FROM shifts WHERE id = $1
+SELECT id, cashier_user_id, opened_at, closed_at, opening_float_paisa, counted_cash_paisa, note, status, closing_note FROM shifts WHERE id = $1
 `
 
 func (q *Queries) GetShift(ctx context.Context, id uuid.UUID) (Shift, error) {
@@ -77,12 +99,13 @@ func (q *Queries) GetShift(ctx context.Context, id uuid.UUID) (Shift, error) {
 		&i.CountedCashPaisa,
 		&i.Note,
 		&i.Status,
+		&i.ClosingNote,
 	)
 	return i, err
 }
 
 const listOpenShifts = `-- name: ListOpenShifts :many
-SELECT id, cashier_user_id, opened_at, closed_at, opening_float_paisa, counted_cash_paisa, note, status FROM shifts WHERE status = 'OPEN' ORDER BY opened_at
+SELECT id, cashier_user_id, opened_at, closed_at, opening_float_paisa, counted_cash_paisa, note, status, closing_note FROM shifts WHERE status = 'OPEN' ORDER BY opened_at
 `
 
 func (q *Queries) ListOpenShifts(ctx context.Context) ([]Shift, error) {
@@ -103,6 +126,118 @@ func (q *Queries) ListOpenShifts(ctx context.Context) ([]Shift, error) {
 			&i.CountedCashPaisa,
 			&i.Note,
 			&i.Status,
+			&i.ClosingNote,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listShiftAdjustments = `-- name: ListShiftAdjustments :many
+SELECT a.id, a.shift_id, a.original_shift_id, a.invoice_id, a.payment_id, a.method, a.amount_paisa, a.created_at,
+       i.number AS invoice_number, i.fiscal_year, i.mode
+FROM shift_adjustments a
+JOIN invoices i ON i.id = a.invoice_id
+WHERE a.shift_id = $1
+ORDER BY a.created_at, a.id
+`
+
+type ListShiftAdjustmentsRow struct {
+	ID              uuid.UUID `json:"id"`
+	ShiftID         uuid.UUID `json:"shift_id"`
+	OriginalShiftID uuid.UUID `json:"original_shift_id"`
+	InvoiceID       uuid.UUID `json:"invoice_id"`
+	PaymentID       uuid.UUID `json:"payment_id"`
+	Method          string    `json:"method"`
+	AmountPaisa     int64     `json:"amount_paisa"`
+	CreatedAt       time.Time `json:"created_at"`
+	InvoiceNumber   int32     `json:"invoice_number"`
+	FiscalYear      string    `json:"fiscal_year"`
+	Mode            string    `json:"mode"`
+}
+
+func (q *Queries) ListShiftAdjustments(ctx context.Context, shiftID uuid.UUID) ([]ListShiftAdjustmentsRow, error) {
+	rows, err := q.db.Query(ctx, listShiftAdjustments, shiftID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListShiftAdjustmentsRow{}
+	for rows.Next() {
+		var i ListShiftAdjustmentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ShiftID,
+			&i.OriginalShiftID,
+			&i.InvoiceID,
+			&i.PaymentID,
+			&i.Method,
+			&i.AmountPaisa,
+			&i.CreatedAt,
+			&i.InvoiceNumber,
+			&i.FiscalYear,
+			&i.Mode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listShiftPayments = `-- name: ListShiftPayments :many
+SELECT p.id, p.invoice_id, p.method, p.amount_paisa, p.reference, p.status, p.created_at,
+       i.number AS invoice_number, i.fiscal_year, i.mode, i.status AS invoice_status
+FROM payments p
+JOIN invoices i ON i.id = p.invoice_id
+WHERE p.shift_id = $1
+ORDER BY p.created_at, p.id
+`
+
+type ListShiftPaymentsRow struct {
+	ID            uuid.UUID `json:"id"`
+	InvoiceID     uuid.UUID `json:"invoice_id"`
+	Method        string    `json:"method"`
+	AmountPaisa   int64     `json:"amount_paisa"`
+	Reference     string    `json:"reference"`
+	Status        string    `json:"status"`
+	CreatedAt     time.Time `json:"created_at"`
+	InvoiceNumber int32     `json:"invoice_number"`
+	FiscalYear    string    `json:"fiscal_year"`
+	Mode          string    `json:"mode"`
+	InvoiceStatus string    `json:"invoice_status"`
+}
+
+// Every payment taken in the shift (all methods), oldest first.
+func (q *Queries) ListShiftPayments(ctx context.Context, shiftID uuid.UUID) ([]ListShiftPaymentsRow, error) {
+	rows, err := q.db.Query(ctx, listShiftPayments, shiftID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListShiftPaymentsRow{}
+	for rows.Next() {
+		var i ListShiftPaymentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.InvoiceID,
+			&i.Method,
+			&i.AmountPaisa,
+			&i.Reference,
+			&i.Status,
+			&i.CreatedAt,
+			&i.InvoiceNumber,
+			&i.FiscalYear,
+			&i.Mode,
+			&i.InvoiceStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -135,6 +270,7 @@ type ListShiftQrPaymentsRow struct {
 	InvoiceNumber     int32     `json:"invoice_number"`
 }
 
+// Kept for the deprecated ShiftReport.qr_payments field.
 func (q *Queries) ListShiftQrPayments(ctx context.Context, shiftID uuid.UUID) ([]ListShiftQrPaymentsRow, error) {
 	rows, err := q.db.Query(ctx, listShiftQrPayments, shiftID)
 	if err != nil {
@@ -166,8 +302,51 @@ func (q *Queries) ListShiftQrPayments(ctx context.Context, shiftID uuid.UUID) ([
 	return items, nil
 }
 
+const listShifts = `-- name: ListShifts :many
+SELECT id, cashier_user_id, opened_at, closed_at, opening_float_paisa, counted_cash_paisa, note, status, closing_note FROM shifts
+WHERE ($1::uuid IS NULL OR cashier_user_id = $1::uuid)
+ORDER BY opened_at DESC, id
+LIMIT $2
+`
+
+type ListShiftsParams struct {
+	CashierUserID pgtype.UUID `json:"cashier_user_id"`
+	RowLimit      int32       `json:"row_limit"`
+}
+
+// Recent shifts, newest first; cashier_user_id NULL = everyone's.
+func (q *Queries) ListShifts(ctx context.Context, arg ListShiftsParams) ([]Shift, error) {
+	rows, err := q.db.Query(ctx, listShifts, arg.CashierUserID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Shift{}
+	for rows.Next() {
+		var i Shift
+		if err := rows.Scan(
+			&i.ID,
+			&i.CashierUserID,
+			&i.OpenedAt,
+			&i.ClosedAt,
+			&i.OpeningFloatPaisa,
+			&i.CountedCashPaisa,
+			&i.Note,
+			&i.Status,
+			&i.ClosingNote,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockOpenShiftForUser = `-- name: LockOpenShiftForUser :one
-SELECT id, cashier_user_id, opened_at, closed_at, opening_float_paisa, counted_cash_paisa, note, status FROM shifts WHERE cashier_user_id = $1 AND status = 'OPEN' FOR SHARE
+SELECT id, cashier_user_id, opened_at, closed_at, opening_float_paisa, counted_cash_paisa, note, status, closing_note FROM shifts WHERE cashier_user_id = $1 AND status = 'OPEN' FOR SHARE
 `
 
 // Reads the caller's open shift inside a billing transaction and holds a share
@@ -185,12 +364,13 @@ func (q *Queries) LockOpenShiftForUser(ctx context.Context, cashierUserID uuid.U
 		&i.CountedCashPaisa,
 		&i.Note,
 		&i.Status,
+		&i.ClosingNote,
 	)
 	return i, err
 }
 
 const openShift = `-- name: OpenShift :one
-INSERT INTO shifts (cashier_user_id, opening_float_paisa, note) VALUES ($1, $2, $3) RETURNING id, cashier_user_id, opened_at, closed_at, opening_float_paisa, counted_cash_paisa, note, status
+INSERT INTO shifts (cashier_user_id, opening_float_paisa, note) VALUES ($1, $2, $3) RETURNING id, cashier_user_id, opened_at, closed_at, opening_float_paisa, counted_cash_paisa, note, status, closing_note
 `
 
 type OpenShiftParams struct {
@@ -211,14 +391,47 @@ func (q *Queries) OpenShift(ctx context.Context, arg OpenShiftParams) (Shift, er
 		&i.CountedCashPaisa,
 		&i.Note,
 		&i.Status,
+		&i.ClosingNote,
 	)
 	return i, err
 }
 
+const recordCancelAdjustments = `-- name: RecordCancelAdjustments :execrows
+INSERT INTO shift_adjustments (shift_id, original_shift_id, invoice_id, payment_id, method, amount_paisa, created_by_user_id, created_at)
+SELECT DISTINCT ON (p.id) cs.id, p.shift_id, i.id, p.id, p.method, p.amount_paisa, i.cancelled_by_user_id, i.cancelled_at
+FROM invoices i
+JOIN payments p ON p.invoice_id = i.id AND p.status = 'CONFIRMED'
+JOIN shifts os ON os.id = p.shift_id
+JOIN shifts cs ON cs.cashier_user_id = i.cancelled_by_user_id
+     AND cs.opened_at <= i.cancelled_at AND (cs.closed_at IS NULL OR cs.closed_at >= i.cancelled_at)
+WHERE i.status = 'CANCELLED' AND i.cancelled_at IS NOT NULL
+  AND os.closed_at IS NOT NULL AND os.closed_at < i.cancelled_at
+  AND ($1::uuid IS NULL OR i.id = $1::uuid)
+  AND NOT EXISTS (SELECT 1 FROM shift_adjustments a WHERE a.payment_id = p.id)
+ORDER BY p.id, cs.opened_at DESC
+ON CONFLICT (payment_id) DO NOTHING
+`
+
+// Records the adjustments owed by cancelled bills whose payments were taken in a
+// shift that had already closed when the bill was cancelled. Each lands in the
+// canceller's shift that was open at cancelled_at. Idempotent (one row per
+// payment); invoice_id NULL = every cancelled bill (catch-up).
+func (q *Queries) RecordCancelAdjustments(ctx context.Context, invoiceID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, recordCancelAdjustments, invoiceID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const shiftPaymentTotals = `-- name: ShiftPaymentTotals :many
-SELECT method, COALESCE(sum(amount_paisa), 0)::bigint AS total
-FROM payments WHERE shift_id = $1 AND status = 'CONFIRMED'
-GROUP BY method
+SELECT p.method, COALESCE(sum(p.amount_paisa), 0)::bigint AS total
+FROM payments p
+JOIN invoices i ON i.id = p.invoice_id
+JOIN shifts s ON s.id = p.shift_id
+WHERE p.shift_id = $1 AND p.status = 'CONFIRMED'
+  AND NOT (i.status = 'CANCELLED' AND (s.closed_at IS NULL OR i.cancelled_at IS NULL OR i.cancelled_at <= s.closed_at))
+GROUP BY p.method
 `
 
 type ShiftPaymentTotalsRow struct {
@@ -226,6 +439,9 @@ type ShiftPaymentTotalsRow struct {
 	Total  int64  `json:"total"`
 }
 
+// Confirmed takings by method. A payment on a bill cancelled while this shift was
+// still open does not count; one cancelled after it closed still counts here (it
+// was in the drawer) and is counted back as an adjustment in the canceller's shift.
 func (q *Queries) ShiftPaymentTotals(ctx context.Context, shiftID uuid.UUID) ([]ShiftPaymentTotalsRow, error) {
 	rows, err := q.db.Query(ctx, shiftPaymentTotals, shiftID)
 	if err != nil {

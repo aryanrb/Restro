@@ -29,8 +29,10 @@ message Shift {
   int64 closed_at_unix = 4;
   int64 opening_float_paisa = 5;
   int64 counted_cash_paisa = 6;
-  string note = 7;
+  string note = 7;          // the opening note (never overwritten by CloseShift)
   ShiftStatus status = 8;
+  string closing_note = 9;  // the note given at close-out
+  string cashier_name = 10;
 }
 
 message QrPaymentRow {
@@ -41,13 +43,46 @@ message QrPaymentRow {
   int64 created_at_unix = 5;
 }
 
+// One payment taken in the shift (any method).
+message ShiftPaymentRow {
+  string payment_id = 1;
+  string invoice_id = 2;
+  int32 invoice_number = 3;
+  string display_number = 4;   // "E-2083/84-12" (estimate) or "2083/84-12" (tax invoice)
+  PaymentMethod method = 5;
+  int64 amount_paisa = 6;
+  string reference = 7;
+  int64 created_at_unix = 8;
+  bool confirmed = 9;          // false while a QR payment is still AWAITING
+  bool invoice_cancelled = 10; // the bill has since been cancelled
+}
+
+// A bill cancelled after the shift that took its payment had closed is counted
+// back (subtracted) here, in the canceller's shift open at the time of the cancel.
+message ShiftAdjustment {
+  string id = 1;
+  string invoice_id = 2;
+  int32 invoice_number = 3;
+  string display_number = 4;
+  PaymentMethod method = 5;
+  int64 amount_paisa = 6;       // positive; subtracted from this shift's takings
+  int64 created_at_unix = 7;    // when the bill was cancelled
+  string original_shift_id = 8; // the closed shift the payment was taken in
+  string payment_id = 9;
+}
+
 // Close-out / report view of a shift.
 message ShiftReport {
   Shift shift = 1;
-  repeated MethodTotal totals = 2;     // confirmed payments by method
-  int64 expected_cash_paisa = 3;       // opening float + cash payments
+  // Takings by method: confirmed payments, excluding bills cancelled while this
+  // shift was open, minus this shift's adjustments.
+  repeated MethodTotal totals = 2;
+  int64 expected_cash_paisa = 3;       // opening float + cash takings (after adjustments)
   int64 difference_paisa = 4;          // counted - expected (0 unless closed)
-  repeated QrPaymentRow qr_payments = 5; // for reconciliation against the Fonepay statement
+  // Deprecated: use payments (QR only, no method or invoice id).
+  repeated QrPaymentRow qr_payments = 5;
+  repeated ShiftPaymentRow payments = 6;
+  repeated ShiftAdjustment adjustments = 7;
 }
 
 message OpenShiftRequest {
@@ -71,6 +106,13 @@ message CloseShiftRequest {
   string note = 3;
 }
 
+message ListShiftsRequest {
+  int32 limit = 1 [(buf.validate.field).int32 = {gte: 0, lte: 200}]; // 0 -> 50
+}
+message ListShiftsResponse {
+  repeated ShiftReport shifts = 1; // newest first
+}
+
 message GetShiftReportRequest {
   string shift_id = 1 [(buf.validate.field).string.min_len = 1];
 }
@@ -81,4 +123,7 @@ service ShiftService {
   rpc ListOpenShifts(ListOpenShiftsRequest) returns (ListOpenShiftsResponse);
   rpc CloseShift(CloseShiftRequest) returns (ShiftReport);
   rpc GetShiftReport(GetShiftReportRequest) returns (ShiftReport);
+  // Recent shifts (open and closed), newest first, each with its report.
+  // Cashiers see their own; managers and owners see everyone's.
+  rpc ListShifts(ListShiftsRequest) returns (ListShiftsResponse);
 }

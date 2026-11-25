@@ -7,10 +7,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	restaurantv1 "github.com/oneaccord/restro/api/gen/restaurant/v1"
+	"github.com/oneaccord/restro/api/internal/auth"
 	"github.com/oneaccord/restro/api/internal/connecterr"
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
+	"github.com/oneaccord/restro/api/internal/dbx"
 )
 
 // pricedLine is a validated NewItem ready to snapshot into order_items.
@@ -134,11 +137,16 @@ func priceLine(ctx context.Context, q *sqlc.Queries, ni *restaurantv1.NewItem) (
 //
 // Per-line rejections (invalid/86'd item, bad variant/modifiers, a client_id
 // already used on another order) are returned, not failed; the caller decides
-// whether a partial accept is acceptable. A line whose client_id is already on
+// whether a partial accept is acceptable. Lines record the signed-in user from
+// ctx (auth.ActorFrom) as added_by_user_id, and a line created SENT gets sent_at. A line whose client_id is already on
 // this order is an idempotent no-op (neither applied nor rejected). applied is the
 // number of lines inserted; the caller bumps the order version when it is > 0.
 // A non-nil error is an infrastructure failure.
 func InsertLines(ctx context.Context, q *sqlc.Queries, orderID uuid.UUID, items []*restaurantv1.NewItem, status string) (applied int, rejected []*restaurantv1.RejectedLine, err error) {
+	var addedBy pgtype.UUID
+	if a := auth.ActorFrom(ctx); a.LoggedIn() {
+		addedBy = dbx.UUID(a.User.ID)
+	}
 	reject := func(clientID string, reason restaurantv1.ErrorReason, msg string) {
 		rejected = append(rejected, &restaurantv1.RejectedLine{ClientId: clientID, Reason: reason, Message: msg})
 	}
@@ -176,7 +184,7 @@ func InsertLines(ctx context.Context, q *sqlc.Queries, orderID uuid.UUID, items 
 			OrderID: orderID, ClientID: lineCID, MenuItemID: pl.item.ID,
 			NameEn: pl.item.NameEn, NameNe: pl.item.NameNe, VariantNameEn: varEn, VariantNameNe: varNe, HasVariant: hasVar,
 			UnitPricePaisa: pl.unitPrice, Quantity: ni.GetQuantity(), Note: ni.GetNote(), StationID: pl.item.StationID,
-			Status: status,
+			Status: status, AddedByUserID: addedBy,
 		})
 		if errors.Is(ce, pgx.ErrNoRows) {
 			// Inserted concurrently (or earlier in this same request): same rule as above.

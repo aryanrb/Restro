@@ -236,6 +236,21 @@ func (q *Queries) DeleteGroupModifiers(ctx context.Context, groupID uuid.UUID) e
 	return err
 }
 
+const deleteGroupModifiersExcept = `-- name: DeleteGroupModifiersExcept :exec
+DELETE FROM modifiers WHERE group_id = $1 AND NOT (id = ANY($2::uuid[]))
+`
+
+type DeleteGroupModifiersExceptParams struct {
+	GroupID uuid.UUID   `json:"group_id"`
+	Keep    []uuid.UUID `json:"keep"`
+}
+
+// Removes the group's modifiers that are not in keep (upsert-by-id saves).
+func (q *Queries) DeleteGroupModifiersExcept(ctx context.Context, arg DeleteGroupModifiersExceptParams) error {
+	_, err := q.db.Exec(ctx, deleteGroupModifiersExcept, arg.GroupID, arg.Keep)
+	return err
+}
+
 const deleteItemModifierLinks = `-- name: DeleteItemModifierLinks :exec
 DELETE FROM item_modifier_groups WHERE item_id = $1
 `
@@ -254,6 +269,21 @@ func (q *Queries) DeleteItemVariants(ctx context.Context, itemID uuid.UUID) erro
 	return err
 }
 
+const deleteItemVariantsExcept = `-- name: DeleteItemVariantsExcept :exec
+DELETE FROM item_variants WHERE item_id = $1 AND NOT (id = ANY($2::uuid[]))
+`
+
+type DeleteItemVariantsExceptParams struct {
+	ItemID uuid.UUID   `json:"item_id"`
+	Keep   []uuid.UUID `json:"keep"`
+}
+
+// Removes the item's variants that are not in keep (upsert-by-id saves).
+func (q *Queries) DeleteItemVariantsExcept(ctx context.Context, arg DeleteItemVariantsExceptParams) error {
+	_, err := q.db.Exec(ctx, deleteItemVariantsExcept, arg.ItemID, arg.Keep)
+	return err
+}
+
 const deleteModifierGroup = `-- name: DeleteModifierGroup :exec
 DELETE FROM modifier_groups WHERE id = $1
 `
@@ -261,6 +291,23 @@ DELETE FROM modifier_groups WHERE id = $1
 func (q *Queries) DeleteModifierGroup(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteModifierGroup, id)
 	return err
+}
+
+const getCategory = `-- name: GetCategory :one
+SELECT id, name_en, name_ne, sort, active FROM menu_categories WHERE id = $1
+`
+
+func (q *Queries) GetCategory(ctx context.Context, id uuid.UUID) (MenuCategory, error) {
+	row := q.db.QueryRow(ctx, getCategory, id)
+	var i MenuCategory
+	err := row.Scan(
+		&i.ID,
+		&i.NameEn,
+		&i.NameNe,
+		&i.Sort,
+		&i.Active,
+	)
+	return i, err
 }
 
 const getItem = `-- name: GetItem :one
@@ -407,6 +454,45 @@ SELECT id, version, category_id, name_en, name_ne, price_paisa, color, image_url
 // Items --------------------------------------------------------------------
 func (q *Queries) ListItems(ctx context.Context) ([]MenuItem, error) {
 	rows, err := q.db.Query(ctx, listItems)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MenuItem{}
+	for rows.Next() {
+		var i MenuItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.Version,
+			&i.CategoryID,
+			&i.NameEn,
+			&i.NameNe,
+			&i.PricePaisa,
+			&i.Color,
+			&i.ImageUrl,
+			&i.StationID,
+			&i.Active,
+			&i.Is86d,
+			&i.Sort,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listItemsInCategory = `-- name: ListItemsInCategory :many
+SELECT id, version, category_id, name_en, name_ne, price_paisa, color, image_url, station_id, active, is_86d, sort, created_at, updated_at FROM menu_items WHERE category_id = $1 ORDER BY sort, name_en
+`
+
+func (q *Queries) ListItemsInCategory(ctx context.Context, categoryID uuid.UUID) ([]MenuItem, error) {
+	rows, err := q.db.Query(ctx, listItemsInCategory, categoryID)
 	if err != nil {
 		return nil, err
 	}
@@ -715,7 +801,7 @@ func (q *Queries) UpdateCategorySort(ctx context.Context, arg UpdateCategorySort
 const updateItem = `-- name: UpdateItem :one
 UPDATE menu_items SET
     version = version + 1, category_id = $3, name_en = $4, name_ne = $5,
-    price_paisa = $6, color = $7, station_id = $8, active = $9, updated_at = now()
+    price_paisa = $6, color = $7, station_id = $8, active = $9, sort = $10, updated_at = now()
 WHERE id = $1 AND version = $2
 RETURNING id, version, category_id, name_en, name_ne, price_paisa, color, image_url, station_id, active, is_86d, sort, created_at, updated_at
 `
@@ -730,6 +816,7 @@ type UpdateItemParams struct {
 	Color      string    `json:"color"`
 	StationID  uuid.UUID `json:"station_id"`
 	Active     bool      `json:"active"`
+	Sort       int32     `json:"sort"`
 }
 
 func (q *Queries) UpdateItem(ctx context.Context, arg UpdateItemParams) (MenuItem, error) {
@@ -743,6 +830,7 @@ func (q *Queries) UpdateItem(ctx context.Context, arg UpdateItemParams) (MenuIte
 		arg.Color,
 		arg.StationID,
 		arg.Active,
+		arg.Sort,
 	)
 	var i MenuItem
 	err := row.Scan(
@@ -778,6 +866,42 @@ func (q *Queries) UpdateItemSort(ctx context.Context, arg UpdateItemSortParams) 
 	return err
 }
 
+const updateModifier = `-- name: UpdateModifier :one
+UPDATE modifiers SET name_en = $3, name_ne = $4, price_delta_paisa = $5, sort = $6
+WHERE id = $1 AND group_id = $2
+RETURNING id, group_id, name_en, name_ne, price_delta_paisa, sort
+`
+
+type UpdateModifierParams struct {
+	ID              uuid.UUID `json:"id"`
+	GroupID         uuid.UUID `json:"group_id"`
+	NameEn          string    `json:"name_en"`
+	NameNe          string    `json:"name_ne"`
+	PriceDeltaPaisa int64     `json:"price_delta_paisa"`
+	Sort            int32     `json:"sort"`
+}
+
+func (q *Queries) UpdateModifier(ctx context.Context, arg UpdateModifierParams) (Modifier, error) {
+	row := q.db.QueryRow(ctx, updateModifier,
+		arg.ID,
+		arg.GroupID,
+		arg.NameEn,
+		arg.NameNe,
+		arg.PriceDeltaPaisa,
+		arg.Sort,
+	)
+	var i Modifier
+	err := row.Scan(
+		&i.ID,
+		&i.GroupID,
+		&i.NameEn,
+		&i.NameNe,
+		&i.PriceDeltaPaisa,
+		&i.Sort,
+	)
+	return i, err
+}
+
 const updateModifierGroup = `-- name: UpdateModifierGroup :one
 UPDATE modifier_groups SET version = version + 1, name_en = $3, name_ne = $4, min_select = $5, max_select = $6
 WHERE id = $1 AND version = $2
@@ -810,6 +934,42 @@ func (q *Queries) UpdateModifierGroup(ctx context.Context, arg UpdateModifierGro
 		&i.NameNe,
 		&i.MinSelect,
 		&i.MaxSelect,
+	)
+	return i, err
+}
+
+const updateVariant = `-- name: UpdateVariant :one
+UPDATE item_variants SET name_en = $3, name_ne = $4, price_paisa = $5, sort = $6
+WHERE id = $1 AND item_id = $2
+RETURNING id, item_id, name_en, name_ne, price_paisa, sort
+`
+
+type UpdateVariantParams struct {
+	ID         uuid.UUID `json:"id"`
+	ItemID     uuid.UUID `json:"item_id"`
+	NameEn     string    `json:"name_en"`
+	NameNe     string    `json:"name_ne"`
+	PricePaisa int64     `json:"price_paisa"`
+	Sort       int32     `json:"sort"`
+}
+
+func (q *Queries) UpdateVariant(ctx context.Context, arg UpdateVariantParams) (ItemVariant, error) {
+	row := q.db.QueryRow(ctx, updateVariant,
+		arg.ID,
+		arg.ItemID,
+		arg.NameEn,
+		arg.NameNe,
+		arg.PricePaisa,
+		arg.Sort,
+	)
+	var i ItemVariant
+	err := row.Scan(
+		&i.ID,
+		&i.ItemID,
+		&i.NameEn,
+		&i.NameNe,
+		&i.PricePaisa,
+		&i.Sort,
 	)
 	return i, err
 }

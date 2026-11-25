@@ -154,3 +154,8 @@ func resp[T any](v *T, err error) (*connect.Response[T], error) {
 	}
 	return connect.NewResponse(v), nil
 }
+
+func (h *Handler) SetSettingsImage(ctx context.Context, req *connect.Request[restaurantv1.SetSettingsImageRequest]) (*connect.Response[restaurantv1.Settings], error) {
+	out, err := h.svc.SetSettingsImage(ctx, req.Msg.GetKind(), req.Msg.GetImage(), req.Msg.GetContentType())
+	return resp(out, err)
+}

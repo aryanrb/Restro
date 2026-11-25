@@ -72,9 +72,9 @@ func TestKitchenRPCsRequireKitchenRole(t *testing.T) {
 	someID := uuid.NewString()
 	calls := map[string]func(context.Context) error{
 		"ListStationTickets": func(c context.Context) error { _, err := svc.ListStationTickets(c, someID); return err },
-		"StartItems":         func(c context.Context) error { return svc.StartItems(c, []string{someID}) },
-		"MarkItemsReady":     func(c context.Context) error { return svc.MarkItemsReady(c, []string{someID}) },
-		"BumpTicket":         func(c context.Context) error { return svc.BumpTicket(c, "bad", "bad") },
+		"StartItems":         func(c context.Context) error { _, err := svc.StartItems(c, []string{someID}); return err },
+		"MarkItemsReady":     func(c context.Context) error { _, err := svc.MarkItemsReady(c, []string{someID}); return err },
+		"BumpTicket":         func(c context.Context) error { _, err := svc.BumpTicket(c, "bad", "bad"); return err },
 	}
 	allowed := map[string]bool{auth.RoleOwner: true, auth.RoleManager: true, auth.RoleKitchen: true}
 	for _, role := range []string{auth.RoleOwner, auth.RoleManager, auth.RoleKitchen, auth.RoleWaiter, auth.RoleCashier} {

@@ -92,25 +92,42 @@ func (s *Service) ListStationTickets(ctx context.Context, stationID string) ([]*
 	return tickets, nil
 }
 
-func (s *Service) StartItems(ctx context.Context, itemIDs []string) error {
+func (s *Service) StartItems(ctx context.Context, itemIDs []string) (*restaurantv1.KitchenActionResponse, error) {
 	return s.transition(ctx, itemIDs, "PREPARING", []string{"SENT"}, false)
 }
 
-func (s *Service) MarkItemsReady(ctx context.Context, itemIDs []string) error {
+func (s *Service) MarkItemsReady(ctx context.Context, itemIDs []string) (*restaurantv1.KitchenActionResponse, error) {
 	return s.transition(ctx, itemIDs, "READY", []string{"SENT", "PREPARING"}, true)
+}
+
+// result builds the action response from the updated orders (assembled inside
+// the transaction, after the change).
+func result(orders []*restaurantv1.Order) *restaurantv1.KitchenActionResponse {
+	out := &restaurantv1.KitchenActionResponse{Orders: orders}
+	if len(orders) > 0 {
+		out.Order = orders[0]
+	}
+	return out
+}
+
+// emitOrders sends order.updated for each changed order, with its new version.
+func (s *Service) emitOrders(orders []*restaurantv1.Order) {
+	for _, o := range orders {
+		s.emit(realtime.Event{Type: "order.updated", ID: o.Id, Version: o.Version})
+	}
 }
 
 // transition applies a KDS status change to the given items, bumps the affected
 // orders, and emits order.updated (+ item.ready when notifyWaiter).
-func (s *Service) transition(ctx context.Context, itemIDs []string, to string, from []string, notifyWaiter bool) error {
+func (s *Service) transition(ctx context.Context, itemIDs []string, to string, from []string, notifyWaiter bool) (*restaurantv1.KitchenActionResponse, error) {
 	if _, err := requireKitchenRole(ctx); err != nil {
-		return err
+		return nil, err
 	}
 	ids, err := parseIDs("item_ids", itemIDs)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	var orderIDs []string
+	var updated []*restaurantv1.Order
 	err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
 		if e := q.KdsSetItemsStatus(ctx, sqlc.KdsSetItemsStatusParams{Status: to, Ids: ids, FromStatus: from}); e != nil {
 			return connecterr.Internal(e)
@@ -130,38 +147,41 @@ func (s *Service) transition(ctx context.Context, itemIDs []string, to string, f
 				if _, e := orders.CloseIfDone(ctx, q, it.OrderID); e != nil {
 					return e
 				}
-				orderIDs = append(orderIDs, it.OrderID.String())
+				o, e := orders.AssembleOrder(ctx, q, it.OrderID)
+				if e != nil {
+					return e
+				}
+				updated = append(updated, o)
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if notifyWaiter {
 		for _, id := range itemIDs {
 			s.emit(realtime.Event{Type: "item.ready", ID: id})
 		}
 	}
-	for _, oid := range orderIDs {
-		s.emit(realtime.Event{Type: "order.updated", ID: oid})
-	}
-	return nil
+	s.emitOrders(updated)
+	return result(updated), nil
 }
 
-func (s *Service) BumpTicket(ctx context.Context, orderID, stationID string) error {
+func (s *Service) BumpTicket(ctx context.Context, orderID, stationID string) (*restaurantv1.KitchenActionResponse, error) {
 	if _, err := requireKitchenRole(ctx); err != nil {
-		return err
+		return nil, err
 	}
 	oid, err := parseID("order_id", orderID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	sid, err := parseID("station_id", stationID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var readied []uuid.UUID
+	var updated *restaurantv1.Order
 	err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
 		r, e := q.BumpStationTicket(ctx, sqlc.BumpStationTicketParams{OrderID: oid, StationID: sid})
 		if e != nil {
@@ -175,16 +195,21 @@ func (s *Service) BumpTicket(ctx context.Context, orderID, stationID string) err
 		if _, e := orders.CloseIfDone(ctx, q, oid); e != nil {
 			return e
 		}
+		o, e := orders.AssembleOrder(ctx, q, oid)
+		if e != nil {
+			return e
+		}
+		updated = o
 		return nil
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, id := range readied {
 		s.emit(realtime.Event{Type: "item.ready", ID: id.String()})
 	}
-	s.emit(realtime.Event{Type: "order.updated", ID: orderID})
-	return nil
+	s.emitOrders([]*restaurantv1.Order{updated})
+	return result([]*restaurantv1.Order{updated}), nil
 }
 
 // --- local helpers (kept here so the package is self-contained) ---

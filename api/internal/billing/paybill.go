@@ -77,7 +77,7 @@ func lockShift(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) (sqlc.Shi
 // rule. It reports whether the order closed. Any error rolls everything back,
 // including the invoice number allocation.
 func (s *Service) payBill(ctx context.Context, q *sqlc.Queries, actor *auth.Actor, shift sqlc.Shift, order sqlc.Order, items []sqlc.OrderItem, settings sqlc.Setting,
-	disc *restaurantv1.DiscountInput, buyerName, buyerPan string, tenders []tender) (sqlc.Invoice, bool, error) {
+	disc *restaurantv1.DiscountInput, buyerName, buyerPan, label string, tenders []tender) (sqlc.Invoice, bool, error) {
 	subtotal, byItem, err := s.subtotalOf(ctx, q, order.ID, items)
 	if err != nil {
 		return sqlc.Invoice{}, false, err
@@ -95,7 +95,7 @@ func (s *Service) payBill(ctx context.Context, q *sqlc.Queries, actor *auth.Acto
 		return sqlc.Invoice{}, false, connecterr.Invalid("payments", fmt.Sprintf("payments add up to %d paisa but the bill is %d paisa", paid, total))
 	}
 
-	inv, err := s.issueInvoiceForItems(ctx, q, order, items, byItem, subtotal, settings, discount, reason, approvedBy, buyerName, buyerPan, actor.User.ID)
+	inv, err := s.issueInvoiceForItems(ctx, q, order, items, byItem, subtotal, settings, discount, reason, approvedBy, buyerName, buyerPan, actor, label)
 	if err != nil {
 		return sqlc.Invoice{}, false, err
 	}
@@ -166,7 +166,7 @@ func (s *Service) IssueBill(ctx context.Context, req *restaurantv1.IssueBillRequ
 		if e != nil {
 			return e
 		}
-		inv, closed, e := s.payBill(ctx, q, actor, shift, order, items, settings, req.GetDiscount(), req.GetBuyerName(), req.GetBuyerPan(), tenders)
+		inv, closed, e := s.payBill(ctx, q, actor, shift, order, items, settings, req.GetDiscount(), req.GetBuyerName(), req.GetBuyerPan(), "", tenders)
 		if e != nil {
 			return e
 		}
@@ -224,7 +224,7 @@ func pickItems(unbilled []sqlc.OrderItem, ids []string) ([]sqlc.OrderItem, error
 // issues + pays its invoice, in one idempotent transaction. Any rejected line
 // rejects the whole sale. The order stays BILLED until the kitchen marks it READY.
 //
-// The request's label is not persisted: orders have no label column yet.
+// The request's label is printed as the invoice's place (orders have no label column).
 func (s *Service) CounterSale(ctx context.Context, req *restaurantv1.CounterSaleRequest) (*restaurantv1.Invoice, error) {
 	actor, err := requireBillingRole(ctx)
 	if err != nil {
@@ -283,7 +283,7 @@ func (s *Service) CounterSale(ctx context.Context, req *restaurantv1.CounterSale
 		if e != nil {
 			return e
 		}
-		inv, _, e := s.payBill(ctx, q, actor, shift, order, items, settings, req.GetDiscount(), req.GetBuyerName(), req.GetBuyerPan(), tenders)
+		inv, _, e := s.payBill(ctx, q, actor, shift, order, items, settings, req.GetDiscount(), req.GetBuyerName(), req.GetBuyerPan(), req.GetLabel(), tenders)
 		if e != nil {
 			return e
 		}
@@ -354,7 +354,11 @@ func (s *Service) ListInvoices(ctx context.Context, req *restaurantv1.ListInvoic
 		if e != nil {
 			return nil, connecterr.Internal(e)
 		}
-		out.Invoices = append(out.Invoices, toInvoice(inv, lines, pays))
+		prints, e := s.q.ListInvoicePrints(ctx, inv.ID)
+		if e != nil {
+			return nil, connecterr.Internal(e)
+		}
+		out.Invoices = append(out.Invoices, toInvoice(inv, lines, pays, prints))
 	}
 	return out, nil
 }

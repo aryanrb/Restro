@@ -14,13 +14,13 @@ SELECT * FROM users ORDER BY role, name;
 SELECT count(*) FROM users WHERE role = 'OWNER' AND active = true;
 
 -- name: CreateUser :one
-INSERT INTO users (name, role, username, password_hash, pin_hash, language, active)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO users (name, role, username, password_hash, pin_hash, language, active, phone)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: UpdateUser :one
 UPDATE users
-SET name = $2, role = $3, username = $4, password_hash = $5, pin_hash = $6, active = $7, updated_at = now()
+SET name = $2, role = $3, username = $4, password_hash = $5, pin_hash = $6, active = $7, phone = $8, updated_at = now()
 WHERE id = $1
 RETURNING *;
 

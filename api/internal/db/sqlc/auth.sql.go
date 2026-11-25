@@ -69,7 +69,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 }
 
 const getActiveSessionByTokenHash = `-- name: GetActiveSessionByTokenHash :one
-SELECT sessions.id, sessions.token_hash, sessions.user_id, sessions.device_id, sessions.expires_at, sessions.created_at, sessions.revoked_at, users.id, users.name, users.role, users.username, users.password_hash, users.pin_hash, users.language, users.active, users.failed_pin_attempts, users.created_at, users.updated_at, users.pin_locked_until, users.pin_lockout_count
+SELECT sessions.id, sessions.token_hash, sessions.user_id, sessions.device_id, sessions.expires_at, sessions.created_at, sessions.revoked_at, users.id, users.name, users.role, users.username, users.password_hash, users.pin_hash, users.language, users.active, users.failed_pin_attempts, users.created_at, users.updated_at, users.pin_locked_until, users.pin_lockout_count, users.phone
 FROM sessions
 JOIN users ON users.id = sessions.user_id
 WHERE sessions.token_hash = $1
@@ -106,6 +106,7 @@ func (q *Queries) GetActiveSessionByTokenHash(ctx context.Context, tokenHash str
 		&i.User.UpdatedAt,
 		&i.User.PinLockedUntil,
 		&i.User.PinLockoutCount,
+		&i.User.Phone,
 	)
 	return i, err
 }

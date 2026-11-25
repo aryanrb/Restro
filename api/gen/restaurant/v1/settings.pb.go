@@ -120,6 +120,161 @@ func (ReceiptWidth) EnumDescriptor() ([]byte, []int) {
 	return file_restaurant_v1_settings_proto_rawDescGZIP(), []int{1}
 }
 
+// Which static payment QR a QrImage is.
+type QrProvider int32
+
+const (
+	QrProvider_QR_PROVIDER_UNSPECIFIED QrProvider = 0
+	QrProvider_QR_PROVIDER_FONEPAY     QrProvider = 1
+	QrProvider_QR_PROVIDER_OTHER       QrProvider = 2
+)
+
+// Enum value maps for QrProvider.
+var (
+	QrProvider_name = map[int32]string{
+		0: "QR_PROVIDER_UNSPECIFIED",
+		1: "QR_PROVIDER_FONEPAY",
+		2: "QR_PROVIDER_OTHER",
+	}
+	QrProvider_value = map[string]int32{
+		"QR_PROVIDER_UNSPECIFIED": 0,
+		"QR_PROVIDER_FONEPAY":     1,
+		"QR_PROVIDER_OTHER":       2,
+	}
+)
+
+func (x QrProvider) Enum() *QrProvider {
+	p := new(QrProvider)
+	*p = x
+	return p
+}
+
+func (x QrProvider) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (QrProvider) Descriptor() protoreflect.EnumDescriptor {
+	return file_restaurant_v1_settings_proto_enumTypes[2].Descriptor()
+}
+
+func (QrProvider) Type() protoreflect.EnumType {
+	return &file_restaurant_v1_settings_proto_enumTypes[2]
+}
+
+func (x QrProvider) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use QrProvider.Descriptor instead.
+func (QrProvider) EnumDescriptor() ([]byte, []int) {
+	return file_restaurant_v1_settings_proto_rawDescGZIP(), []int{2}
+}
+
+type SettingsImageKind int32
+
+const (
+	SettingsImageKind_SETTINGS_IMAGE_KIND_UNSPECIFIED SettingsImageKind = 0
+	SettingsImageKind_SETTINGS_IMAGE_KIND_LOGO        SettingsImageKind = 1
+	SettingsImageKind_SETTINGS_IMAGE_KIND_QR_FONEPAY  SettingsImageKind = 2
+	SettingsImageKind_SETTINGS_IMAGE_KIND_QR_OTHER    SettingsImageKind = 3
+)
+
+// Enum value maps for SettingsImageKind.
+var (
+	SettingsImageKind_name = map[int32]string{
+		0: "SETTINGS_IMAGE_KIND_UNSPECIFIED",
+		1: "SETTINGS_IMAGE_KIND_LOGO",
+		2: "SETTINGS_IMAGE_KIND_QR_FONEPAY",
+		3: "SETTINGS_IMAGE_KIND_QR_OTHER",
+	}
+	SettingsImageKind_value = map[string]int32{
+		"SETTINGS_IMAGE_KIND_UNSPECIFIED": 0,
+		"SETTINGS_IMAGE_KIND_LOGO":        1,
+		"SETTINGS_IMAGE_KIND_QR_FONEPAY":  2,
+		"SETTINGS_IMAGE_KIND_QR_OTHER":    3,
+	}
+)
+
+func (x SettingsImageKind) Enum() *SettingsImageKind {
+	p := new(SettingsImageKind)
+	*p = x
+	return p
+}
+
+func (x SettingsImageKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SettingsImageKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_restaurant_v1_settings_proto_enumTypes[3].Descriptor()
+}
+
+func (SettingsImageKind) Type() protoreflect.EnumType {
+	return &file_restaurant_v1_settings_proto_enumTypes[3]
+}
+
+func (x SettingsImageKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SettingsImageKind.Descriptor instead.
+func (SettingsImageKind) EnumDescriptor() ([]byte, []int) {
+	return file_restaurant_v1_settings_proto_rawDescGZIP(), []int{3}
+}
+
+// A static payment QR code, shown at payment and optionally printed on bills.
+type QrImage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Provider      QrProvider             `protobuf:"varint,1,opt,name=provider,proto3,enum=restaurant.v1.QrProvider" json:"provider,omitempty"`
+	Url           string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"` // data URL
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *QrImage) Reset() {
+	*x = QrImage{}
+	mi := &file_restaurant_v1_settings_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QrImage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QrImage) ProtoMessage() {}
+
+func (x *QrImage) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_settings_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QrImage.ProtoReflect.Descriptor instead.
+func (*QrImage) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_settings_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *QrImage) GetProvider() QrProvider {
+	if x != nil {
+		return x.Provider
+	}
+	return QrProvider_QR_PROVIDER_UNSPECIFIED
+}
+
+func (x *QrImage) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
 type Settings struct {
 	state                protoimpl.MessageState `protogen:"open.v1"`
 	Version              int64                  `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
@@ -139,14 +294,18 @@ type Settings struct {
 	KdsYellowMinutes     int32                  `protobuf:"varint,15,opt,name=kds_yellow_minutes,json=kdsYellowMinutes,proto3" json:"kds_yellow_minutes,omitempty"`
 	KdsRedMinutes        int32                  `protobuf:"varint,16,opt,name=kds_red_minutes,json=kdsRedMinutes,proto3" json:"kds_red_minutes,omitempty"`
 	// Set in the billing plan (image upload), carried here so the row is ready.
-	LogoUrl       string `protobuf:"bytes,17,opt,name=logo_url,json=logoUrl,proto3" json:"logo_url,omitempty"`
+	LogoUrl string `protobuf:"bytes,17,opt,name=logo_url,json=logoUrl,proto3" json:"logo_url,omitempty"` // "" = no logo; changed with SetSettingsImage
+	// At most one per provider; changed with SetSettingsImage.
+	QrImages []*QrImage `protobuf:"bytes,18,rep,name=qr_images,json=qrImages,proto3" json:"qr_images,omitempty"`
+	// Guest table ordering (QR menu). Default false.
+	GuestOrdering bool `protobuf:"varint,19,opt,name=guest_ordering,json=guestOrdering,proto3" json:"guest_ordering,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Settings) Reset() {
 	*x = Settings{}
-	mi := &file_restaurant_v1_settings_proto_msgTypes[0]
+	mi := &file_restaurant_v1_settings_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -158,7 +317,7 @@ func (x *Settings) String() string {
 func (*Settings) ProtoMessage() {}
 
 func (x *Settings) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_settings_proto_msgTypes[0]
+	mi := &file_restaurant_v1_settings_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -171,7 +330,7 @@ func (x *Settings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Settings.ProtoReflect.Descriptor instead.
 func (*Settings) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_settings_proto_rawDescGZIP(), []int{0}
+	return file_restaurant_v1_settings_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Settings) GetVersion() int64 {
@@ -293,6 +452,20 @@ func (x *Settings) GetLogoUrl() string {
 	return ""
 }
 
+func (x *Settings) GetQrImages() []*QrImage {
+	if x != nil {
+		return x.QrImages
+	}
+	return nil
+}
+
+func (x *Settings) GetGuestOrdering() bool {
+	if x != nil {
+		return x.GuestOrdering
+	}
+	return false
+}
+
 // Everything the API may change: Settings minus version and billing_mode.
 type SettingsInput struct {
 	state                protoimpl.MessageState `protogen:"open.v1"`
@@ -310,13 +483,15 @@ type SettingsInput struct {
 	DefaultLanguage      Language               `protobuf:"varint,12,opt,name=default_language,json=defaultLanguage,proto3,enum=restaurant.v1.Language" json:"default_language,omitempty"`
 	KdsYellowMinutes     int32                  `protobuf:"varint,13,opt,name=kds_yellow_minutes,json=kdsYellowMinutes,proto3" json:"kds_yellow_minutes,omitempty"`
 	KdsRedMinutes        int32                  `protobuf:"varint,14,opt,name=kds_red_minutes,json=kdsRedMinutes,proto3" json:"kds_red_minutes,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// Unset = unchanged. kds_yellow_minutes must be < kds_red_minutes (checked server-side).
+	GuestOrdering *bool `protobuf:"varint,15,opt,name=guest_ordering,json=guestOrdering,proto3,oneof" json:"guest_ordering,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SettingsInput) Reset() {
 	*x = SettingsInput{}
-	mi := &file_restaurant_v1_settings_proto_msgTypes[1]
+	mi := &file_restaurant_v1_settings_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -328,7 +503,7 @@ func (x *SettingsInput) String() string {
 func (*SettingsInput) ProtoMessage() {}
 
 func (x *SettingsInput) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_settings_proto_msgTypes[1]
+	mi := &file_restaurant_v1_settings_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -341,7 +516,7 @@ func (x *SettingsInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SettingsInput.ProtoReflect.Descriptor instead.
 func (*SettingsInput) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_settings_proto_rawDescGZIP(), []int{1}
+	return file_restaurant_v1_settings_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *SettingsInput) GetName() *LocalText {
@@ -442,6 +617,13 @@ func (x *SettingsInput) GetKdsRedMinutes() int32 {
 	return 0
 }
 
+func (x *SettingsInput) GetGuestOrdering() bool {
+	if x != nil && x.GuestOrdering != nil {
+		return *x.GuestOrdering
+	}
+	return false
+}
+
 type GetSettingsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -450,7 +632,7 @@ type GetSettingsRequest struct {
 
 func (x *GetSettingsRequest) Reset() {
 	*x = GetSettingsRequest{}
-	mi := &file_restaurant_v1_settings_proto_msgTypes[2]
+	mi := &file_restaurant_v1_settings_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -462,7 +644,7 @@ func (x *GetSettingsRequest) String() string {
 func (*GetSettingsRequest) ProtoMessage() {}
 
 func (x *GetSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_settings_proto_msgTypes[2]
+	mi := &file_restaurant_v1_settings_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -475,7 +657,7 @@ func (x *GetSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSettingsRequest.ProtoReflect.Descriptor instead.
 func (*GetSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_settings_proto_rawDescGZIP(), []int{2}
+	return file_restaurant_v1_settings_proto_rawDescGZIP(), []int{3}
 }
 
 type UpdateSettingsRequest struct {
@@ -488,7 +670,7 @@ type UpdateSettingsRequest struct {
 
 func (x *UpdateSettingsRequest) Reset() {
 	*x = UpdateSettingsRequest{}
-	mi := &file_restaurant_v1_settings_proto_msgTypes[3]
+	mi := &file_restaurant_v1_settings_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -500,7 +682,7 @@ func (x *UpdateSettingsRequest) String() string {
 func (*UpdateSettingsRequest) ProtoMessage() {}
 
 func (x *UpdateSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_settings_proto_msgTypes[3]
+	mi := &file_restaurant_v1_settings_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -513,7 +695,7 @@ func (x *UpdateSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateSettingsRequest.ProtoReflect.Descriptor instead.
 func (*UpdateSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_settings_proto_rawDescGZIP(), []int{3}
+	return file_restaurant_v1_settings_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *UpdateSettingsRequest) GetInput() *SettingsInput {
@@ -530,11 +712,76 @@ func (x *UpdateSettingsRequest) GetVersion() int64 {
 	return 0
 }
 
+// Sets or clears one settings image. Does not change Settings.version (images are
+// not part of the settings form, so an open form never goes stale).
+type SetSettingsImageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          SettingsImageKind      `protobuf:"varint,1,opt,name=kind,proto3,enum=restaurant.v1.SettingsImageKind" json:"kind,omitempty"`
+	Image         []byte                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`                                // <= 1 MB; empty clears the image
+	ContentType   string                 `protobuf:"bytes,3,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"` // image/jpeg | image/png | image/webp
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetSettingsImageRequest) Reset() {
+	*x = SetSettingsImageRequest{}
+	mi := &file_restaurant_v1_settings_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetSettingsImageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetSettingsImageRequest) ProtoMessage() {}
+
+func (x *SetSettingsImageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_settings_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetSettingsImageRequest.ProtoReflect.Descriptor instead.
+func (*SetSettingsImageRequest) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_settings_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *SetSettingsImageRequest) GetKind() SettingsImageKind {
+	if x != nil {
+		return x.Kind
+	}
+	return SettingsImageKind_SETTINGS_IMAGE_KIND_UNSPECIFIED
+}
+
+func (x *SetSettingsImageRequest) GetImage() []byte {
+	if x != nil {
+		return x.Image
+	}
+	return nil
+}
+
+func (x *SetSettingsImageRequest) GetContentType() string {
+	if x != nil {
+		return x.ContentType
+	}
+	return ""
+}
+
 var File_restaurant_v1_settings_proto protoreflect.FileDescriptor
 
 const file_restaurant_v1_settings_proto_rawDesc = "" +
 	"\n" +
-	"\x1crestaurant/v1/settings.proto\x12\rrestaurant.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1arestaurant/v1/common.proto\"\xe8\x05\n" +
+	"\x1crestaurant/v1/settings.proto\x12\rrestaurant.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1arestaurant/v1/common.proto\"R\n" +
+	"\aQrImage\x125\n" +
+	"\bprovider\x18\x01 \x01(\x0e2\x19.restaurant.v1.QrProviderR\bprovider\x12\x10\n" +
+	"\x03url\x18\x02 \x01(\tR\x03url\"\xc4\x06\n" +
 	"\bSettings\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\x03R\aversion\x12,\n" +
 	"\x04name\x18\x02 \x01(\v2\x18.restaurant.v1.LocalTextR\x04name\x12\x18\n" +
@@ -554,7 +801,9 @@ const file_restaurant_v1_settings_proto_rawDesc = "" +
 	"\x10default_language\x18\x0e \x01(\x0e2\x17.restaurant.v1.LanguageR\x0fdefaultLanguage\x12,\n" +
 	"\x12kds_yellow_minutes\x18\x0f \x01(\x05R\x10kdsYellowMinutes\x12&\n" +
 	"\x0fkds_red_minutes\x18\x10 \x01(\x05R\rkdsRedMinutes\x12\x19\n" +
-	"\blogo_url\x18\x11 \x01(\tR\alogoUrl\"\xbe\x05\n" +
+	"\blogo_url\x18\x11 \x01(\tR\alogoUrl\x123\n" +
+	"\tqr_images\x18\x12 \x03(\v2\x16.restaurant.v1.QrImageR\bqrImages\x12%\n" +
+	"\x0eguest_ordering\x18\x13 \x01(\bR\rguestOrdering\"\xfd\x05\n" +
 	"\rSettingsInput\x12,\n" +
 	"\x04name\x18\x01 \x01(\v2\x18.restaurant.v1.LocalTextR\x04name\x12\x18\n" +
 	"\aaddress\x18\x02 \x01(\tR\aaddress\x12\x14\n" +
@@ -574,11 +823,18 @@ const file_restaurant_v1_settings_proto_rawDesc = "" +
 	"\x10default_language\x18\f \x01(\x0e2\x17.restaurant.v1.LanguageR\x0fdefaultLanguage\x127\n" +
 	"\x12kds_yellow_minutes\x18\r \x01(\x05B\t\xbaH\x06\x1a\x04\x18x(\x01R\x10kdsYellowMinutes\x122\n" +
 	"\x0fkds_red_minutes\x18\x0e \x01(\x05B\n" +
-	"\xbaH\a\x1a\x05\x18\xf0\x01(\x01R\rkdsRedMinutes\"\x14\n" +
+	"\xbaH\a\x1a\x05\x18\xf0\x01(\x01R\rkdsRedMinutes\x12*\n" +
+	"\x0eguest_ordering\x18\x0f \x01(\bH\x00R\rguestOrdering\x88\x01\x01B\x11\n" +
+	"\x0f_guest_ordering\"\x14\n" +
 	"\x12GetSettingsRequest\"e\n" +
 	"\x15UpdateSettingsRequest\x122\n" +
 	"\x05input\x18\x01 \x01(\v2\x1c.restaurant.v1.SettingsInputR\x05input\x12\x18\n" +
-	"\aversion\x18\x02 \x01(\x03R\aversion*d\n" +
+	"\aversion\x18\x02 \x01(\x03R\aversion\"\x94\x01\n" +
+	"\x17SetSettingsImageRequest\x12@\n" +
+	"\x04kind\x18\x01 \x01(\x0e2 .restaurant.v1.SettingsImageKindB\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\x04kind\x12\x14\n" +
+	"\x05image\x18\x02 \x01(\fR\x05image\x12!\n" +
+	"\fcontent_type\x18\x03 \x01(\tR\vcontentType*d\n" +
 	"\vBillingMode\x12\x1c\n" +
 	"\x18BILLING_MODE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15BILLING_MODE_ESTIMATE\x10\x01\x12\x1c\n" +
@@ -586,10 +842,21 @@ const file_restaurant_v1_settings_proto_rawDesc = "" +
 	"\fReceiptWidth\x12\x1d\n" +
 	"\x19RECEIPT_WIDTH_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12RECEIPT_WIDTH_58MM\x10\x01\x12\x16\n" +
-	"\x12RECEIPT_WIDTH_80MM\x10\x022\xad\x01\n" +
+	"\x12RECEIPT_WIDTH_80MM\x10\x02*Y\n" +
+	"\n" +
+	"QrProvider\x12\x1b\n" +
+	"\x17QR_PROVIDER_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13QR_PROVIDER_FONEPAY\x10\x01\x12\x15\n" +
+	"\x11QR_PROVIDER_OTHER\x10\x02*\x9c\x01\n" +
+	"\x11SettingsImageKind\x12#\n" +
+	"\x1fSETTINGS_IMAGE_KIND_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18SETTINGS_IMAGE_KIND_LOGO\x10\x01\x12\"\n" +
+	"\x1eSETTINGS_IMAGE_KIND_QR_FONEPAY\x10\x02\x12 \n" +
+	"\x1cSETTINGS_IMAGE_KIND_QR_OTHER\x10\x032\x82\x02\n" +
 	"\x0fSettingsService\x12I\n" +
 	"\vGetSettings\x12!.restaurant.v1.GetSettingsRequest\x1a\x17.restaurant.v1.Settings\x12O\n" +
-	"\x0eUpdateSettings\x12$.restaurant.v1.UpdateSettingsRequest\x1a\x17.restaurant.v1.SettingsB\xb7\x01\n" +
+	"\x0eUpdateSettings\x12$.restaurant.v1.UpdateSettingsRequest\x1a\x17.restaurant.v1.Settings\x12S\n" +
+	"\x10SetSettingsImage\x12&.restaurant.v1.SetSettingsImageRequest\x1a\x17.restaurant.v1.SettingsB\xb7\x01\n" +
 	"\x11com.restaurant.v1B\rSettingsProtoP\x01Z>github.com/oneaccord/restro/api/gen/restaurant/v1;restaurantv1\xa2\x02\x03RXX\xaa\x02\rRestaurant.V1\xca\x02\rRestaurant\\V1\xe2\x02\x19Restaurant\\V1\\GPBMetadata\xea\x02\x0eRestaurant::V1b\x06proto3"
 
 var (
@@ -604,36 +871,45 @@ func file_restaurant_v1_settings_proto_rawDescGZIP() []byte {
 	return file_restaurant_v1_settings_proto_rawDescData
 }
 
-var file_restaurant_v1_settings_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_restaurant_v1_settings_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_restaurant_v1_settings_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_restaurant_v1_settings_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_restaurant_v1_settings_proto_goTypes = []any{
-	(BillingMode)(0),              // 0: restaurant.v1.BillingMode
-	(ReceiptWidth)(0),             // 1: restaurant.v1.ReceiptWidth
-	(*Settings)(nil),              // 2: restaurant.v1.Settings
-	(*SettingsInput)(nil),         // 3: restaurant.v1.SettingsInput
-	(*GetSettingsRequest)(nil),    // 4: restaurant.v1.GetSettingsRequest
-	(*UpdateSettingsRequest)(nil), // 5: restaurant.v1.UpdateSettingsRequest
-	(*LocalText)(nil),             // 6: restaurant.v1.LocalText
-	(Language)(0),                 // 7: restaurant.v1.Language
+	(BillingMode)(0),                // 0: restaurant.v1.BillingMode
+	(ReceiptWidth)(0),               // 1: restaurant.v1.ReceiptWidth
+	(QrProvider)(0),                 // 2: restaurant.v1.QrProvider
+	(SettingsImageKind)(0),          // 3: restaurant.v1.SettingsImageKind
+	(*QrImage)(nil),                 // 4: restaurant.v1.QrImage
+	(*Settings)(nil),                // 5: restaurant.v1.Settings
+	(*SettingsInput)(nil),           // 6: restaurant.v1.SettingsInput
+	(*GetSettingsRequest)(nil),      // 7: restaurant.v1.GetSettingsRequest
+	(*UpdateSettingsRequest)(nil),   // 8: restaurant.v1.UpdateSettingsRequest
+	(*SetSettingsImageRequest)(nil), // 9: restaurant.v1.SetSettingsImageRequest
+	(*LocalText)(nil),               // 10: restaurant.v1.LocalText
+	(Language)(0),                   // 11: restaurant.v1.Language
 }
 var file_restaurant_v1_settings_proto_depIdxs = []int32{
-	6,  // 0: restaurant.v1.Settings.name:type_name -> restaurant.v1.LocalText
-	0,  // 1: restaurant.v1.Settings.billing_mode:type_name -> restaurant.v1.BillingMode
-	1,  // 2: restaurant.v1.Settings.receipt_width:type_name -> restaurant.v1.ReceiptWidth
-	7,  // 3: restaurant.v1.Settings.default_language:type_name -> restaurant.v1.Language
-	6,  // 4: restaurant.v1.SettingsInput.name:type_name -> restaurant.v1.LocalText
-	1,  // 5: restaurant.v1.SettingsInput.receipt_width:type_name -> restaurant.v1.ReceiptWidth
-	7,  // 6: restaurant.v1.SettingsInput.default_language:type_name -> restaurant.v1.Language
-	3,  // 7: restaurant.v1.UpdateSettingsRequest.input:type_name -> restaurant.v1.SettingsInput
-	4,  // 8: restaurant.v1.SettingsService.GetSettings:input_type -> restaurant.v1.GetSettingsRequest
-	5,  // 9: restaurant.v1.SettingsService.UpdateSettings:input_type -> restaurant.v1.UpdateSettingsRequest
-	2,  // 10: restaurant.v1.SettingsService.GetSettings:output_type -> restaurant.v1.Settings
-	2,  // 11: restaurant.v1.SettingsService.UpdateSettings:output_type -> restaurant.v1.Settings
-	10, // [10:12] is the sub-list for method output_type
-	8,  // [8:10] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	2,  // 0: restaurant.v1.QrImage.provider:type_name -> restaurant.v1.QrProvider
+	10, // 1: restaurant.v1.Settings.name:type_name -> restaurant.v1.LocalText
+	0,  // 2: restaurant.v1.Settings.billing_mode:type_name -> restaurant.v1.BillingMode
+	1,  // 3: restaurant.v1.Settings.receipt_width:type_name -> restaurant.v1.ReceiptWidth
+	11, // 4: restaurant.v1.Settings.default_language:type_name -> restaurant.v1.Language
+	4,  // 5: restaurant.v1.Settings.qr_images:type_name -> restaurant.v1.QrImage
+	10, // 6: restaurant.v1.SettingsInput.name:type_name -> restaurant.v1.LocalText
+	1,  // 7: restaurant.v1.SettingsInput.receipt_width:type_name -> restaurant.v1.ReceiptWidth
+	11, // 8: restaurant.v1.SettingsInput.default_language:type_name -> restaurant.v1.Language
+	6,  // 9: restaurant.v1.UpdateSettingsRequest.input:type_name -> restaurant.v1.SettingsInput
+	3,  // 10: restaurant.v1.SetSettingsImageRequest.kind:type_name -> restaurant.v1.SettingsImageKind
+	7,  // 11: restaurant.v1.SettingsService.GetSettings:input_type -> restaurant.v1.GetSettingsRequest
+	8,  // 12: restaurant.v1.SettingsService.UpdateSettings:input_type -> restaurant.v1.UpdateSettingsRequest
+	9,  // 13: restaurant.v1.SettingsService.SetSettingsImage:input_type -> restaurant.v1.SetSettingsImageRequest
+	5,  // 14: restaurant.v1.SettingsService.GetSettings:output_type -> restaurant.v1.Settings
+	5,  // 15: restaurant.v1.SettingsService.UpdateSettings:output_type -> restaurant.v1.Settings
+	5,  // 16: restaurant.v1.SettingsService.SetSettingsImage:output_type -> restaurant.v1.Settings
+	14, // [14:17] is the sub-list for method output_type
+	11, // [11:14] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_restaurant_v1_settings_proto_init() }
@@ -642,13 +918,14 @@ func file_restaurant_v1_settings_proto_init() {
 		return
 	}
 	file_restaurant_v1_common_proto_init()
+	file_restaurant_v1_settings_proto_msgTypes[2].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_restaurant_v1_settings_proto_rawDesc), len(file_restaurant_v1_settings_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   4,
+			NumEnums:      4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

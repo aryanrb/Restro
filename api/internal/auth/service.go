@@ -422,6 +422,10 @@ func (s *Service) SaveStaff(ctx context.Context, actor *Actor, in StaffInput) (s
 		username = ""
 		passwordHash = pgtype.Text{}
 	}
+	phone := existing.Phone // "" for a new account
+	if in.Phone != nil {
+		phone, _ = NormalisePhone(*in.Phone) // validated above
+	}
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -436,12 +440,12 @@ func (s *Service) SaveStaff(ctx context.Context, actor *Actor, in StaffInput) (s
 		action = "staff.update"
 		saved, err = q.UpdateUser(ctx, sqlc.UpdateUserParams{
 			ID: existing.ID, Name: in.Name, Role: in.Role, Username: ptextOpt(username),
-			PasswordHash: passwordHash, PinHash: pinHash, Active: in.Active,
+			PasswordHash: passwordHash, PinHash: pinHash, Active: in.Active, Phone: phone,
 		})
 	} else {
 		saved, err = q.CreateUser(ctx, sqlc.CreateUserParams{
 			Name: in.Name, Role: in.Role, Username: ptextOpt(username),
-			PasswordHash: passwordHash, PinHash: pinHash, Language: "en", Active: in.Active,
+			PasswordHash: passwordHash, PinHash: pinHash, Language: "en", Active: in.Active, Phone: phone,
 		})
 	}
 	if err != nil {

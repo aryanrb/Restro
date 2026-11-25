@@ -42,6 +42,9 @@ func (s *Service) SaveArea(ctx context.Context, id string, name *restaurantv1.Lo
 	if err != nil {
 		return nil, err
 	}
+	if verr := requireName(name); verr != nil {
+		return nil, verr
+	}
 	var saved sqlc.Area
 	err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
 		var e error
@@ -56,7 +59,7 @@ func (s *Service) SaveArea(ctx context.Context, id string, name *restaurantv1.Lo
 			saved, e = q.UpdateArea(ctx, sqlc.UpdateAreaParams{ID: aid, NameEn: name.GetEn(), NameNe: name.GetNe()})
 		}
 		if e != nil {
-			return connecterr.Internal(e)
+			return notFound(e, "area")
 		}
 		return audit.Write(ctx, q, audit.Entry{ActorID: actor.User.ID, Action: "floor.area.save", Entity: "area", EntityID: saved.ID.String(), After: audit.JSON(saved)})
 	})
@@ -75,6 +78,9 @@ func (s *Service) DeleteArea(ctx context.Context, id string) error {
 	aid, err := parseID("id", id)
 	if err != nil {
 		return err
+	}
+	if _, err := s.q.GetArea(ctx, aid); err != nil {
+		return notFound(err, "area")
 	}
 	n, err := s.q.CountTablesInArea(ctx, aid)
 	if err != nil {
@@ -112,15 +118,20 @@ func (s *Service) MoveArea(ctx context.Context, id string, move restaurantv1.Mov
 	for i, a := range areas {
 		items[i] = sortable{ID: a.ID, Sort: a.Sort}
 	}
-	a, b, ok := neighborSwap(items, aid, moveUp(move))
-	if !ok {
+	changed, found := moveWithin(items, aid, moveUp(move))
+	if !found {
+		return connecterr.NotFound("area not found")
+	}
+	if len(changed) == 0 {
 		return nil
 	}
 	err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
-		if e := q.UpdateAreaSort(ctx, sqlc.UpdateAreaSortParams{ID: a.ID, Sort: a.Sort}); e != nil {
-			return connecterr.Internal(e)
+		for _, c := range changed {
+			if e := q.UpdateAreaSort(ctx, sqlc.UpdateAreaSortParams{ID: c.ID, Sort: c.Sort}); e != nil {
+				return connecterr.Internal(e)
+			}
 		}
-		return q.UpdateAreaSort(ctx, sqlc.UpdateAreaSortParams{ID: b.ID, Sort: b.Sort})
+		return nil
 	})
 	if err != nil {
 		return err
@@ -140,16 +151,32 @@ func (s *Service) SaveTable(ctx context.Context, id, areaID, name string, seats 
 	}
 	var saved sqlc.DiningTable
 	err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
+		if _, e := q.GetArea(ctx, aid); e != nil {
+			return notFound(e, "area")
+		}
 		var e error
 		if id == "" {
-			sort, _ := q.NextTableSort(ctx)
+			sort, se := q.NextTableSort(ctx, aid)
+			if se != nil {
+				return connecterr.Internal(se)
+			}
 			saved, e = q.CreateTable(ctx, sqlc.CreateTableParams{AreaID: aid, Name: name, Seats: seats, Active: active, Sort: sort})
 		} else {
 			tid, perr := parseID("id", id)
 			if perr != nil {
 				return perr
 			}
-			saved, e = q.UpdateTable(ctx, sqlc.UpdateTableParams{ID: tid, AreaID: aid, Name: name, Seats: seats, Active: active})
+			cur, ge := q.GetTable(ctx, tid)
+			if ge != nil {
+				return notFound(ge, "table")
+			}
+			sort := cur.Sort
+			if cur.AreaID != aid { // moved to another area: last there
+				if sort, e = q.NextTableSort(ctx, aid); e != nil {
+					return connecterr.Internal(e)
+				}
+			}
+			saved, e = q.UpdateTable(ctx, sqlc.UpdateTableParams{ID: tid, AreaID: aid, Name: name, Seats: seats, Active: active, Sort: sort})
 		}
 		if e != nil {
 			return connecterr.Internal(e)
@@ -163,6 +190,7 @@ func (s *Service) SaveTable(ctx context.Context, id, areaID, name string, seats 
 	return toTable(saved), nil
 }
 
+// MoveTable moves a table up/down within its own area.
 func (s *Service) MoveTable(ctx context.Context, id string, move restaurantv1.Move) error {
 	if _, err := auth.RequireManager(ctx); err != nil {
 		return err
@@ -171,7 +199,11 @@ func (s *Service) MoveTable(ctx context.Context, id string, move restaurantv1.Mo
 	if err != nil {
 		return err
 	}
-	tables, err := s.q.ListTables(ctx)
+	table, err := s.q.GetTable(ctx, tid)
+	if err != nil {
+		return notFound(err, "table")
+	}
+	tables, err := s.q.ListTablesInArea(ctx, table.AreaID)
 	if err != nil {
 		return connecterr.Internal(err)
 	}
@@ -179,15 +211,17 @@ func (s *Service) MoveTable(ctx context.Context, id string, move restaurantv1.Mo
 	for i, t := range tables {
 		items[i] = sortable{ID: t.ID, Sort: t.Sort}
 	}
-	a, b, ok := neighborSwap(items, tid, moveUp(move))
-	if !ok {
+	changed, _ := moveWithin(items, tid, moveUp(move))
+	if len(changed) == 0 {
 		return nil
 	}
 	err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
-		if e := q.UpdateTableSort(ctx, sqlc.UpdateTableSortParams{ID: a.ID, Sort: a.Sort}); e != nil {
-			return connecterr.Internal(e)
+		for _, c := range changed {
+			if e := q.UpdateTableSort(ctx, sqlc.UpdateTableSortParams{ID: c.ID, Sort: c.Sort}); e != nil {
+				return connecterr.Internal(e)
+			}
 		}
-		return q.UpdateTableSort(ctx, sqlc.UpdateTableSortParams{ID: b.ID, Sort: b.Sort})
+		return nil
 	})
 	if err != nil {
 		return err
@@ -218,6 +252,9 @@ func (s *Service) SaveStation(ctx context.Context, id string, name *restaurantv1
 	if err != nil {
 		return nil, err
 	}
+	if verr := requireName(name); verr != nil {
+		return nil, verr
+	}
 	var saved sqlc.Station
 	err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
 		var e error
@@ -232,7 +269,7 @@ func (s *Service) SaveStation(ctx context.Context, id string, name *restaurantv1
 			saved, e = q.UpdateStation(ctx, sqlc.UpdateStationParams{ID: sid, NameEn: name.GetEn(), NameNe: name.GetNe()})
 		}
 		if e != nil {
-			return connecterr.Internal(e)
+			return notFound(e, "station")
 		}
 		return audit.Write(ctx, q, audit.Entry{ActorID: actor.User.ID, Action: "station.save", Entity: "station", EntityID: saved.ID.String(), After: audit.JSON(saved)})
 	})
@@ -251,6 +288,9 @@ func (s *Service) DeleteStation(ctx context.Context, id string) error {
 	sid, err := parseID("id", id)
 	if err != nil {
 		return err
+	}
+	if _, err := s.q.GetStation(ctx, sid); err != nil {
+		return notFound(err, "station")
 	}
 	used, err := s.q.CountItemsUsingStation(ctx, sid)
 	if err != nil {

@@ -426,8 +426,13 @@ func (x *BumpTicketRequest) GetStationId() string {
 	return ""
 }
 
+// The order(s) the action changed, after the change (so the KDS/waiter view can
+// update without a refetch). `order` is the first affected order (the only one for
+// BumpTicket); `orders` lists every affected order. Empty when nothing matched.
 type KitchenActionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	Order         *Order                 `protobuf:"bytes,1,opt,name=order,proto3" json:"order,omitempty"`
+	Orders        []*Order               `protobuf:"bytes,2,rep,name=orders,proto3" json:"orders,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -460,6 +465,20 @@ func (x *KitchenActionResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use KitchenActionResponse.ProtoReflect.Descriptor instead.
 func (*KitchenActionResponse) Descriptor() ([]byte, []int) {
 	return file_restaurant_v1_kitchen_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *KitchenActionResponse) GetOrder() *Order {
+	if x != nil {
+		return x.Order
+	}
+	return nil
+}
+
+func (x *KitchenActionResponse) GetOrders() []*Order {
+	if x != nil {
+		return x.Orders
+	}
+	return nil
 }
 
 var File_restaurant_v1_kitchen_proto protoreflect.FileDescriptor
@@ -497,8 +516,10 @@ const file_restaurant_v1_kitchen_proto_rawDesc = "" +
 	"\x11BumpTicketRequest\x12\"\n" +
 	"\border_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\aorderId\x12&\n" +
 	"\n" +
-	"station_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tstationId\"\x17\n" +
-	"\x15KitchenActionResponse2\x85\x03\n" +
+	"station_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tstationId\"q\n" +
+	"\x15KitchenActionResponse\x12*\n" +
+	"\x05order\x18\x01 \x01(\v2\x14.restaurant.v1.OrderR\x05order\x12,\n" +
+	"\x06orders\x18\x02 \x03(\v2\x14.restaurant.v1.OrderR\x06orders2\x85\x03\n" +
 	"\x0eKitchenService\x12i\n" +
 	"\x12ListStationTickets\x12(.restaurant.v1.ListStationTicketsRequest\x1a).restaurant.v1.ListStationTicketsResponse\x12T\n" +
 	"\n" +
@@ -533,6 +554,7 @@ var file_restaurant_v1_kitchen_proto_goTypes = []any{
 	(*LocalText)(nil),                  // 8: restaurant.v1.LocalText
 	(OrderItemStatus)(0),               // 9: restaurant.v1.OrderItemStatus
 	(OrderType)(0),                     // 10: restaurant.v1.OrderType
+	(*Order)(nil),                      // 11: restaurant.v1.Order
 }
 var file_restaurant_v1_kitchen_proto_depIdxs = []int32{
 	8,  // 0: restaurant.v1.TicketItem.name:type_name -> restaurant.v1.LocalText
@@ -542,19 +564,21 @@ var file_restaurant_v1_kitchen_proto_depIdxs = []int32{
 	10, // 4: restaurant.v1.Ticket.type:type_name -> restaurant.v1.OrderType
 	0,  // 5: restaurant.v1.Ticket.items:type_name -> restaurant.v1.TicketItem
 	1,  // 6: restaurant.v1.ListStationTicketsResponse.tickets:type_name -> restaurant.v1.Ticket
-	2,  // 7: restaurant.v1.KitchenService.ListStationTickets:input_type -> restaurant.v1.ListStationTicketsRequest
-	4,  // 8: restaurant.v1.KitchenService.StartItems:input_type -> restaurant.v1.StartItemsRequest
-	5,  // 9: restaurant.v1.KitchenService.MarkItemsReady:input_type -> restaurant.v1.MarkItemsReadyRequest
-	6,  // 10: restaurant.v1.KitchenService.BumpTicket:input_type -> restaurant.v1.BumpTicketRequest
-	3,  // 11: restaurant.v1.KitchenService.ListStationTickets:output_type -> restaurant.v1.ListStationTicketsResponse
-	7,  // 12: restaurant.v1.KitchenService.StartItems:output_type -> restaurant.v1.KitchenActionResponse
-	7,  // 13: restaurant.v1.KitchenService.MarkItemsReady:output_type -> restaurant.v1.KitchenActionResponse
-	7,  // 14: restaurant.v1.KitchenService.BumpTicket:output_type -> restaurant.v1.KitchenActionResponse
-	11, // [11:15] is the sub-list for method output_type
-	7,  // [7:11] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	11, // 7: restaurant.v1.KitchenActionResponse.order:type_name -> restaurant.v1.Order
+	11, // 8: restaurant.v1.KitchenActionResponse.orders:type_name -> restaurant.v1.Order
+	2,  // 9: restaurant.v1.KitchenService.ListStationTickets:input_type -> restaurant.v1.ListStationTicketsRequest
+	4,  // 10: restaurant.v1.KitchenService.StartItems:input_type -> restaurant.v1.StartItemsRequest
+	5,  // 11: restaurant.v1.KitchenService.MarkItemsReady:input_type -> restaurant.v1.MarkItemsReadyRequest
+	6,  // 12: restaurant.v1.KitchenService.BumpTicket:input_type -> restaurant.v1.BumpTicketRequest
+	3,  // 13: restaurant.v1.KitchenService.ListStationTickets:output_type -> restaurant.v1.ListStationTicketsResponse
+	7,  // 14: restaurant.v1.KitchenService.StartItems:output_type -> restaurant.v1.KitchenActionResponse
+	7,  // 15: restaurant.v1.KitchenService.MarkItemsReady:output_type -> restaurant.v1.KitchenActionResponse
+	7,  // 16: restaurant.v1.KitchenService.BumpTicket:output_type -> restaurant.v1.KitchenActionResponse
+	13, // [13:17] is the sub-list for method output_type
+	9,  // [9:13] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_restaurant_v1_kitchen_proto_init() }

@@ -17,7 +17,7 @@ import "restaurant/v1/common.proto";
 // server's unit price at add time, so later menu/price edits never alter it.
 //
 // OPTIMISTIC LOCK: Order.version. Destructive/structural commands (void, transfer,
-// merge) carry base_version and are rejected with STALE_VERSION on mismatch.
+// merge, guest count) carry base_version and are rejected with STALE_VERSION on mismatch.
 // AddItems does NOT check base_version — adds commute (append-only).
 //
 // 86 PARTIAL ACCEPT: AddItems rejects only the 86'd lines (ITEM_86D) and applies
@@ -26,6 +26,12 @@ import "restaurant/v1/common.proto";
 // Order identity is the client-supplied order_client_id (stable across offline
 // creation); the server also exposes a server id. Either may be used on follow-up
 // commands — field comments say which.
+//
+// WRONG USER: every command takes an optional user_id — the user who queued it
+// (offline queues outlive a PIN switch). When set and different from the session's
+// user the command is refused with NOT_ALLOWED, field "user_id" (there is no
+// dedicated WRONG_USER reason yet), and that check runs before the idempotent
+// replay, so a replay under the wrong user is refused too.
 // ---------------------------------------------------------------------------
 
 enum OrderType {
@@ -79,6 +85,12 @@ message OrderItem {
   string void_reason = 12;
   string voided_by_user_id = 13;
   string void_approved_by_user_id = 14; // manager approver, if one was required
+
+  int64 sent_at_unix = 15;      // when the line became SENT; 0 while DRAFT
+  string added_by_user_id = 16; // who added the line ("" when unknown)
+  string invoice_id = 17;       // invoice the line is billed on; "" when unbilled
+                                // (cleared again when that invoice is cancelled)
+  bool billed = 18;             // invoice_id != ""
 }
 
 message Order {
@@ -91,6 +103,10 @@ message Order {
   int32 guest_count = 7;
   int64 version = 8;
   repeated OrderItem items = 9; // includes voided lines (append-only history)
+
+  string label = 10;            // free text, e.g. a takeaway customer name; "" when none
+  string waiter_name = 11;      // display name of waiter_user_id
+  int64 created_at_unix = 12;
 }
 
 // ---- queries ----
@@ -126,6 +142,8 @@ message CreateOrderRequest {
   OrderType type = 3 [(buf.validate.field).enum = {defined_only: true, not_in: [0]}];
   optional string table_id = 4; // required for DINE_IN, unset for TAKEAWAY
   int32 guest_count = 5 [(buf.validate.field).int32.gte = 0];
+  string label = 6 [(buf.validate.field).string.max_len = 80]; // becomes Order.label
+  optional string user_id = 7; // see WRONG USER above
 }
 
 message NewItem {
@@ -145,6 +163,7 @@ message AddItemsRequest {
   // SendItems of exactly those lines, in the same transaction), so one queued
   // client command is one atomic call. Default false: lines are created DRAFT.
   bool send = 4;
+  optional string user_id = 5; // see WRONG USER above
 }
 message AddItemsResult {
   Order order = 1;
@@ -160,6 +179,7 @@ message SendItemsRequest {
   string command_id = 1 [(buf.validate.field).string.min_len = 1];
   string order_client_id = 2 [(buf.validate.field).string.min_len = 1];
   repeated string item_ids = 3; // DRAFT lines to send; empty = all DRAFT lines
+  optional string user_id = 4; // see WRONG USER above
 }
 
 message VoidItemRequest {
@@ -169,29 +189,45 @@ message VoidItemRequest {
   string item_id = 4 [(buf.validate.field).string.min_len = 1];
   string reason = 5; // required once the line is SENT or later
   optional ManagerApproval approval = 6; // required once the line is PREPARING or later
+  optional string user_id = 7; // see WRONG USER above
 }
 
 message MarkServedRequest {
   string command_id = 1 [(buf.validate.field).string.min_len = 1];
   string order_client_id = 2 [(buf.validate.field).string.min_len = 1];
   repeated string item_ids = 3 [(buf.validate.field).repeated.min_items = 1];
+  optional string user_id = 4; // see WRONG USER above
 }
 
+// Move an order to another table. An empty new_table_id moves it off the floor:
+// the order becomes TAKEAWAY with no table. Moving to a table makes it DINE_IN.
 message TransferTableRequest {
   string command_id = 1 [(buf.validate.field).string.min_len = 1];
   string order_client_id = 2 [(buf.validate.field).string.min_len = 1];
   int64 base_version = 3;
-  string new_table_id = 4 [(buf.validate.field).string.min_len = 1];
+  string new_table_id = 4; // "" = no table (-> TAKEAWAY)
+  optional string user_id = 5; // see WRONG USER above
 }
 
 // Merge source into target: source's live items move to target (append-only),
-// then source is CLOSED. Both versions are checked.
+// source's guest count is added to target's, then source is CANCELLED. Both
+// versions are checked.
 message MergeTablesRequest {
   string command_id = 1 [(buf.validate.field).string.min_len = 1];
   string source_order_client_id = 2 [(buf.validate.field).string.min_len = 1];
   int64 source_base_version = 3;
   string target_order_client_id = 4 [(buf.validate.field).string.min_len = 1];
   int64 target_base_version = 5;
+  optional string user_id = 6; // see WRONG USER above
+}
+
+// Change an OPEN order's guest count. STALE_VERSION on a base_version mismatch.
+message SetGuestCountRequest {
+  string command_id = 1 [(buf.validate.field).string.min_len = 1];
+  string order_client_id = 2 [(buf.validate.field).string.min_len = 1];
+  int64 base_version = 3;
+  int32 guest_count = 4 [(buf.validate.field).int32 = {gte: 0, lte: 99}];
+  optional string user_id = 5; // see WRONG USER above
 }
 
 service OrderService {
@@ -205,4 +241,5 @@ service OrderService {
   rpc MarkServed(MarkServedRequest) returns (OrderResult);
   rpc TransferTable(TransferTableRequest) returns (OrderResult);
   rpc MergeTables(MergeTablesRequest) returns (OrderResult);
+  rpc SetGuestCount(SetGuestCountRequest) returns (OrderResult); // STALE_VERSION
 }

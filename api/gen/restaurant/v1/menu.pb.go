@@ -494,9 +494,11 @@ func (x *Menu) GetModifierGroups() []*ModifierGroup {
 	return nil
 }
 
+// Variants and modifiers are upserted by id: a set id updates that row in place
+// (its id stays stable), an unset id creates one, and rows left out are deleted.
 type VariantInput struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            *string                `protobuf:"bytes,1,opt,name=id,proto3,oneof" json:"id,omitempty"`
+	Id            *string                `protobuf:"bytes,1,opt,name=id,proto3,oneof" json:"id,omitempty"` // must belong to this item
 	Name          *LocalText             `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	PricePaisa    int64                  `protobuf:"varint,3,opt,name=price_paisa,json=pricePaisa,proto3" json:"price_paisa,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -560,7 +562,7 @@ type MenuItemInput struct {
 	CategoryId       string                 `protobuf:"bytes,2,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"`
 	Name             *LocalText             `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	PricePaisa       int64                  `protobuf:"varint,4,opt,name=price_paisa,json=pricePaisa,proto3" json:"price_paisa,omitempty"` // required > 0 only when variants is empty
-	Color            string                 `protobuf:"bytes,5,opt,name=color,proto3" json:"color,omitempty"`
+	Color            string                 `protobuf:"bytes,5,opt,name=color,proto3" json:"color,omitempty"`                              // one of the web ITEM_COLORS palette, else INVALID(color)
 	StationId        string                 `protobuf:"bytes,6,opt,name=station_id,json=stationId,proto3" json:"station_id,omitempty"`
 	Active           bool                   `protobuf:"varint,7,opt,name=active,proto3" json:"active,omitempty"`
 	Variants         []*VariantInput        `protobuf:"bytes,8,rep,name=variants,proto3" json:"variants,omitempty"`
@@ -664,7 +666,7 @@ func (x *MenuItemInput) GetModifierGroupIds() []string {
 
 type ModifierInput struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	Id              *string                `protobuf:"bytes,1,opt,name=id,proto3,oneof" json:"id,omitempty"`
+	Id              *string                `protobuf:"bytes,1,opt,name=id,proto3,oneof" json:"id,omitempty"` // must belong to this group; upserted like VariantInput
 	Name            *LocalText             `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	PriceDeltaPaisa int64                  `protobuf:"varint,3,opt,name=price_delta_paisa,json=priceDeltaPaisa,proto3" json:"price_delta_paisa,omitempty"`
 	unknownFields   protoimpl.UnknownFields
@@ -1114,6 +1116,7 @@ func (x *SaveItemRequest) GetVersion() int64 {
 	return 0
 }
 
+// Moves within the item's category. Changing category on SaveItem puts the item last there.
 type MoveItemRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`

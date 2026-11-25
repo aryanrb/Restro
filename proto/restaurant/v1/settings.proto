@@ -22,6 +22,19 @@ enum ReceiptWidth {
   RECEIPT_WIDTH_80MM = 2;
 }
 
+// Which static payment QR a QrImage is.
+enum QrProvider {
+  QR_PROVIDER_UNSPECIFIED = 0;
+  QR_PROVIDER_FONEPAY = 1;
+  QR_PROVIDER_OTHER = 2;
+}
+
+// A static payment QR code, shown at payment and optionally printed on bills.
+message QrImage {
+  QrProvider provider = 1;
+  string url = 2; // data URL
+}
+
 message Settings {
   int64 version = 1;
 
@@ -45,7 +58,12 @@ message Settings {
   int32 kds_red_minutes = 16;
 
   // Set in the billing plan (image upload), carried here so the row is ready.
-  string logo_url = 17;
+  string logo_url = 17; // "" = no logo; changed with SetSettingsImage
+
+  // At most one per provider; changed with SetSettingsImage.
+  repeated QrImage qr_images = 18;
+  // Guest table ordering (QR menu). Default false.
+  bool guest_ordering = 19;
 }
 
 // Everything the API may change: Settings minus version and billing_mode.
@@ -64,6 +82,8 @@ message SettingsInput {
   Language default_language = 12;
   int32 kds_yellow_minutes = 13 [(buf.validate.field).int32 = {gte: 1, lte: 120}];
   int32 kds_red_minutes = 14 [(buf.validate.field).int32 = {gte: 1, lte: 240}];
+  // Unset = unchanged. kds_yellow_minutes must be < kds_red_minutes (checked server-side).
+  optional bool guest_ordering = 15;
 }
 
 message GetSettingsRequest {}
@@ -73,7 +93,23 @@ message UpdateSettingsRequest {
   int64 version = 2; // optimistic lock; STALE_VERSION on mismatch
 }
 
+enum SettingsImageKind {
+  SETTINGS_IMAGE_KIND_UNSPECIFIED = 0;
+  SETTINGS_IMAGE_KIND_LOGO = 1;
+  SETTINGS_IMAGE_KIND_QR_FONEPAY = 2;
+  SETTINGS_IMAGE_KIND_QR_OTHER = 3;
+}
+
+// Sets or clears one settings image. Does not change Settings.version (images are
+// not part of the settings form, so an open form never goes stale).
+message SetSettingsImageRequest {
+  SettingsImageKind kind = 1 [(buf.validate.field).enum = {defined_only: true, not_in: [0]}];
+  bytes image = 2;         // <= 1 MB; empty clears the image
+  string content_type = 3; // image/jpeg | image/png | image/webp
+}
+
 service SettingsService {
   rpc GetSettings(GetSettingsRequest) returns (Settings);
-  rpc UpdateSettings(UpdateSettingsRequest) returns (Settings);
+  rpc UpdateSettings(UpdateSettingsRequest) returns (Settings); // STALE_VERSION / INVALID(field)
+  rpc SetSettingsImage(SetSettingsImageRequest) returns (Settings); // INVALID(image) if too big/wrong type
 }

@@ -29,6 +29,12 @@ SELECT * FROM menu_items ORDER BY sort, name_en;
 -- name: GetItem :one
 SELECT * FROM menu_items WHERE id = $1;
 
+-- name: GetCategory :one
+SELECT * FROM menu_categories WHERE id = $1;
+
+-- name: ListItemsInCategory :many
+SELECT * FROM menu_items WHERE category_id = $1 ORDER BY sort, name_en;
+
 -- name: NextItemSort :one
 SELECT COALESCE(MAX(sort), 0) + 1 FROM menu_items WHERE category_id = $1;
 
@@ -40,7 +46,7 @@ RETURNING *;
 -- name: UpdateItem :one
 UPDATE menu_items SET
     version = version + 1, category_id = $3, name_en = $4, name_ne = $5,
-    price_paisa = $6, color = $7, station_id = $8, active = $9, updated_at = now()
+    price_paisa = $6, color = $7, station_id = $8, active = $9, sort = $10, updated_at = now()
 WHERE id = $1 AND version = $2
 RETURNING *;
 
@@ -76,6 +82,15 @@ ORDER BY g.name_en;
 -- name: DeleteItemVariants :exec
 DELETE FROM item_variants WHERE item_id = $1;
 
+-- name: UpdateVariant :one
+UPDATE item_variants SET name_en = $3, name_ne = $4, price_paisa = $5, sort = $6
+WHERE id = $1 AND item_id = $2
+RETURNING *;
+
+-- name: DeleteItemVariantsExcept :exec
+-- Removes the item's variants that are not in keep (upsert-by-id saves).
+DELETE FROM item_variants WHERE item_id = @item_id AND NOT (id = ANY(@keep::uuid[]));
+
 -- name: CreateVariant :one
 INSERT INTO item_variants (item_id, name_en, name_ne, price_paisa, sort) VALUES ($1, $2, $3, $4, $5) RETURNING *;
 
@@ -106,6 +121,15 @@ DELETE FROM modifier_groups WHERE id = $1;
 
 -- name: DeleteGroupModifiers :exec
 DELETE FROM modifiers WHERE group_id = $1;
+
+-- name: UpdateModifier :one
+UPDATE modifiers SET name_en = $3, name_ne = $4, price_delta_paisa = $5, sort = $6
+WHERE id = $1 AND group_id = $2
+RETURNING *;
+
+-- name: DeleteGroupModifiersExcept :exec
+-- Removes the group's modifiers that are not in keep (upsert-by-id saves).
+DELETE FROM modifiers WHERE group_id = @group_id AND NOT (id = ANY(@keep::uuid[]));
 
 -- name: CreateModifier :one
 INSERT INTO modifiers (group_id, name_en, name_ne, price_delta_paisa, sort) VALUES ($1, $2, $3, $4, $5) RETURNING *;

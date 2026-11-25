@@ -61,6 +61,11 @@ func (h *Handler) MergeTables(ctx context.Context, req *connect.Request[restaura
 	return wrap(out, err)
 }
 
+func (h *Handler) SetGuestCount(ctx context.Context, req *connect.Request[restaurantv1.SetGuestCountRequest]) (*connect.Response[restaurantv1.OrderResult], error) {
+	out, err := h.svc.SetGuestCount(ctx, req.Msg)
+	return wrap(out, err)
+}
+
 func wrap[T any](v *T, err error) (*connect.Response[T], error) {
 	if err != nil {
 		return nil, err

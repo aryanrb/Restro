@@ -179,6 +179,37 @@ func (q *Queries) ListTables(ctx context.Context) ([]DiningTable, error) {
 	return items, nil
 }
 
+const listTablesInArea = `-- name: ListTablesInArea :many
+SELECT id, area_id, name, seats, sort, active FROM dining_tables WHERE area_id = $1 ORDER BY sort, name
+`
+
+func (q *Queries) ListTablesInArea(ctx context.Context, areaID uuid.UUID) ([]DiningTable, error) {
+	rows, err := q.db.Query(ctx, listTablesInArea, areaID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DiningTable{}
+	for rows.Next() {
+		var i DiningTable
+		if err := rows.Scan(
+			&i.ID,
+			&i.AreaID,
+			&i.Name,
+			&i.Seats,
+			&i.Sort,
+			&i.Active,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const nextAreaSort = `-- name: NextAreaSort :one
 SELECT COALESCE(MAX(sort), 0) + 1 FROM areas
 `
@@ -191,11 +222,12 @@ func (q *Queries) NextAreaSort(ctx context.Context) (int32, error) {
 }
 
 const nextTableSort = `-- name: NextTableSort :one
-SELECT COALESCE(MAX(sort), 0) + 1 FROM dining_tables
+SELECT COALESCE(MAX(sort), 0) + 1 FROM dining_tables WHERE area_id = $1
 `
 
-func (q *Queries) NextTableSort(ctx context.Context) (int32, error) {
-	row := q.db.QueryRow(ctx, nextTableSort)
+// Table sort is per area.
+func (q *Queries) NextTableSort(ctx context.Context, areaID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, nextTableSort, areaID)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -238,7 +270,7 @@ func (q *Queries) UpdateAreaSort(ctx context.Context, arg UpdateAreaSortParams) 
 }
 
 const updateTable = `-- name: UpdateTable :one
-UPDATE dining_tables SET area_id = $2, name = $3, seats = $4, active = $5 WHERE id = $1 RETURNING id, area_id, name, seats, sort, active
+UPDATE dining_tables SET area_id = $2, name = $3, seats = $4, active = $5, sort = $6 WHERE id = $1 RETURNING id, area_id, name, seats, sort, active
 `
 
 type UpdateTableParams struct {
@@ -247,6 +279,7 @@ type UpdateTableParams struct {
 	Name   string    `json:"name"`
 	Seats  int32     `json:"seats"`
 	Active bool      `json:"active"`
+	Sort   int32     `json:"sort"`
 }
 
 func (q *Queries) UpdateTable(ctx context.Context, arg UpdateTableParams) (DiningTable, error) {
@@ -256,6 +289,7 @@ func (q *Queries) UpdateTable(ctx context.Context, arg UpdateTableParams) (Dinin
 		arg.Name,
 		arg.Seats,
 		arg.Active,
+		arg.Sort,
 	)
 	var i DiningTable
 	err := row.Scan(

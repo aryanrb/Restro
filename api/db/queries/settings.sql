@@ -8,6 +8,17 @@ UPDATE settings SET
     vat_registered = $7, prices_include_vat = $8, vat_rate_bp = $9,
     service_charge_enabled = $10, service_charge_rate_bp = $11,
     receipt_width = $12, round_total_to_rupee = $13, default_language = $14,
-    kds_yellow_minutes = $15, kds_red_minutes = $16, updated_at = now()
+    kds_yellow_minutes = $15, kds_red_minutes = $16, guest_ordering = $17, updated_at = now()
 WHERE id = 1 AND version = $1
 RETURNING *;
+
+-- Images are not part of the settings form, so they do not bump version.
+
+-- name: SetSettingsLogo :one
+UPDATE settings SET logo_url = $1, updated_at = now() WHERE id = 1 RETURNING *;
+
+-- name: SetSettingsQrFonepay :one
+UPDATE settings SET qr_fonepay_url = $1, updated_at = now() WHERE id = 1 RETURNING *;
+
+-- name: SetSettingsQrOther :one
+UPDATE settings SET qr_other_url = $1, updated_at = now() WHERE id = 1 RETURNING *;

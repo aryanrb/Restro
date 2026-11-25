@@ -244,15 +244,18 @@ func (x *DiscountInput) GetApproval() *ManagerApproval {
 }
 
 type InvoiceLine struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Name           *LocalText             `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	VariantName    string                 `protobuf:"bytes,2,opt,name=variant_name,json=variantName,proto3" json:"variant_name,omitempty"`
-	Modifiers      []*LocalText           `protobuf:"bytes,3,rep,name=modifiers,proto3" json:"modifiers,omitempty"`
-	Quantity       int32                  `protobuf:"varint,4,opt,name=quantity,proto3" json:"quantity,omitempty"`
-	UnitPricePaisa int64                  `protobuf:"varint,5,opt,name=unit_price_paisa,json=unitPricePaisa,proto3" json:"unit_price_paisa,omitempty"`
-	LineTotalPaisa int64                  `protobuf:"varint,6,opt,name=line_total_paisa,json=lineTotalPaisa,proto3" json:"line_total_paisa,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Name              *LocalText             `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	VariantName       string                 `protobuf:"bytes,2,opt,name=variant_name,json=variantName,proto3" json:"variant_name,omitempty"`
+	Modifiers         []*LocalText           `protobuf:"bytes,3,rep,name=modifiers,proto3" json:"modifiers,omitempty"`
+	Quantity          int32                  `protobuf:"varint,4,opt,name=quantity,proto3" json:"quantity,omitempty"`
+	UnitPricePaisa    int64                  `protobuf:"varint,5,opt,name=unit_price_paisa,json=unitPricePaisa,proto3" json:"unit_price_paisa,omitempty"`
+	LineTotalPaisa    int64                  `protobuf:"varint,6,opt,name=line_total_paisa,json=lineTotalPaisa,proto3" json:"line_total_paisa,omitempty"`
+	OrderItemId       string                 `protobuf:"bytes,7,opt,name=order_item_id,json=orderItemId,proto3" json:"order_item_id,omitempty"`                     // server id of the billed order line
+	OrderItemClientId string                 `protobuf:"bytes,8,opt,name=order_item_client_id,json=orderItemClientId,proto3" json:"order_item_client_id,omitempty"` // client id of the billed order line
+	Variant           *LocalText             `protobuf:"bytes,9,opt,name=variant,proto3" json:"variant,omitempty"`                                                  // bilingual variant name (unset when the line has no variant)
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *InvoiceLine) Reset() {
@@ -327,6 +330,27 @@ func (x *InvoiceLine) GetLineTotalPaisa() int64 {
 	return 0
 }
 
+func (x *InvoiceLine) GetOrderItemId() string {
+	if x != nil {
+		return x.OrderItemId
+	}
+	return ""
+}
+
+func (x *InvoiceLine) GetOrderItemClientId() string {
+	if x != nil {
+		return x.OrderItemClientId
+	}
+	return ""
+}
+
+func (x *InvoiceLine) GetVariant() *LocalText {
+	if x != nil {
+		return x.Variant
+	}
+	return nil
+}
+
 type Payment struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	Id                string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -335,6 +359,7 @@ type Payment struct {
 	Reference         string                 `protobuf:"bytes,4,opt,name=reference,proto3" json:"reference,omitempty"`
 	ConfirmedByUserId string                 `protobuf:"bytes,5,opt,name=confirmed_by_user_id,json=confirmedByUserId,proto3" json:"confirmed_by_user_id,omitempty"`
 	CreatedAtUnix     int64                  `protobuf:"varint,6,opt,name=created_at_unix,json=createdAtUnix,proto3" json:"created_at_unix,omitempty"`
+	ShiftId           string                 `protobuf:"bytes,7,opt,name=shift_id,json=shiftId,proto3" json:"shift_id,omitempty"` // the collector's shift the payment was taken in
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -411,6 +436,161 @@ func (x *Payment) GetCreatedAtUnix() int64 {
 	return 0
 }
 
+func (x *Payment) GetShiftId() string {
+	if x != nil {
+		return x.ShiftId
+	}
+	return ""
+}
+
+// The seller's details captured when the invoice was issued; reprints show these,
+// never today's settings.
+type InvoiceSeller struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          *LocalText             `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Address       string                 `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`
+	PanNumber     string                 `protobuf:"bytes,3,opt,name=pan_number,json=panNumber,proto3" json:"pan_number,omitempty"`
+	VatRateBp     int32                  `protobuf:"varint,4,opt,name=vat_rate_bp,json=vatRateBp,proto3" json:"vat_rate_bp,omitempty"`
+	LogoUrl       string                 `protobuf:"bytes,5,opt,name=logo_url,json=logoUrl,proto3" json:"logo_url,omitempty"`
+	VatRegistered bool                   `protobuf:"varint,6,opt,name=vat_registered,json=vatRegistered,proto3" json:"vat_registered,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InvoiceSeller) Reset() {
+	*x = InvoiceSeller{}
+	mi := &file_restaurant_v1_billing_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InvoiceSeller) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InvoiceSeller) ProtoMessage() {}
+
+func (x *InvoiceSeller) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_billing_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InvoiceSeller.ProtoReflect.Descriptor instead.
+func (*InvoiceSeller) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *InvoiceSeller) GetName() *LocalText {
+	if x != nil {
+		return x.Name
+	}
+	return nil
+}
+
+func (x *InvoiceSeller) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *InvoiceSeller) GetPanNumber() string {
+	if x != nil {
+		return x.PanNumber
+	}
+	return ""
+}
+
+func (x *InvoiceSeller) GetVatRateBp() int32 {
+	if x != nil {
+		return x.VatRateBp
+	}
+	return 0
+}
+
+func (x *InvoiceSeller) GetLogoUrl() string {
+	if x != nil {
+		return x.LogoUrl
+	}
+	return ""
+}
+
+func (x *InvoiceSeller) GetVatRegistered() bool {
+	if x != nil {
+		return x.VatRegistered
+	}
+	return false
+}
+
+// One print of an invoice (the first is the original). Feeds the IRD sales book's
+// Printed_Time / Printed_by columns.
+type InvoicePrint struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AtUnix        int64                  `protobuf:"varint,1,opt,name=at_unix,json=atUnix,proto3" json:"at_unix,omitempty"`
+	ByUserId      string                 `protobuf:"bytes,2,opt,name=by_user_id,json=byUserId,proto3" json:"by_user_id,omitempty"`
+	ByName        string                 `protobuf:"bytes,3,opt,name=by_name,json=byName,proto3" json:"by_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InvoicePrint) Reset() {
+	*x = InvoicePrint{}
+	mi := &file_restaurant_v1_billing_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InvoicePrint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InvoicePrint) ProtoMessage() {}
+
+func (x *InvoicePrint) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_billing_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InvoicePrint.ProtoReflect.Descriptor instead.
+func (*InvoicePrint) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *InvoicePrint) GetAtUnix() int64 {
+	if x != nil {
+		return x.AtUnix
+	}
+	return 0
+}
+
+func (x *InvoicePrint) GetByUserId() string {
+	if x != nil {
+		return x.ByUserId
+	}
+	return ""
+}
+
+func (x *InvoicePrint) GetByName() string {
+	if x != nil {
+		return x.ByName
+	}
+	return ""
+}
+
 type Invoice struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -433,13 +613,28 @@ type Invoice struct {
 	PrintCount         int32                  `protobuf:"varint,18,opt,name=print_count,json=printCount,proto3" json:"print_count,omitempty"`
 	Lines              []*InvoiceLine         `protobuf:"bytes,19,rep,name=lines,proto3" json:"lines,omitempty"`
 	Payments           []*Payment             `protobuf:"bytes,20,rep,name=payments,proto3" json:"payments,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// --- captured at issue time, immutable ---
+	Seller         *InvoiceSeller `protobuf:"bytes,21,opt,name=seller,proto3" json:"seller,omitempty"`
+	DisplayNumber  string         `protobuf:"bytes,22,opt,name=display_number,json=displayNumber,proto3" json:"display_number,omitempty"` // "E-2083/84-12" (estimate) or "2083/84-12" (tax invoice)
+	DiscountReason string         `protobuf:"bytes,23,opt,name=discount_reason,json=discountReason,proto3" json:"discount_reason,omitempty"`
+	IssuedByUserId string         `protobuf:"bytes,24,opt,name=issued_by_user_id,json=issuedByUserId,proto3" json:"issued_by_user_id,omitempty"`
+	IssuedByName   string         `protobuf:"bytes,25,opt,name=issued_by_name,json=issuedByName,proto3" json:"issued_by_name,omitempty"`
+	Place          string         `protobuf:"bytes,26,opt,name=place,proto3" json:"place,omitempty"` // table name, counter-sale label, or "Takeaway"
+	OrderClientId  string         `protobuf:"bytes,27,opt,name=order_client_id,json=orderClientId,proto3" json:"order_client_id,omitempty"`
+	// --- cancellation (empty / 0 while ISSUED) ---
+	CancelReason           string `protobuf:"bytes,28,opt,name=cancel_reason,json=cancelReason,proto3" json:"cancel_reason,omitempty"`
+	CancelledAtUnix        int64  `protobuf:"varint,29,opt,name=cancelled_at_unix,json=cancelledAtUnix,proto3" json:"cancelled_at_unix,omitempty"`
+	CancelledByUserId      string `protobuf:"bytes,30,opt,name=cancelled_by_user_id,json=cancelledByUserId,proto3" json:"cancelled_by_user_id,omitempty"`
+	CancelApprovedByUserId string `protobuf:"bytes,31,opt,name=cancel_approved_by_user_id,json=cancelApprovedByUserId,proto3" json:"cancel_approved_by_user_id,omitempty"`
+	// Every print, oldest first; prints[0] is the original.
+	Prints        []*InvoicePrint `protobuf:"bytes,32,rep,name=prints,proto3" json:"prints,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Invoice) Reset() {
 	*x = Invoice{}
-	mi := &file_restaurant_v1_billing_proto_msgTypes[3]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -451,7 +646,7 @@ func (x *Invoice) String() string {
 func (*Invoice) ProtoMessage() {}
 
 func (x *Invoice) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_billing_proto_msgTypes[3]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -464,7 +659,7 @@ func (x *Invoice) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Invoice.ProtoReflect.Descriptor instead.
 func (*Invoice) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{3}
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Invoice) GetId() string {
@@ -607,6 +802,90 @@ func (x *Invoice) GetPayments() []*Payment {
 	return nil
 }
 
+func (x *Invoice) GetSeller() *InvoiceSeller {
+	if x != nil {
+		return x.Seller
+	}
+	return nil
+}
+
+func (x *Invoice) GetDisplayNumber() string {
+	if x != nil {
+		return x.DisplayNumber
+	}
+	return ""
+}
+
+func (x *Invoice) GetDiscountReason() string {
+	if x != nil {
+		return x.DiscountReason
+	}
+	return ""
+}
+
+func (x *Invoice) GetIssuedByUserId() string {
+	if x != nil {
+		return x.IssuedByUserId
+	}
+	return ""
+}
+
+func (x *Invoice) GetIssuedByName() string {
+	if x != nil {
+		return x.IssuedByName
+	}
+	return ""
+}
+
+func (x *Invoice) GetPlace() string {
+	if x != nil {
+		return x.Place
+	}
+	return ""
+}
+
+func (x *Invoice) GetOrderClientId() string {
+	if x != nil {
+		return x.OrderClientId
+	}
+	return ""
+}
+
+func (x *Invoice) GetCancelReason() string {
+	if x != nil {
+		return x.CancelReason
+	}
+	return ""
+}
+
+func (x *Invoice) GetCancelledAtUnix() int64 {
+	if x != nil {
+		return x.CancelledAtUnix
+	}
+	return 0
+}
+
+func (x *Invoice) GetCancelledByUserId() string {
+	if x != nil {
+		return x.CancelledByUserId
+	}
+	return ""
+}
+
+func (x *Invoice) GetCancelApprovedByUserId() string {
+	if x != nil {
+		return x.CancelApprovedByUserId
+	}
+	return ""
+}
+
+func (x *Invoice) GetPrints() []*InvoicePrint {
+	if x != nil {
+		return x.Prints
+	}
+	return nil
+}
+
 // Computed-but-not-persisted preview of a bill.
 type BillPreview struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
@@ -623,7 +902,7 @@ type BillPreview struct {
 
 func (x *BillPreview) Reset() {
 	*x = BillPreview{}
-	mi := &file_restaurant_v1_billing_proto_msgTypes[4]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -635,7 +914,7 @@ func (x *BillPreview) String() string {
 func (*BillPreview) ProtoMessage() {}
 
 func (x *BillPreview) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_billing_proto_msgTypes[4]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -648,7 +927,7 @@ func (x *BillPreview) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BillPreview.ProtoReflect.Descriptor instead.
 func (*BillPreview) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{4}
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *BillPreview) GetSubtotalPaisa() int64 {
@@ -710,7 +989,7 @@ type PreviewBillRequest struct {
 
 func (x *PreviewBillRequest) Reset() {
 	*x = PreviewBillRequest{}
-	mi := &file_restaurant_v1_billing_proto_msgTypes[5]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -722,7 +1001,7 @@ func (x *PreviewBillRequest) String() string {
 func (*PreviewBillRequest) ProtoMessage() {}
 
 func (x *PreviewBillRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_billing_proto_msgTypes[5]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -735,7 +1014,7 @@ func (x *PreviewBillRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreviewBillRequest.ProtoReflect.Descriptor instead.
 func (*PreviewBillRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{5}
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PreviewBillRequest) GetOrderClientId() string {
@@ -765,7 +1044,7 @@ type IssueFullBillRequest struct {
 
 func (x *IssueFullBillRequest) Reset() {
 	*x = IssueFullBillRequest{}
-	mi := &file_restaurant_v1_billing_proto_msgTypes[6]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -777,7 +1056,7 @@ func (x *IssueFullBillRequest) String() string {
 func (*IssueFullBillRequest) ProtoMessage() {}
 
 func (x *IssueFullBillRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_billing_proto_msgTypes[6]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -790,7 +1069,7 @@ func (x *IssueFullBillRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IssueFullBillRequest.ProtoReflect.Descriptor instead.
 func (*IssueFullBillRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{6}
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *IssueFullBillRequest) GetCommandId() string {
@@ -837,7 +1116,7 @@ type LineGroup struct {
 
 func (x *LineGroup) Reset() {
 	*x = LineGroup{}
-	mi := &file_restaurant_v1_billing_proto_msgTypes[7]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -849,7 +1128,7 @@ func (x *LineGroup) String() string {
 func (*LineGroup) ProtoMessage() {}
 
 func (x *LineGroup) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_billing_proto_msgTypes[7]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -862,7 +1141,7 @@ func (x *LineGroup) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LineGroup.ProtoReflect.Descriptor instead.
 func (*LineGroup) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{7}
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *LineGroup) GetOrderItemIds() []string {
@@ -883,7 +1162,7 @@ type SplitByItemRequest struct {
 
 func (x *SplitByItemRequest) Reset() {
 	*x = SplitByItemRequest{}
-	mi := &file_restaurant_v1_billing_proto_msgTypes[8]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -895,7 +1174,7 @@ func (x *SplitByItemRequest) String() string {
 func (*SplitByItemRequest) ProtoMessage() {}
 
 func (x *SplitByItemRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_billing_proto_msgTypes[8]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -908,7 +1187,7 @@ func (x *SplitByItemRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SplitByItemRequest.ProtoReflect.Descriptor instead.
 func (*SplitByItemRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{8}
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *SplitByItemRequest) GetCommandId() string {
@@ -941,7 +1220,7 @@ type SplitByItemResponse struct {
 
 func (x *SplitByItemResponse) Reset() {
 	*x = SplitByItemResponse{}
-	mi := &file_restaurant_v1_billing_proto_msgTypes[9]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -953,7 +1232,7 @@ func (x *SplitByItemResponse) String() string {
 func (*SplitByItemResponse) ProtoMessage() {}
 
 func (x *SplitByItemResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_billing_proto_msgTypes[9]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -966,7 +1245,7 @@ func (x *SplitByItemResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SplitByItemResponse.ProtoReflect.Descriptor instead.
 func (*SplitByItemResponse) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{9}
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *SplitByItemResponse) GetInvoices() []*Invoice {
@@ -989,7 +1268,7 @@ type RecordPaymentRequest struct {
 
 func (x *RecordPaymentRequest) Reset() {
 	*x = RecordPaymentRequest{}
-	mi := &file_restaurant_v1_billing_proto_msgTypes[10]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1001,7 +1280,7 @@ func (x *RecordPaymentRequest) String() string {
 func (*RecordPaymentRequest) ProtoMessage() {}
 
 func (x *RecordPaymentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_billing_proto_msgTypes[10]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1014,7 +1293,7 @@ func (x *RecordPaymentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordPaymentRequest.ProtoReflect.Descriptor instead.
 func (*RecordPaymentRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{10}
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RecordPaymentRequest) GetCommandId() string {
@@ -1064,7 +1343,7 @@ type CancelInvoiceRequest struct {
 
 func (x *CancelInvoiceRequest) Reset() {
 	*x = CancelInvoiceRequest{}
-	mi := &file_restaurant_v1_billing_proto_msgTypes[11]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1076,7 +1355,7 @@ func (x *CancelInvoiceRequest) String() string {
 func (*CancelInvoiceRequest) ProtoMessage() {}
 
 func (x *CancelInvoiceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_billing_proto_msgTypes[11]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1089,7 +1368,7 @@ func (x *CancelInvoiceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelInvoiceRequest.ProtoReflect.Descriptor instead.
 func (*CancelInvoiceRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{11}
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CancelInvoiceRequest) GetCommandId() string {
@@ -1129,7 +1408,7 @@ type MarkPrintedRequest struct {
 
 func (x *MarkPrintedRequest) Reset() {
 	*x = MarkPrintedRequest{}
-	mi := &file_restaurant_v1_billing_proto_msgTypes[12]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1141,7 +1420,7 @@ func (x *MarkPrintedRequest) String() string {
 func (*MarkPrintedRequest) ProtoMessage() {}
 
 func (x *MarkPrintedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_billing_proto_msgTypes[12]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1154,7 +1433,7 @@ func (x *MarkPrintedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkPrintedRequest.ProtoReflect.Descriptor instead.
 func (*MarkPrintedRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{12}
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *MarkPrintedRequest) GetInvoiceId() string {
@@ -1175,7 +1454,7 @@ type PrintInfo struct {
 
 func (x *PrintInfo) Reset() {
 	*x = PrintInfo{}
-	mi := &file_restaurant_v1_billing_proto_msgTypes[13]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1187,7 +1466,7 @@ func (x *PrintInfo) String() string {
 func (*PrintInfo) ProtoMessage() {}
 
 func (x *PrintInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_billing_proto_msgTypes[13]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1200,7 +1479,7 @@ func (x *PrintInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrintInfo.ProtoReflect.Descriptor instead.
 func (*PrintInfo) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{13}
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *PrintInfo) GetIsOriginal() bool {
@@ -1233,7 +1512,7 @@ type GetInvoiceRequest struct {
 
 func (x *GetInvoiceRequest) Reset() {
 	*x = GetInvoiceRequest{}
-	mi := &file_restaurant_v1_billing_proto_msgTypes[14]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1245,7 +1524,7 @@ func (x *GetInvoiceRequest) String() string {
 func (*GetInvoiceRequest) ProtoMessage() {}
 
 func (x *GetInvoiceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_billing_proto_msgTypes[14]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1258,7 +1537,7 @@ func (x *GetInvoiceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInvoiceRequest.ProtoReflect.Descriptor instead.
 func (*GetInvoiceRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{14}
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *GetInvoiceRequest) GetId() string {
@@ -1281,7 +1560,7 @@ type PaymentInput struct {
 
 func (x *PaymentInput) Reset() {
 	*x = PaymentInput{}
-	mi := &file_restaurant_v1_billing_proto_msgTypes[15]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1293,7 +1572,7 @@ func (x *PaymentInput) String() string {
 func (*PaymentInput) ProtoMessage() {}
 
 func (x *PaymentInput) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_billing_proto_msgTypes[15]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1306,7 +1585,7 @@ func (x *PaymentInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PaymentInput.ProtoReflect.Descriptor instead.
 func (*PaymentInput) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{15}
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *PaymentInput) GetMethod() PaymentMethod {
@@ -1349,7 +1628,7 @@ type IssueBillRequest struct {
 
 func (x *IssueBillRequest) Reset() {
 	*x = IssueBillRequest{}
-	mi := &file_restaurant_v1_billing_proto_msgTypes[16]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1361,7 +1640,7 @@ func (x *IssueBillRequest) String() string {
 func (*IssueBillRequest) ProtoMessage() {}
 
 func (x *IssueBillRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_billing_proto_msgTypes[16]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1374,7 +1653,7 @@ func (x *IssueBillRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IssueBillRequest.ProtoReflect.Descriptor instead.
 func (*IssueBillRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{16}
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *IssueBillRequest) GetCommandId() string {
@@ -1433,7 +1712,7 @@ type CounterSaleRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	OrderClientId string                 `protobuf:"bytes,2,opt,name=order_client_id,json=orderClientId,proto3" json:"order_client_id,omitempty"`
-	Label         string                 `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"` // not stored yet (orders have no label column)
+	Label         string                 `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"` // printed as the invoice's place (blank = "Takeaway")
 	Lines         []*NewItem             `protobuf:"bytes,4,rep,name=lines,proto3" json:"lines,omitempty"`
 	Discount      *DiscountInput         `protobuf:"bytes,5,opt,name=discount,proto3,oneof" json:"discount,omitempty"`
 	BuyerName     string                 `protobuf:"bytes,6,opt,name=buyer_name,json=buyerName,proto3" json:"buyer_name,omitempty"`
@@ -1445,7 +1724,7 @@ type CounterSaleRequest struct {
 
 func (x *CounterSaleRequest) Reset() {
 	*x = CounterSaleRequest{}
-	mi := &file_restaurant_v1_billing_proto_msgTypes[17]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1457,7 +1736,7 @@ func (x *CounterSaleRequest) String() string {
 func (*CounterSaleRequest) ProtoMessage() {}
 
 func (x *CounterSaleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_billing_proto_msgTypes[17]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1470,7 +1749,7 @@ func (x *CounterSaleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CounterSaleRequest.ProtoReflect.Descriptor instead.
 func (*CounterSaleRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{17}
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *CounterSaleRequest) GetCommandId() string {
@@ -1540,7 +1819,7 @@ type InvoiceDayRange struct {
 
 func (x *InvoiceDayRange) Reset() {
 	*x = InvoiceDayRange{}
-	mi := &file_restaurant_v1_billing_proto_msgTypes[18]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1552,7 +1831,7 @@ func (x *InvoiceDayRange) String() string {
 func (*InvoiceDayRange) ProtoMessage() {}
 
 func (x *InvoiceDayRange) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_billing_proto_msgTypes[18]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1565,7 +1844,7 @@ func (x *InvoiceDayRange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InvoiceDayRange.ProtoReflect.Descriptor instead.
 func (*InvoiceDayRange) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{18}
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *InvoiceDayRange) GetFromUnix() int64 {
@@ -1597,7 +1876,7 @@ type ListInvoicesRequest struct {
 
 func (x *ListInvoicesRequest) Reset() {
 	*x = ListInvoicesRequest{}
-	mi := &file_restaurant_v1_billing_proto_msgTypes[19]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1609,7 +1888,7 @@ func (x *ListInvoicesRequest) String() string {
 func (*ListInvoicesRequest) ProtoMessage() {}
 
 func (x *ListInvoicesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_billing_proto_msgTypes[19]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1622,7 +1901,7 @@ func (x *ListInvoicesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInvoicesRequest.ProtoReflect.Descriptor instead.
 func (*ListInvoicesRequest) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{19}
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ListInvoicesRequest) GetFilter() isListInvoicesRequest_Filter {
@@ -1690,7 +1969,7 @@ type ListInvoicesResponse struct {
 
 func (x *ListInvoicesResponse) Reset() {
 	*x = ListInvoicesResponse{}
-	mi := &file_restaurant_v1_billing_proto_msgTypes[20]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1702,7 +1981,7 @@ func (x *ListInvoicesResponse) String() string {
 func (*ListInvoicesResponse) ProtoMessage() {}
 
 func (x *ListInvoicesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_restaurant_v1_billing_proto_msgTypes[20]
+	mi := &file_restaurant_v1_billing_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1715,7 +1994,7 @@ func (x *ListInvoicesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInvoicesResponse.ProtoReflect.Descriptor instead.
 func (*ListInvoicesResponse) Descriptor() ([]byte, []int) {
-	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{20}
+	return file_restaurant_v1_billing_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ListInvoicesResponse) GetInvoices() []*Invoice {
@@ -1735,21 +2014,38 @@ const file_restaurant_v1_billing_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x03R\x05value\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\x12?\n" +
 	"\bapproval\x18\x04 \x01(\v2\x1e.restaurant.v1.ManagerApprovalH\x00R\bapproval\x88\x01\x01B\v\n" +
-	"\t_approval\"\x86\x02\n" +
+	"\t_approval\"\x8f\x03\n" +
 	"\vInvoiceLine\x12,\n" +
 	"\x04name\x18\x01 \x01(\v2\x18.restaurant.v1.LocalTextR\x04name\x12!\n" +
 	"\fvariant_name\x18\x02 \x01(\tR\vvariantName\x126\n" +
 	"\tmodifiers\x18\x03 \x03(\v2\x18.restaurant.v1.LocalTextR\tmodifiers\x12\x1a\n" +
 	"\bquantity\x18\x04 \x01(\x05R\bquantity\x12(\n" +
 	"\x10unit_price_paisa\x18\x05 \x01(\x03R\x0eunitPricePaisa\x12(\n" +
-	"\x10line_total_paisa\x18\x06 \x01(\x03R\x0elineTotalPaisa\"\xe9\x01\n" +
+	"\x10line_total_paisa\x18\x06 \x01(\x03R\x0elineTotalPaisa\x12\"\n" +
+	"\rorder_item_id\x18\a \x01(\tR\vorderItemId\x12/\n" +
+	"\x14order_item_client_id\x18\b \x01(\tR\x11orderItemClientId\x122\n" +
+	"\avariant\x18\t \x01(\v2\x18.restaurant.v1.LocalTextR\avariant\"\x84\x02\n" +
 	"\aPayment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x124\n" +
 	"\x06method\x18\x02 \x01(\x0e2\x1c.restaurant.v1.PaymentMethodR\x06method\x12!\n" +
 	"\famount_paisa\x18\x03 \x01(\x03R\vamountPaisa\x12\x1c\n" +
 	"\treference\x18\x04 \x01(\tR\treference\x12/\n" +
 	"\x14confirmed_by_user_id\x18\x05 \x01(\tR\x11confirmedByUserId\x12&\n" +
-	"\x0fcreated_at_unix\x18\x06 \x01(\x03R\rcreatedAtUnix\"\xe3\x05\n" +
+	"\x0fcreated_at_unix\x18\x06 \x01(\x03R\rcreatedAtUnix\x12\x19\n" +
+	"\bshift_id\x18\a \x01(\tR\ashiftId\"\xd8\x01\n" +
+	"\rInvoiceSeller\x12,\n" +
+	"\x04name\x18\x01 \x01(\v2\x18.restaurant.v1.LocalTextR\x04name\x12\x18\n" +
+	"\aaddress\x18\x02 \x01(\tR\aaddress\x12\x1d\n" +
+	"\n" +
+	"pan_number\x18\x03 \x01(\tR\tpanNumber\x12\x1e\n" +
+	"\vvat_rate_bp\x18\x04 \x01(\x05R\tvatRateBp\x12\x19\n" +
+	"\blogo_url\x18\x05 \x01(\tR\alogoUrl\x12%\n" +
+	"\x0evat_registered\x18\x06 \x01(\bR\rvatRegistered\"^\n" +
+	"\fInvoicePrint\x12\x17\n" +
+	"\aat_unix\x18\x01 \x01(\x03R\x06atUnix\x12\x1c\n" +
+	"\n" +
+	"by_user_id\x18\x02 \x01(\tR\bbyUserId\x12\x17\n" +
+	"\aby_name\x18\x03 \x01(\tR\x06byName\"\xeb\t\n" +
 	"\aInvoice\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vfiscal_year\x18\x02 \x01(\tR\n" +
@@ -1775,7 +2071,19 @@ const file_restaurant_v1_billing_proto_rawDesc = "" +
 	"\vprint_count\x18\x12 \x01(\x05R\n" +
 	"printCount\x120\n" +
 	"\x05lines\x18\x13 \x03(\v2\x1a.restaurant.v1.InvoiceLineR\x05lines\x122\n" +
-	"\bpayments\x18\x14 \x03(\v2\x16.restaurant.v1.PaymentR\bpayments\"\x97\x02\n" +
+	"\bpayments\x18\x14 \x03(\v2\x16.restaurant.v1.PaymentR\bpayments\x124\n" +
+	"\x06seller\x18\x15 \x01(\v2\x1c.restaurant.v1.InvoiceSellerR\x06seller\x12%\n" +
+	"\x0edisplay_number\x18\x16 \x01(\tR\rdisplayNumber\x12'\n" +
+	"\x0fdiscount_reason\x18\x17 \x01(\tR\x0ediscountReason\x12)\n" +
+	"\x11issued_by_user_id\x18\x18 \x01(\tR\x0eissuedByUserId\x12$\n" +
+	"\x0eissued_by_name\x18\x19 \x01(\tR\fissuedByName\x12\x14\n" +
+	"\x05place\x18\x1a \x01(\tR\x05place\x12&\n" +
+	"\x0forder_client_id\x18\x1b \x01(\tR\rorderClientId\x12#\n" +
+	"\rcancel_reason\x18\x1c \x01(\tR\fcancelReason\x12*\n" +
+	"\x11cancelled_at_unix\x18\x1d \x01(\x03R\x0fcancelledAtUnix\x12/\n" +
+	"\x14cancelled_by_user_id\x18\x1e \x01(\tR\x11cancelledByUserId\x12:\n" +
+	"\x1acancel_approved_by_user_id\x18\x1f \x01(\tR\x16cancelApprovedByUserId\x123\n" +
+	"\x06prints\x18  \x03(\v2\x1b.restaurant.v1.InvoicePrintR\x06prints\"\x97\x02\n" +
 	"\vBillPreview\x12%\n" +
 	"\x0esubtotal_paisa\x18\x01 \x01(\x03R\rsubtotalPaisa\x12%\n" +
 	"\x0ediscount_paisa\x18\x02 \x01(\x03R\rdiscountPaisa\x120\n" +
@@ -1913,7 +2221,7 @@ func file_restaurant_v1_billing_proto_rawDescGZIP() []byte {
 }
 
 var file_restaurant_v1_billing_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_restaurant_v1_billing_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_restaurant_v1_billing_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_restaurant_v1_billing_proto_goTypes = []any{
 	(PaymentMethod)(0),           // 0: restaurant.v1.PaymentMethod
 	(DiscountType)(0),            // 1: restaurant.v1.DiscountType
@@ -1921,78 +2229,84 @@ var file_restaurant_v1_billing_proto_goTypes = []any{
 	(*DiscountInput)(nil),        // 3: restaurant.v1.DiscountInput
 	(*InvoiceLine)(nil),          // 4: restaurant.v1.InvoiceLine
 	(*Payment)(nil),              // 5: restaurant.v1.Payment
-	(*Invoice)(nil),              // 6: restaurant.v1.Invoice
-	(*BillPreview)(nil),          // 7: restaurant.v1.BillPreview
-	(*PreviewBillRequest)(nil),   // 8: restaurant.v1.PreviewBillRequest
-	(*IssueFullBillRequest)(nil), // 9: restaurant.v1.IssueFullBillRequest
-	(*LineGroup)(nil),            // 10: restaurant.v1.LineGroup
-	(*SplitByItemRequest)(nil),   // 11: restaurant.v1.SplitByItemRequest
-	(*SplitByItemResponse)(nil),  // 12: restaurant.v1.SplitByItemResponse
-	(*RecordPaymentRequest)(nil), // 13: restaurant.v1.RecordPaymentRequest
-	(*CancelInvoiceRequest)(nil), // 14: restaurant.v1.CancelInvoiceRequest
-	(*MarkPrintedRequest)(nil),   // 15: restaurant.v1.MarkPrintedRequest
-	(*PrintInfo)(nil),            // 16: restaurant.v1.PrintInfo
-	(*GetInvoiceRequest)(nil),    // 17: restaurant.v1.GetInvoiceRequest
-	(*PaymentInput)(nil),         // 18: restaurant.v1.PaymentInput
-	(*IssueBillRequest)(nil),     // 19: restaurant.v1.IssueBillRequest
-	(*CounterSaleRequest)(nil),   // 20: restaurant.v1.CounterSaleRequest
-	(*InvoiceDayRange)(nil),      // 21: restaurant.v1.InvoiceDayRange
-	(*ListInvoicesRequest)(nil),  // 22: restaurant.v1.ListInvoicesRequest
-	(*ListInvoicesResponse)(nil), // 23: restaurant.v1.ListInvoicesResponse
-	(*ManagerApproval)(nil),      // 24: restaurant.v1.ManagerApproval
-	(*LocalText)(nil),            // 25: restaurant.v1.LocalText
-	(BillingMode)(0),             // 26: restaurant.v1.BillingMode
-	(*NewItem)(nil),              // 27: restaurant.v1.NewItem
+	(*InvoiceSeller)(nil),        // 6: restaurant.v1.InvoiceSeller
+	(*InvoicePrint)(nil),         // 7: restaurant.v1.InvoicePrint
+	(*Invoice)(nil),              // 8: restaurant.v1.Invoice
+	(*BillPreview)(nil),          // 9: restaurant.v1.BillPreview
+	(*PreviewBillRequest)(nil),   // 10: restaurant.v1.PreviewBillRequest
+	(*IssueFullBillRequest)(nil), // 11: restaurant.v1.IssueFullBillRequest
+	(*LineGroup)(nil),            // 12: restaurant.v1.LineGroup
+	(*SplitByItemRequest)(nil),   // 13: restaurant.v1.SplitByItemRequest
+	(*SplitByItemResponse)(nil),  // 14: restaurant.v1.SplitByItemResponse
+	(*RecordPaymentRequest)(nil), // 15: restaurant.v1.RecordPaymentRequest
+	(*CancelInvoiceRequest)(nil), // 16: restaurant.v1.CancelInvoiceRequest
+	(*MarkPrintedRequest)(nil),   // 17: restaurant.v1.MarkPrintedRequest
+	(*PrintInfo)(nil),            // 18: restaurant.v1.PrintInfo
+	(*GetInvoiceRequest)(nil),    // 19: restaurant.v1.GetInvoiceRequest
+	(*PaymentInput)(nil),         // 20: restaurant.v1.PaymentInput
+	(*IssueBillRequest)(nil),     // 21: restaurant.v1.IssueBillRequest
+	(*CounterSaleRequest)(nil),   // 22: restaurant.v1.CounterSaleRequest
+	(*InvoiceDayRange)(nil),      // 23: restaurant.v1.InvoiceDayRange
+	(*ListInvoicesRequest)(nil),  // 24: restaurant.v1.ListInvoicesRequest
+	(*ListInvoicesResponse)(nil), // 25: restaurant.v1.ListInvoicesResponse
+	(*ManagerApproval)(nil),      // 26: restaurant.v1.ManagerApproval
+	(*LocalText)(nil),            // 27: restaurant.v1.LocalText
+	(BillingMode)(0),             // 28: restaurant.v1.BillingMode
+	(*NewItem)(nil),              // 29: restaurant.v1.NewItem
 }
 var file_restaurant_v1_billing_proto_depIdxs = []int32{
 	1,  // 0: restaurant.v1.DiscountInput.type:type_name -> restaurant.v1.DiscountType
-	24, // 1: restaurant.v1.DiscountInput.approval:type_name -> restaurant.v1.ManagerApproval
-	25, // 2: restaurant.v1.InvoiceLine.name:type_name -> restaurant.v1.LocalText
-	25, // 3: restaurant.v1.InvoiceLine.modifiers:type_name -> restaurant.v1.LocalText
-	0,  // 4: restaurant.v1.Payment.method:type_name -> restaurant.v1.PaymentMethod
-	26, // 5: restaurant.v1.Invoice.mode:type_name -> restaurant.v1.BillingMode
-	2,  // 6: restaurant.v1.Invoice.status:type_name -> restaurant.v1.InvoiceStatus
-	4,  // 7: restaurant.v1.Invoice.lines:type_name -> restaurant.v1.InvoiceLine
-	5,  // 8: restaurant.v1.Invoice.payments:type_name -> restaurant.v1.Payment
-	3,  // 9: restaurant.v1.PreviewBillRequest.discount:type_name -> restaurant.v1.DiscountInput
-	3,  // 10: restaurant.v1.IssueFullBillRequest.discount:type_name -> restaurant.v1.DiscountInput
-	10, // 11: restaurant.v1.SplitByItemRequest.groups:type_name -> restaurant.v1.LineGroup
-	6,  // 12: restaurant.v1.SplitByItemResponse.invoices:type_name -> restaurant.v1.Invoice
-	0,  // 13: restaurant.v1.RecordPaymentRequest.method:type_name -> restaurant.v1.PaymentMethod
-	24, // 14: restaurant.v1.CancelInvoiceRequest.approval:type_name -> restaurant.v1.ManagerApproval
-	0,  // 15: restaurant.v1.PaymentInput.method:type_name -> restaurant.v1.PaymentMethod
-	3,  // 16: restaurant.v1.IssueBillRequest.discount:type_name -> restaurant.v1.DiscountInput
-	18, // 17: restaurant.v1.IssueBillRequest.payments:type_name -> restaurant.v1.PaymentInput
-	27, // 18: restaurant.v1.CounterSaleRequest.lines:type_name -> restaurant.v1.NewItem
-	3,  // 19: restaurant.v1.CounterSaleRequest.discount:type_name -> restaurant.v1.DiscountInput
-	18, // 20: restaurant.v1.CounterSaleRequest.payments:type_name -> restaurant.v1.PaymentInput
-	21, // 21: restaurant.v1.ListInvoicesRequest.ad_range:type_name -> restaurant.v1.InvoiceDayRange
-	6,  // 22: restaurant.v1.ListInvoicesResponse.invoices:type_name -> restaurant.v1.Invoice
-	8,  // 23: restaurant.v1.BillingService.PreviewBill:input_type -> restaurant.v1.PreviewBillRequest
-	9,  // 24: restaurant.v1.BillingService.IssueFullBill:input_type -> restaurant.v1.IssueFullBillRequest
-	11, // 25: restaurant.v1.BillingService.SplitByItem:input_type -> restaurant.v1.SplitByItemRequest
-	13, // 26: restaurant.v1.BillingService.RecordPayment:input_type -> restaurant.v1.RecordPaymentRequest
-	14, // 27: restaurant.v1.BillingService.CancelInvoice:input_type -> restaurant.v1.CancelInvoiceRequest
-	15, // 28: restaurant.v1.BillingService.MarkPrinted:input_type -> restaurant.v1.MarkPrintedRequest
-	17, // 29: restaurant.v1.BillingService.GetInvoice:input_type -> restaurant.v1.GetInvoiceRequest
-	19, // 30: restaurant.v1.BillingService.IssueBill:input_type -> restaurant.v1.IssueBillRequest
-	20, // 31: restaurant.v1.BillingService.CounterSale:input_type -> restaurant.v1.CounterSaleRequest
-	22, // 32: restaurant.v1.BillingService.ListInvoices:input_type -> restaurant.v1.ListInvoicesRequest
-	7,  // 33: restaurant.v1.BillingService.PreviewBill:output_type -> restaurant.v1.BillPreview
-	6,  // 34: restaurant.v1.BillingService.IssueFullBill:output_type -> restaurant.v1.Invoice
-	12, // 35: restaurant.v1.BillingService.SplitByItem:output_type -> restaurant.v1.SplitByItemResponse
-	5,  // 36: restaurant.v1.BillingService.RecordPayment:output_type -> restaurant.v1.Payment
-	6,  // 37: restaurant.v1.BillingService.CancelInvoice:output_type -> restaurant.v1.Invoice
-	16, // 38: restaurant.v1.BillingService.MarkPrinted:output_type -> restaurant.v1.PrintInfo
-	6,  // 39: restaurant.v1.BillingService.GetInvoice:output_type -> restaurant.v1.Invoice
-	6,  // 40: restaurant.v1.BillingService.IssueBill:output_type -> restaurant.v1.Invoice
-	6,  // 41: restaurant.v1.BillingService.CounterSale:output_type -> restaurant.v1.Invoice
-	23, // 42: restaurant.v1.BillingService.ListInvoices:output_type -> restaurant.v1.ListInvoicesResponse
-	33, // [33:43] is the sub-list for method output_type
-	23, // [23:33] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	26, // 1: restaurant.v1.DiscountInput.approval:type_name -> restaurant.v1.ManagerApproval
+	27, // 2: restaurant.v1.InvoiceLine.name:type_name -> restaurant.v1.LocalText
+	27, // 3: restaurant.v1.InvoiceLine.modifiers:type_name -> restaurant.v1.LocalText
+	27, // 4: restaurant.v1.InvoiceLine.variant:type_name -> restaurant.v1.LocalText
+	0,  // 5: restaurant.v1.Payment.method:type_name -> restaurant.v1.PaymentMethod
+	27, // 6: restaurant.v1.InvoiceSeller.name:type_name -> restaurant.v1.LocalText
+	28, // 7: restaurant.v1.Invoice.mode:type_name -> restaurant.v1.BillingMode
+	2,  // 8: restaurant.v1.Invoice.status:type_name -> restaurant.v1.InvoiceStatus
+	4,  // 9: restaurant.v1.Invoice.lines:type_name -> restaurant.v1.InvoiceLine
+	5,  // 10: restaurant.v1.Invoice.payments:type_name -> restaurant.v1.Payment
+	6,  // 11: restaurant.v1.Invoice.seller:type_name -> restaurant.v1.InvoiceSeller
+	7,  // 12: restaurant.v1.Invoice.prints:type_name -> restaurant.v1.InvoicePrint
+	3,  // 13: restaurant.v1.PreviewBillRequest.discount:type_name -> restaurant.v1.DiscountInput
+	3,  // 14: restaurant.v1.IssueFullBillRequest.discount:type_name -> restaurant.v1.DiscountInput
+	12, // 15: restaurant.v1.SplitByItemRequest.groups:type_name -> restaurant.v1.LineGroup
+	8,  // 16: restaurant.v1.SplitByItemResponse.invoices:type_name -> restaurant.v1.Invoice
+	0,  // 17: restaurant.v1.RecordPaymentRequest.method:type_name -> restaurant.v1.PaymentMethod
+	26, // 18: restaurant.v1.CancelInvoiceRequest.approval:type_name -> restaurant.v1.ManagerApproval
+	0,  // 19: restaurant.v1.PaymentInput.method:type_name -> restaurant.v1.PaymentMethod
+	3,  // 20: restaurant.v1.IssueBillRequest.discount:type_name -> restaurant.v1.DiscountInput
+	20, // 21: restaurant.v1.IssueBillRequest.payments:type_name -> restaurant.v1.PaymentInput
+	29, // 22: restaurant.v1.CounterSaleRequest.lines:type_name -> restaurant.v1.NewItem
+	3,  // 23: restaurant.v1.CounterSaleRequest.discount:type_name -> restaurant.v1.DiscountInput
+	20, // 24: restaurant.v1.CounterSaleRequest.payments:type_name -> restaurant.v1.PaymentInput
+	23, // 25: restaurant.v1.ListInvoicesRequest.ad_range:type_name -> restaurant.v1.InvoiceDayRange
+	8,  // 26: restaurant.v1.ListInvoicesResponse.invoices:type_name -> restaurant.v1.Invoice
+	10, // 27: restaurant.v1.BillingService.PreviewBill:input_type -> restaurant.v1.PreviewBillRequest
+	11, // 28: restaurant.v1.BillingService.IssueFullBill:input_type -> restaurant.v1.IssueFullBillRequest
+	13, // 29: restaurant.v1.BillingService.SplitByItem:input_type -> restaurant.v1.SplitByItemRequest
+	15, // 30: restaurant.v1.BillingService.RecordPayment:input_type -> restaurant.v1.RecordPaymentRequest
+	16, // 31: restaurant.v1.BillingService.CancelInvoice:input_type -> restaurant.v1.CancelInvoiceRequest
+	17, // 32: restaurant.v1.BillingService.MarkPrinted:input_type -> restaurant.v1.MarkPrintedRequest
+	19, // 33: restaurant.v1.BillingService.GetInvoice:input_type -> restaurant.v1.GetInvoiceRequest
+	21, // 34: restaurant.v1.BillingService.IssueBill:input_type -> restaurant.v1.IssueBillRequest
+	22, // 35: restaurant.v1.BillingService.CounterSale:input_type -> restaurant.v1.CounterSaleRequest
+	24, // 36: restaurant.v1.BillingService.ListInvoices:input_type -> restaurant.v1.ListInvoicesRequest
+	9,  // 37: restaurant.v1.BillingService.PreviewBill:output_type -> restaurant.v1.BillPreview
+	8,  // 38: restaurant.v1.BillingService.IssueFullBill:output_type -> restaurant.v1.Invoice
+	14, // 39: restaurant.v1.BillingService.SplitByItem:output_type -> restaurant.v1.SplitByItemResponse
+	5,  // 40: restaurant.v1.BillingService.RecordPayment:output_type -> restaurant.v1.Payment
+	8,  // 41: restaurant.v1.BillingService.CancelInvoice:output_type -> restaurant.v1.Invoice
+	18, // 42: restaurant.v1.BillingService.MarkPrinted:output_type -> restaurant.v1.PrintInfo
+	8,  // 43: restaurant.v1.BillingService.GetInvoice:output_type -> restaurant.v1.Invoice
+	8,  // 44: restaurant.v1.BillingService.IssueBill:output_type -> restaurant.v1.Invoice
+	8,  // 45: restaurant.v1.BillingService.CounterSale:output_type -> restaurant.v1.Invoice
+	25, // 46: restaurant.v1.BillingService.ListInvoices:output_type -> restaurant.v1.ListInvoicesResponse
+	37, // [37:47] is the sub-list for method output_type
+	27, // [27:37] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_restaurant_v1_billing_proto_init() }
@@ -2004,11 +2318,11 @@ func file_restaurant_v1_billing_proto_init() {
 	file_restaurant_v1_order_proto_init()
 	file_restaurant_v1_settings_proto_init()
 	file_restaurant_v1_billing_proto_msgTypes[0].OneofWrappers = []any{}
-	file_restaurant_v1_billing_proto_msgTypes[5].OneofWrappers = []any{}
-	file_restaurant_v1_billing_proto_msgTypes[6].OneofWrappers = []any{}
-	file_restaurant_v1_billing_proto_msgTypes[16].OneofWrappers = []any{}
-	file_restaurant_v1_billing_proto_msgTypes[17].OneofWrappers = []any{}
-	file_restaurant_v1_billing_proto_msgTypes[19].OneofWrappers = []any{
+	file_restaurant_v1_billing_proto_msgTypes[7].OneofWrappers = []any{}
+	file_restaurant_v1_billing_proto_msgTypes[8].OneofWrappers = []any{}
+	file_restaurant_v1_billing_proto_msgTypes[18].OneofWrappers = []any{}
+	file_restaurant_v1_billing_proto_msgTypes[19].OneofWrappers = []any{}
+	file_restaurant_v1_billing_proto_msgTypes[21].OneofWrappers = []any{
 		(*ListInvoicesRequest_OrderClientId)(nil),
 		(*ListInvoicesRequest_BsDate)(nil),
 		(*ListInvoicesRequest_AdRange)(nil),
@@ -2019,7 +2333,7 @@ func file_restaurant_v1_billing_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_restaurant_v1_billing_proto_rawDesc), len(file_restaurant_v1_billing_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   21,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
