@@ -58,6 +58,10 @@ func CheckOnAccount(ctx context.Context, q *sqlc.Queries, actor *auth.Actor, amo
 		if !c.Active {
 			return nil, customerInactive()
 		}
+		// A loyalty-only member has no credit account: one must be opened first.
+		if !c.CreditAccount {
+			return nil, connecterr.Invalid("customer_id", "this customer has no credit account")
+		}
 		balance, err := q.CustomerBalance(ctx, id)
 		if err != nil {
 			return nil, connecterr.Internal(err)

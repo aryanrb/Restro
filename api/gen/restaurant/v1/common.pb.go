@@ -234,6 +234,20 @@ const (
 	ErrorReason_ERROR_REASON_INVALID_STATUS       ErrorReason = 29 // not allowed from the booking's status (or restore on another day)
 	ErrorReason_ERROR_REASON_TOO_EARLY            ErrorReason = 30 // no-show before the booking time
 	ErrorReason_ERROR_REASON_RESERVATIONS_OFF     ErrorReason = 31 // reservations are switched off in settings
+	// Loyalty (loyalty.proto, billing customer_id / redeem) -> code: failed_precondition.
+	// PHONE_TAKEN is sent as DUPLICATE "phone", CONSENT_REQUIRED as INVALID "consent",
+	// CARD_LINK_INVALID as NOT_FOUND "token".
+	ErrorReason_ERROR_REASON_LOYALTY_OFF         ErrorReason = 32 // loyalty is switched off in settings
+	ErrorReason_ERROR_REASON_NOT_A_MEMBER        ErrorReason = 33 // the customer is not a loyalty member (field "customer_id")
+	ErrorReason_ERROR_REASON_OWN_NUMBER          ErrorReason = 34 // the biller's own phone number on their own bill
+	ErrorReason_ERROR_REASON_NO_REWARD           ErrorReason = 35 // no reward ready (or the birthday reward is not available)
+	ErrorReason_ERROR_REASON_REWARD_EXCEEDS_BILL ErrorReason = 36 // subtotal - discount is less than the reward
+	// Guest table ordering (guest.proto).
+	ErrorReason_ERROR_REASON_TABLE_CODE_INVALID ErrorReason = 37 // unknown or regenerated table code, or an inactive table (not_found)
+	ErrorReason_ERROR_REASON_GUEST_ORDERING_OFF ErrorReason = 38 // off for the restaurant or this table; the menu is still readable (failed_precondition)
+	ErrorReason_ERROR_REASON_TOO_MANY_PENDING   ErrorReason = 39 // the table already has 3 guest orders waiting (failed_precondition)
+	ErrorReason_ERROR_REASON_RATE_LIMITED       ErrorReason = 40 // too many guest submits/calls from this table or address (resource_exhausted)
+	ErrorReason_ERROR_REASON_ALREADY_HANDLED    ErrorReason = 41 // the guest request was already accepted/rejected/done; message = who handled it (failed_precondition)
 )
 
 // Enum value maps for ErrorReason.
@@ -269,6 +283,16 @@ var (
 		29: "ERROR_REASON_INVALID_STATUS",
 		30: "ERROR_REASON_TOO_EARLY",
 		31: "ERROR_REASON_RESERVATIONS_OFF",
+		32: "ERROR_REASON_LOYALTY_OFF",
+		33: "ERROR_REASON_NOT_A_MEMBER",
+		34: "ERROR_REASON_OWN_NUMBER",
+		35: "ERROR_REASON_NO_REWARD",
+		36: "ERROR_REASON_REWARD_EXCEEDS_BILL",
+		37: "ERROR_REASON_TABLE_CODE_INVALID",
+		38: "ERROR_REASON_GUEST_ORDERING_OFF",
+		39: "ERROR_REASON_TOO_MANY_PENDING",
+		40: "ERROR_REASON_RATE_LIMITED",
+		41: "ERROR_REASON_ALREADY_HANDLED",
 	}
 	ErrorReason_value = map[string]int32{
 		"ERROR_REASON_UNSPECIFIED":               0,
@@ -301,6 +325,16 @@ var (
 		"ERROR_REASON_INVALID_STATUS":            29,
 		"ERROR_REASON_TOO_EARLY":                 30,
 		"ERROR_REASON_RESERVATIONS_OFF":          31,
+		"ERROR_REASON_LOYALTY_OFF":               32,
+		"ERROR_REASON_NOT_A_MEMBER":              33,
+		"ERROR_REASON_OWN_NUMBER":                34,
+		"ERROR_REASON_NO_REWARD":                 35,
+		"ERROR_REASON_REWARD_EXCEEDS_BILL":       36,
+		"ERROR_REASON_TABLE_CODE_INVALID":        37,
+		"ERROR_REASON_GUEST_ORDERING_OFF":        38,
+		"ERROR_REASON_TOO_MANY_PENDING":          39,
+		"ERROR_REASON_RATE_LIMITED":              40,
+		"ERROR_REASON_ALREADY_HANDLED":           41,
 	}
 )
 
@@ -532,7 +566,8 @@ const file_restaurant_v1_common_proto_rawDesc = "" +
 	"\x04Move\x12\x14\n" +
 	"\x10MOVE_UNSPECIFIED\x10\x00\x12\v\n" +
 	"\aMOVE_UP\x10\x01\x12\r\n" +
-	"\tMOVE_DOWN\x10\x02*\xfd\a\n" +
+	"\tMOVE_DOWN\x10\x02*\xc7\n" +
+	"\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12$\n" +
 	" ERROR_REASON_INVALID_CREDENTIALS\x10\x01\x12\x1b\n" +
@@ -564,7 +599,17 @@ const file_restaurant_v1_common_proto_rawDesc = "" +
 	"!ERROR_REASON_TABLE_ALREADY_BOOKED\x10\x1c\x12\x1f\n" +
 	"\x1bERROR_REASON_INVALID_STATUS\x10\x1d\x12\x1a\n" +
 	"\x16ERROR_REASON_TOO_EARLY\x10\x1e\x12!\n" +
-	"\x1dERROR_REASON_RESERVATIONS_OFF\x10\x1fB\xb5\x01\n" +
+	"\x1dERROR_REASON_RESERVATIONS_OFF\x10\x1f\x12\x1c\n" +
+	"\x18ERROR_REASON_LOYALTY_OFF\x10 \x12\x1d\n" +
+	"\x19ERROR_REASON_NOT_A_MEMBER\x10!\x12\x1b\n" +
+	"\x17ERROR_REASON_OWN_NUMBER\x10\"\x12\x1a\n" +
+	"\x16ERROR_REASON_NO_REWARD\x10#\x12$\n" +
+	" ERROR_REASON_REWARD_EXCEEDS_BILL\x10$\x12#\n" +
+	"\x1fERROR_REASON_TABLE_CODE_INVALID\x10%\x12#\n" +
+	"\x1fERROR_REASON_GUEST_ORDERING_OFF\x10&\x12!\n" +
+	"\x1dERROR_REASON_TOO_MANY_PENDING\x10'\x12\x1d\n" +
+	"\x19ERROR_REASON_RATE_LIMITED\x10(\x12 \n" +
+	"\x1cERROR_REASON_ALREADY_HANDLED\x10)B\xb5\x01\n" +
 	"\x11com.restaurant.v1B\vCommonProtoP\x01Z>github.com/oneaccord/restro/api/gen/restaurant/v1;restaurantv1\xa2\x02\x03RXX\xaa\x02\rRestaurant.V1\xca\x02\rRestaurant\\V1\xe2\x02\x19Restaurant\\V1\\GPBMetadata\xea\x02\x0eRestaurant::V1b\x06proto3"
 
 var (

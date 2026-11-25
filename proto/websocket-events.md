@@ -76,6 +76,23 @@ request's transaction committed (server-side `inventory.EventsInterceptor`).
 `settings.updated` with id `alerts` when the alert config changes. Like every event
 these are broadcast to all sessions (see Scoping); the alert RPCs enforce who may read.
 
+### Guest table ordering (GuestService, GuestDeskService)
+
+| `type`          | `id` is…         | When                                                                 | Who listens |
+|-----------------|------------------|----------------------------------------------------------------------|-------------|
+| `guest.request` | guest request id | a guest order / Call waiter / Ask for bill was created, accepted, rejected or done | floor, counter |
+| `guest.status`  | table id         | that table's guest requests changed, its per-table switch changed or its code was regenerated | guest page |
+
+Accept also sends `ticket.created` + `order.updated`; Ask for bill and its Done send
+`order.updated` (bill_requested_at). A bill issued on the order clears the request in
+its transaction (no `guest.request` then; staff screens refetch on `order.updated`).
+
+**Public guest socket** `GET /api/guest/ws?t=<table code>` — no session; 404 for an
+unknown code. It only ever sends `{"type":"guest.status","id":<table id>}` for that
+table: on its `guest.status`, on `order.updated` of one of its orders, and on
+`settings.updated`. It closes (policy violation) once the code stops working. Fallback:
+poll `GetGuestStatus` every 15 s.
+
 ### Later plans (reserved names — do not reuse)
 
 | `type`             | `id` is…   | Plan        |

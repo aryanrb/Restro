@@ -90,6 +90,20 @@ enum ErrorReason {
   ERROR_REASON_INVALID_STATUS = 29;       // not allowed from the booking's status (or restore on another day)
   ERROR_REASON_TOO_EARLY = 30;            // no-show before the booking time
   ERROR_REASON_RESERVATIONS_OFF = 31;     // reservations are switched off in settings
+  // Loyalty (loyalty.proto, billing customer_id / redeem) -> code: failed_precondition.
+  // PHONE_TAKEN is sent as DUPLICATE "phone", CONSENT_REQUIRED as INVALID "consent",
+  // CARD_LINK_INVALID as NOT_FOUND "token".
+  ERROR_REASON_LOYALTY_OFF = 32;         // loyalty is switched off in settings
+  ERROR_REASON_NOT_A_MEMBER = 33;        // the customer is not a loyalty member (field "customer_id")
+  ERROR_REASON_OWN_NUMBER = 34;          // the biller's own phone number on their own bill
+  ERROR_REASON_NO_REWARD = 35;           // no reward ready (or the birthday reward is not available)
+  ERROR_REASON_REWARD_EXCEEDS_BILL = 36; // subtotal - discount is less than the reward
+  // Guest table ordering (guest.proto).
+  ERROR_REASON_TABLE_CODE_INVALID = 37; // unknown or regenerated table code, or an inactive table (not_found)
+  ERROR_REASON_GUEST_ORDERING_OFF = 38; // off for the restaurant or this table; the menu is still readable (failed_precondition)
+  ERROR_REASON_TOO_MANY_PENDING = 39;   // the table already has 3 guest orders waiting (failed_precondition)
+  ERROR_REASON_RATE_LIMITED = 40;       // too many guest submits/calls from this table or address (resource_exhausted)
+  ERROR_REASON_ALREADY_HANDLED = 41;    // the guest request was already accepted/rejected/done; message = who handled it (failed_precondition)
 }
 
 // Carried as a google.rpc-style error detail on every non-OK response.

@@ -135,6 +135,9 @@ func toOrder(o sqlc.Order, items []sqlc.OrderItem, mods map[uuid.UUID][]sqlc.Ord
 		WaiterUserId: o.WaiterUserID.String(), Status: orderStatusEnum(o.Status), GuestCount: o.GuestCount, Version: o.Version,
 		Label: o.Label, CreatedAtUnix: o.CreatedAt.Unix(), ReservationId: pgUUIDStr(o.ReservationID),
 	}
+	if o.BillRequestedAt.Valid {
+		out.BillRequestedAtUnix = o.BillRequestedAt.Time.Unix()
+	}
 	if o.TableID.Valid {
 		s := pgUUIDStr(o.TableID)
 		out.TableId = &s
@@ -169,6 +172,9 @@ func toOrderItem(it sqlc.OrderItem, mods []sqlc.OrderItemModifier) *restaurantv1
 	oi.AddedByUserId = pgUUIDStr(it.AddedByUserID)
 	oi.InvoiceId = pgUUIDStr(it.InvoiceID)
 	oi.Billed = it.InvoiceID.Valid
+	if it.Source == "GUEST" {
+		oi.Source = "GUEST"
+	}
 	return oi
 }
 

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/proto"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
 	"github.com/oneaccord/restro/api/internal/dbx"
 	"github.com/oneaccord/restro/api/internal/idem"
+	"github.com/oneaccord/restro/api/internal/loyalty"
 	"github.com/oneaccord/restro/api/internal/realtime"
 )
 
@@ -50,6 +52,7 @@ func (s *Service) Repay(ctx context.Context, req *restaurantv1.RepayRequest) (*r
 		return nil, err
 	}
 	out := &restaurantv1.Repayment{}
+	var members []uuid.UUID
 	err = idem.Run(ctx, s.pool, s.q, reqID, actor.User.ID, out, func(q *sqlc.Queries) error {
 		amount := req.GetAmountPaisa()
 		if amount <= 0 {
@@ -99,6 +102,10 @@ func (s *Service) Repay(ctx context.Context, req *restaurantv1.RepayRequest) (*r
 			After: audit.JSON(map[string]any{"customer_id": customerID.String(), "method": method, "amount": amount, "balance_after": balance - amount})}); e != nil {
 			return e
 		}
+		// Loyalty: a bill now fully repaid gets its pending stamp.
+		if members, e = loyalty.SyncPending(ctx, q); e != nil {
+			return e
+		}
 		r, e := q.GetRepaymentDetail(ctx, id)
 		if e != nil {
 			return connecterr.Internal(e)
@@ -111,6 +118,7 @@ func (s *Service) Repay(ctx context.Context, req *restaurantv1.RepayRequest) (*r
 	}
 	s.emit(realtime.Event{Type: EventCustomerUpdated, ID: out.CustomerId})
 	s.emit(realtime.Event{Type: "shift.updated", ID: out.ShiftId})
+	s.emitMembers(members)
 	return out, nil
 }
 
@@ -132,6 +140,7 @@ func (s *Service) VoidRepayment(ctx context.Context, req *restaurantv1.VoidRepay
 	}
 	out := &restaurantv1.Repayment{}
 	var adjustedShift string
+	var members []uuid.UUID
 	err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
 		r, e := q.LockRepayment(ctx, id)
 		if errors.Is(e, pgx.ErrNoRows) {
@@ -167,6 +176,10 @@ func (s *Service) VoidRepayment(ctx context.Context, req *restaurantv1.VoidRepay
 			After: audit.JSON(map[string]any{"customer_id": r.CustomerID.String(), "method": r.Method, "amount": r.AmountPaisa})}); e != nil {
 			return e
 		}
+		// Loyalty: a bill unpaid again loses its counted stamp until repaid.
+		if members, e = loyalty.SyncPending(ctx, q); e != nil {
+			return e
+		}
 		d, e := q.GetRepaymentDetail(ctx, id)
 		if e != nil {
 			return connecterr.Internal(e)
@@ -182,7 +195,15 @@ func (s *Service) VoidRepayment(ctx context.Context, req *restaurantv1.VoidRepay
 	if adjustedShift != "" {
 		s.emit(realtime.Event{Type: "shift.updated", ID: adjustedShift})
 	}
+	s.emitMembers(members)
 	return out, nil
+}
+
+// emitMembers pokes customer.updated for members whose pending stamps changed.
+func (s *Service) emitMembers(ids []uuid.UUID) {
+	for _, id := range ids {
+		s.emit(realtime.Event{Type: EventCustomerUpdated, ID: id.String()})
+	}
 }
 
 // ListRepayments: a customer's repayments, newest first, voided included.

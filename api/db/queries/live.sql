@@ -1,7 +1,7 @@
 -- Live view (owner/manager, read-only). Open = OPEN or BILLED (not closed yet).
 
 -- name: LiveOpenOrders :many
-SELECT o.id, o.type, o.table_id, o.guest_count, o.created_at, o.label, o.status,
+SELECT o.id, o.type, o.table_id, o.guest_count, o.created_at, o.label, o.status, o.bill_requested_at,
        COALESCE(t.name, '')::text AS table_name,
        COALESCE(u.name, '')::text AS waiter_name
 FROM orders o
@@ -11,7 +11,7 @@ WHERE o.status IN ('OPEN', 'BILLED')
 ORDER BY o.created_at, o.id;
 
 -- name: LiveOrderByID :one
-SELECT o.id, o.type, o.table_id, o.guest_count, o.created_at, o.label, o.status,
+SELECT o.id, o.type, o.table_id, o.guest_count, o.created_at, o.label, o.status, o.bill_requested_at,
        COALESCE(t.name, '')::text AS table_name,
        COALESCE(u.name, '')::text AS waiter_name
 FROM orders o

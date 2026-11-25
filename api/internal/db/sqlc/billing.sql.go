@@ -36,7 +36,7 @@ const cancelInvoice = `-- name: CancelInvoice :one
 UPDATE invoices
 SET status = 'CANCELLED', cancel_reason = $2, cancelled_by_user_id = $3, cancel_approved_by_user_id = $4, cancelled_at = now()
 WHERE id = $1 AND status = 'ISSUED'
-RETURNING id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at, display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number, seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id
+RETURNING id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at, display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number, seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id, loyalty_customer_id, reward_paisa, loyalty_snapshot
 `
 
 type CancelInvoiceParams struct {
@@ -95,6 +95,9 @@ func (q *Queries) CancelInvoice(ctx context.Context, arg CancelInvoiceParams) (I
 		&i.IssuedByName,
 		&i.Place,
 		&i.OrderClientID,
+		&i.LoyaltyCustomerID,
+		&i.RewardPaisa,
+		&i.LoyaltySnapshot,
 	)
 	return i, err
 }
@@ -127,11 +130,12 @@ INSERT INTO invoices (
     taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason,
     discount_approved_by_user_id, created_by_user_id,
     display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number,
-    seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id
+    seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id,
+    loyalty_customer_id, reward_paisa, loyalty_snapshot
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-    $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31
-) RETURNING id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at, display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number, seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id
+    $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34
+) RETURNING id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at, display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number, seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id, loyalty_customer_id, reward_paisa, loyalty_snapshot
 `
 
 type CreateInvoiceParams struct {
@@ -166,6 +170,9 @@ type CreateInvoiceParams struct {
 	IssuedByName             string      `json:"issued_by_name"`
 	Place                    string      `json:"place"`
 	OrderClientID            pgtype.UUID `json:"order_client_id"`
+	LoyaltyCustomerID        pgtype.UUID `json:"loyalty_customer_id"`
+	RewardPaisa              int64       `json:"reward_paisa"`
+	LoyaltySnapshot          []byte      `json:"loyalty_snapshot"`
 }
 
 func (q *Queries) CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (Invoice, error) {
@@ -201,6 +208,9 @@ func (q *Queries) CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (I
 		arg.IssuedByName,
 		arg.Place,
 		arg.OrderClientID,
+		arg.LoyaltyCustomerID,
+		arg.RewardPaisa,
+		arg.LoyaltySnapshot,
 	)
 	var i Invoice
 	err := row.Scan(
@@ -244,6 +254,9 @@ func (q *Queries) CreateInvoice(ctx context.Context, arg CreateInvoiceParams) (I
 		&i.IssuedByName,
 		&i.Place,
 		&i.OrderClientID,
+		&i.LoyaltyCustomerID,
+		&i.RewardPaisa,
+		&i.LoyaltySnapshot,
 	)
 	return i, err
 }
@@ -372,7 +385,7 @@ func (q *Queries) GetDiningTableName(ctx context.Context, id uuid.UUID) (string,
 }
 
 const getInvoice = `-- name: GetInvoice :one
-SELECT id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at, display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number, seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id FROM invoices WHERE id = $1
+SELECT id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at, display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number, seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id, loyalty_customer_id, reward_paisa, loyalty_snapshot FROM invoices WHERE id = $1
 `
 
 func (q *Queries) GetInvoice(ctx context.Context, id uuid.UUID) (Invoice, error) {
@@ -419,6 +432,9 @@ func (q *Queries) GetInvoice(ctx context.Context, id uuid.UUID) (Invoice, error)
 		&i.IssuedByName,
 		&i.Place,
 		&i.OrderClientID,
+		&i.LoyaltyCustomerID,
+		&i.RewardPaisa,
+		&i.LoyaltySnapshot,
 	)
 	return i, err
 }
@@ -506,7 +522,7 @@ func (q *Queries) ListInvoicePrints(ctx context.Context, invoiceID uuid.UUID) ([
 }
 
 const listInvoicesByAdRange = `-- name: ListInvoicesByAdRange :many
-SELECT id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at, display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number, seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id FROM invoices
+SELECT id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at, display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number, seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id, loyalty_customer_id, reward_paisa, loyalty_snapshot FROM invoices
 WHERE ad_datetime >= $1 AND ad_datetime < $2
 ORDER BY ad_datetime DESC, number DESC
 `
@@ -567,6 +583,9 @@ func (q *Queries) ListInvoicesByAdRange(ctx context.Context, arg ListInvoicesByA
 			&i.IssuedByName,
 			&i.Place,
 			&i.OrderClientID,
+			&i.LoyaltyCustomerID,
+			&i.RewardPaisa,
+			&i.LoyaltySnapshot,
 		); err != nil {
 			return nil, err
 		}
@@ -579,7 +598,7 @@ func (q *Queries) ListInvoicesByAdRange(ctx context.Context, arg ListInvoicesByA
 }
 
 const listInvoicesByBsDate = `-- name: ListInvoicesByBsDate :many
-SELECT id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at, display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number, seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id FROM invoices WHERE bs_date = $1 ORDER BY ad_datetime DESC, number DESC
+SELECT id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at, display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number, seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id, loyalty_customer_id, reward_paisa, loyalty_snapshot FROM invoices WHERE bs_date = $1 ORDER BY ad_datetime DESC, number DESC
 `
 
 func (q *Queries) ListInvoicesByBsDate(ctx context.Context, bsDate string) ([]Invoice, error) {
@@ -632,6 +651,9 @@ func (q *Queries) ListInvoicesByBsDate(ctx context.Context, bsDate string) ([]In
 			&i.IssuedByName,
 			&i.Place,
 			&i.OrderClientID,
+			&i.LoyaltyCustomerID,
+			&i.RewardPaisa,
+			&i.LoyaltySnapshot,
 		); err != nil {
 			return nil, err
 		}
@@ -644,7 +666,7 @@ func (q *Queries) ListInvoicesByBsDate(ctx context.Context, bsDate string) ([]In
 }
 
 const listInvoicesForOrder = `-- name: ListInvoicesForOrder :many
-SELECT id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at, display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number, seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id FROM invoices WHERE order_id = $1 ORDER BY ad_datetime DESC, number DESC
+SELECT id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at, display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number, seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id, loyalty_customer_id, reward_paisa, loyalty_snapshot FROM invoices WHERE order_id = $1 ORDER BY ad_datetime DESC, number DESC
 `
 
 func (q *Queries) ListInvoicesForOrder(ctx context.Context, orderID pgtype.UUID) ([]Invoice, error) {
@@ -697,6 +719,9 @@ func (q *Queries) ListInvoicesForOrder(ctx context.Context, orderID pgtype.UUID)
 			&i.IssuedByName,
 			&i.Place,
 			&i.OrderClientID,
+			&i.LoyaltyCustomerID,
+			&i.RewardPaisa,
+			&i.LoyaltySnapshot,
 		); err != nil {
 			return nil, err
 		}
@@ -747,7 +772,7 @@ func (q *Queries) ListPaymentsForInvoice(ctx context.Context, invoiceID uuid.UUI
 }
 
 const listUnbilledOrderItems = `-- name: ListUnbilledOrderItems :many
-SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id, variant_id, modifier_ids FROM order_items WHERE order_id = $1 AND invoice_id IS NULL AND status <> 'VOIDED' ORDER BY created_at
+SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id, variant_id, modifier_ids, source FROM order_items WHERE order_id = $1 AND invoice_id IS NULL AND status <> 'VOIDED' ORDER BY created_at
 `
 
 func (q *Queries) ListUnbilledOrderItems(ctx context.Context, orderID uuid.UUID) ([]OrderItem, error) {
@@ -783,6 +808,7 @@ func (q *Queries) ListUnbilledOrderItems(ctx context.Context, orderID uuid.UUID)
 			&i.AddedByUserID,
 			&i.VariantID,
 			&i.ModifierIds,
+			&i.Source,
 		); err != nil {
 			return nil, err
 		}
@@ -795,7 +821,7 @@ func (q *Queries) ListUnbilledOrderItems(ctx context.Context, orderID uuid.UUID)
 }
 
 const lockOrderByClientIDForBilling = `-- name: LockOrderByClientIDForBilling :one
-SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label, reservation_id FROM orders WHERE client_id = $1 FOR UPDATE
+SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label, reservation_id, bill_requested_at FROM orders WHERE client_id = $1 FOR UPDATE
 `
 
 // Locks the order row for the billing transaction so concurrent bills (different
@@ -817,6 +843,7 @@ func (q *Queries) LockOrderByClientIDForBilling(ctx context.Context, clientID uu
 		&i.UpdatedAt,
 		&i.Label,
 		&i.ReservationID,
+		&i.BillRequestedAt,
 	)
 	return i, err
 }

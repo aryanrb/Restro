@@ -262,7 +262,8 @@ type OrderItem struct {
 	AddedByUserId        string `protobuf:"bytes,16,opt,name=added_by_user_id,json=addedByUserId,proto3" json:"added_by_user_id,omitempty"`                        // who added the line ("" when unknown)
 	InvoiceId            string `protobuf:"bytes,17,opt,name=invoice_id,json=invoiceId,proto3" json:"invoice_id,omitempty"`                                        // invoice the line is billed on; "" when unbilled
 	// (cleared again when that invoice is cancelled)
-	Billed        bool `protobuf:"varint,18,opt,name=billed,proto3" json:"billed,omitempty"` // invoice_id != ""
+	Billed        bool   `protobuf:"varint,18,opt,name=billed,proto3" json:"billed,omitempty"` // invoice_id != ""
+	Source        string `protobuf:"bytes,19,opt,name=source,proto3" json:"source,omitempty"`  // "GUEST" when accepted from a guest order (guest.proto); "" otherwise
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -423,6 +424,13 @@ func (x *OrderItem) GetBilled() bool {
 	return false
 }
 
+func (x *OrderItem) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
 type Order struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -438,8 +446,11 @@ type Order struct {
 	WaiterName    string                 `protobuf:"bytes,11,opt,name=waiter_name,json=waiterName,proto3" json:"waiter_name,omitempty"` // display name of waiter_user_id
 	CreatedAtUnix int64                  `protobuf:"varint,12,opt,name=created_at_unix,json=createdAtUnix,proto3" json:"created_at_unix,omitempty"`
 	ReservationId string                 `protobuf:"bytes,13,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"` // the booking seated onto this order (reservations.proto); "" when none
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// When a guest tapped Ask for bill (guest.proto); 0 = none. Cleared when staff mark
+	// the alert Done or a bill is issued on the order.
+	BillRequestedAtUnix int64 `protobuf:"varint,14,opt,name=bill_requested_at_unix,json=billRequestedAtUnix,proto3" json:"bill_requested_at_unix,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *Order) Reset() {
@@ -561,6 +572,13 @@ func (x *Order) GetReservationId() string {
 		return x.ReservationId
 	}
 	return ""
+}
+
+func (x *Order) GetBillRequestedAtUnix() int64 {
+	if x != nil {
+		return x.BillRequestedAtUnix
+	}
+	return 0
 }
 
 type ListOpenOrdersRequest struct {
@@ -1589,7 +1607,7 @@ const file_restaurant_v1_order_proto_rawDesc = "" +
 	"\x19restaurant/v1/order.proto\x12\rrestaurant.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1arestaurant/v1/common.proto\"m\n" +
 	"\x11OrderItemModifier\x12,\n" +
 	"\x04name\x18\x01 \x01(\v2\x18.restaurant.v1.LocalTextR\x04name\x12*\n" +
-	"\x11price_delta_paisa\x18\x02 \x01(\x03R\x0fpriceDeltaPaisa\"\xd2\x05\n" +
+	"\x11price_delta_paisa\x18\x02 \x01(\x03R\x0fpriceDeltaPaisa\"\xea\x05\n" +
 	"\tOrderItem\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tclient_id\x18\x02 \x01(\tR\bclientId\x12 \n" +
@@ -1614,8 +1632,9 @@ const file_restaurant_v1_order_proto_rawDesc = "" +
 	"\x10added_by_user_id\x18\x10 \x01(\tR\raddedByUserId\x12\x1d\n" +
 	"\n" +
 	"invoice_id\x18\x11 \x01(\tR\tinvoiceId\x12\x16\n" +
-	"\x06billed\x18\x12 \x01(\bR\x06billedB\x0f\n" +
-	"\r_variant_name\"\xda\x03\n" +
+	"\x06billed\x18\x12 \x01(\bR\x06billed\x12\x16\n" +
+	"\x06source\x18\x13 \x01(\tR\x06sourceB\x0f\n" +
+	"\r_variant_name\"\x8f\x04\n" +
 	"\x05Order\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tclient_id\x18\x02 \x01(\tR\bclientId\x12,\n" +
@@ -1632,7 +1651,8 @@ const file_restaurant_v1_order_proto_rawDesc = "" +
 	"\vwaiter_name\x18\v \x01(\tR\n" +
 	"waiterName\x12&\n" +
 	"\x0fcreated_at_unix\x18\f \x01(\x03R\rcreatedAtUnix\x12%\n" +
-	"\x0ereservation_id\x18\r \x01(\tR\rreservationIdB\v\n" +
+	"\x0ereservation_id\x18\r \x01(\tR\rreservationId\x123\n" +
+	"\x16bill_requested_at_unix\x18\x0e \x01(\x03R\x13billRequestedAtUnixB\v\n" +
 	"\t_table_id\"\x17\n" +
 	"\x15ListOpenOrdersRequest\"F\n" +
 	"\x16ListOpenOrdersResponse\x12,\n" +

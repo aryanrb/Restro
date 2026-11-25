@@ -31,7 +31,7 @@ import "restaurant/v1/shift.proto";
 // sender once the owner turns it on.
 // ---------------------------------------------------------------------------
 
-// Rules built so far. Loyalty (4) and LARGE_PAID_OUT come with their features.
+// Rules built so far (loyalty rules 19-22 come with loyalty.proto).
 enum AlertRule {
   ALERT_RULE_UNSPECIFIED = 0;
   ALERT_RULE_VOID_AFTER_KITCHEN = 1;  // item voided after the kitchen started, value >= min_value
@@ -52,7 +52,10 @@ enum AlertRule {
   ALERT_RULE_CREDIT_OVER_LIMIT = 16;  // on-account bill over the available credit, approved by a manager
   ALERT_RULE_CREDIT_NEW_ACCOUNT = 17; // credit to an account the same person created that business day
   ALERT_RULE_HIGH_WASTE = 18;         // day's waste >= day_waste, or one posted count's loss >= count_loss
-  // 19-22 are kept for the loyalty rules.
+  ALERT_RULE_LOYALTY_STAFF_NUMBER = 19;     // a bill's loyalty member has a staff member's phone
+  ALERT_RULE_LOYALTY_ONE_CASHIER = 20;      // in 30 days a member earns >= stamps, >= share_bp of them on one cashier's bills
+  ALERT_RULE_LOYALTY_MANY_REDEMPTIONS = 21; // one cashier redeems >= count rewards in a business day
+  ALERT_RULE_LOYALTY_STAMP_ADJUSTMENT = 22; // a manual stamp adjustment of >= stamps (either way)
   ALERT_RULE_LARGE_PAID_OUT = 23;     // one till payment > amount, or one person's till paid-outs in a shift >= shift_total
 }
 

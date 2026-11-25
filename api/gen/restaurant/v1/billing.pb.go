@@ -657,9 +657,13 @@ type Invoice struct {
 	CancelledByUserId      string `protobuf:"bytes,30,opt,name=cancelled_by_user_id,json=cancelledByUserId,proto3" json:"cancelled_by_user_id,omitempty"`
 	CancelApprovedByUserId string `protobuf:"bytes,31,opt,name=cancel_approved_by_user_id,json=cancelApprovedByUserId,proto3" json:"cancel_approved_by_user_id,omitempty"`
 	// Every print, oldest first; prints[0] is the original.
-	Prints        []*InvoicePrint `protobuf:"bytes,32,rep,name=prints,proto3" json:"prints,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Prints []*InvoicePrint `protobuf:"bytes,32,rep,name=prints,proto3" json:"prints,omitempty"`
+	// --- loyalty (captured at issue time, immutable) ---
+	RewardPaisa     int64            `protobuf:"varint,33,opt,name=reward_paisa,json=rewardPaisa,proto3" json:"reward_paisa,omitempty"`            // loyalty reward: a discount before VAT, apart from discount_paisa
+	CustomerId      string           `protobuf:"bytes,34,opt,name=customer_id,json=customerId,proto3" json:"customer_id,omitempty"`                // the loyalty member on the bill ("" = none)
+	LoyaltySnapshot *LoyaltySnapshot `protobuf:"bytes,35,opt,name=loyalty_snapshot,json=loyaltySnapshot,proto3" json:"loyalty_snapshot,omitempty"` // the card as printed on this bill
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Invoice) Reset() {
@@ -916,6 +920,27 @@ func (x *Invoice) GetPrints() []*InvoicePrint {
 	return nil
 }
 
+func (x *Invoice) GetRewardPaisa() int64 {
+	if x != nil {
+		return x.RewardPaisa
+	}
+	return 0
+}
+
+func (x *Invoice) GetCustomerId() string {
+	if x != nil {
+		return x.CustomerId
+	}
+	return ""
+}
+
+func (x *Invoice) GetLoyaltySnapshot() *LoyaltySnapshot {
+	if x != nil {
+		return x.LoyaltySnapshot
+	}
+	return nil
+}
+
 // Computed-but-not-persisted preview of a bill.
 type BillPreview struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
@@ -926,8 +951,13 @@ type BillPreview struct {
 	VatPaisa           int64                  `protobuf:"varint,5,opt,name=vat_paisa,json=vatPaisa,proto3" json:"vat_paisa,omitempty"`
 	RoundingPaisa      int64                  `protobuf:"varint,6,opt,name=rounding_paisa,json=roundingPaisa,proto3" json:"rounding_paisa,omitempty"`
 	TotalPaisa         int64                  `protobuf:"varint,7,opt,name=total_paisa,json=totalPaisa,proto3" json:"total_paisa,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// loyalty (only with a member): the reward used, whether this bill earns a
+	// stamp (an on-account bill's stamp waits until repaid) and the stamps after it.
+	RewardPaisa   int64  `protobuf:"varint,8,opt,name=reward_paisa,json=rewardPaisa,proto3" json:"reward_paisa,omitempty"`
+	EarnsStamp    *bool  `protobuf:"varint,9,opt,name=earns_stamp,json=earnsStamp,proto3,oneof" json:"earns_stamp,omitempty"`
+	StampsAfter   *int32 `protobuf:"varint,10,opt,name=stamps_after,json=stampsAfter,proto3,oneof" json:"stamps_after,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BillPreview) Reset() {
@@ -1009,12 +1039,36 @@ func (x *BillPreview) GetTotalPaisa() int64 {
 	return 0
 }
 
+func (x *BillPreview) GetRewardPaisa() int64 {
+	if x != nil {
+		return x.RewardPaisa
+	}
+	return 0
+}
+
+func (x *BillPreview) GetEarnsStamp() bool {
+	if x != nil && x.EarnsStamp != nil {
+		return *x.EarnsStamp
+	}
+	return false
+}
+
+func (x *BillPreview) GetStampsAfter() int32 {
+	if x != nil && x.StampsAfter != nil {
+		return *x.StampsAfter
+	}
+	return 0
+}
+
 type PreviewBillRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrderClientId string                 `protobuf:"bytes,1,opt,name=order_client_id,json=orderClientId,proto3" json:"order_client_id,omitempty"`
-	Discount      *DiscountInput         `protobuf:"bytes,2,opt,name=discount,proto3,oneof" json:"discount,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	OrderClientId  string                 `protobuf:"bytes,1,opt,name=order_client_id,json=orderClientId,proto3" json:"order_client_id,omitempty"`
+	Discount       *DiscountInput         `protobuf:"bytes,2,opt,name=discount,proto3,oneof" json:"discount,omitempty"`
+	CustomerId     string                 `protobuf:"bytes,3,opt,name=customer_id,json=customerId,proto3" json:"customer_id,omitempty"` // loyalty member (as IssueBillRequest)
+	RedeemReward   bool                   `protobuf:"varint,4,opt,name=redeem_reward,json=redeemReward,proto3" json:"redeem_reward,omitempty"`
+	RedeemBirthday bool                   `protobuf:"varint,5,opt,name=redeem_birthday,json=redeemBirthday,proto3" json:"redeem_birthday,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *PreviewBillRequest) Reset() {
@@ -1059,6 +1113,27 @@ func (x *PreviewBillRequest) GetDiscount() *DiscountInput {
 		return x.Discount
 	}
 	return nil
+}
+
+func (x *PreviewBillRequest) GetCustomerId() string {
+	if x != nil {
+		return x.CustomerId
+	}
+	return ""
+}
+
+func (x *PreviewBillRequest) GetRedeemReward() bool {
+	if x != nil {
+		return x.RedeemReward
+	}
+	return false
+}
+
+func (x *PreviewBillRequest) GetRedeemBirthday() bool {
+	if x != nil {
+		return x.RedeemBirthday
+	}
+	return false
 }
 
 type IssueFullBillRequest struct {
@@ -1670,6 +1745,11 @@ type IssueBillRequest struct {
 	// this bill (separate from the discount approval). A bad PIN is reported with
 	// field "credit_approval".
 	CreditApproval *ManagerApproval `protobuf:"bytes,8,opt,name=credit_approval,json=creditApproval,proto3,oneof" json:"credit_approval,omitempty"`
+	// Loyalty: the member (attached before issue only) and whether to use a ready
+	// reward or the birthday reward (one per bill; see loyalty.proto).
+	CustomerId     string `protobuf:"bytes,9,opt,name=customer_id,json=customerId,proto3" json:"customer_id,omitempty"`
+	RedeemReward   bool   `protobuf:"varint,10,opt,name=redeem_reward,json=redeemReward,proto3" json:"redeem_reward,omitempty"`
+	RedeemBirthday bool   `protobuf:"varint,11,opt,name=redeem_birthday,json=redeemBirthday,proto3" json:"redeem_birthday,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1760,6 +1840,27 @@ func (x *IssueBillRequest) GetCreditApproval() *ManagerApproval {
 	return nil
 }
 
+func (x *IssueBillRequest) GetCustomerId() string {
+	if x != nil {
+		return x.CustomerId
+	}
+	return ""
+}
+
+func (x *IssueBillRequest) GetRedeemReward() bool {
+	if x != nil {
+		return x.RedeemReward
+	}
+	return false
+}
+
+func (x *IssueBillRequest) GetRedeemBirthday() bool {
+	if x != nil {
+		return x.RedeemBirthday
+	}
+	return false
+}
+
 // Counter (pay first): creates a TAKEAWAY order, its lines already SENT, and the
 // paid invoice in one transaction. Any rejected line rejects the whole sale
 // (INVALID field "lines"). order_client_id is optional (generated when blank).
@@ -1774,6 +1875,9 @@ type CounterSaleRequest struct {
 	BuyerPan       string                 `protobuf:"bytes,7,opt,name=buyer_pan,json=buyerPan,proto3" json:"buyer_pan,omitempty"`
 	Payments       []*PaymentInput        `protobuf:"bytes,8,rep,name=payments,proto3" json:"payments,omitempty"`
 	CreditApproval *ManagerApproval       `protobuf:"bytes,9,opt,name=credit_approval,json=creditApproval,proto3,oneof" json:"credit_approval,omitempty"` // as IssueBillRequest.credit_approval
+	CustomerId     string                 `protobuf:"bytes,10,opt,name=customer_id,json=customerId,proto3" json:"customer_id,omitempty"`                  // loyalty, as IssueBillRequest
+	RedeemReward   bool                   `protobuf:"varint,11,opt,name=redeem_reward,json=redeemReward,proto3" json:"redeem_reward,omitempty"`
+	RedeemBirthday bool                   `protobuf:"varint,12,opt,name=redeem_birthday,json=redeemBirthday,proto3" json:"redeem_birthday,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1869,6 +1973,27 @@ func (x *CounterSaleRequest) GetCreditApproval() *ManagerApproval {
 		return x.CreditApproval
 	}
 	return nil
+}
+
+func (x *CounterSaleRequest) GetCustomerId() string {
+	if x != nil {
+		return x.CustomerId
+	}
+	return ""
+}
+
+func (x *CounterSaleRequest) GetRedeemReward() bool {
+	if x != nil {
+		return x.RedeemReward
+	}
+	return false
+}
+
+func (x *CounterSaleRequest) GetRedeemBirthday() bool {
+	if x != nil {
+		return x.RedeemBirthday
+	}
+	return false
 }
 
 // AD half-open range [from_unix, to_unix) in unix seconds.
@@ -2071,7 +2196,7 @@ var File_restaurant_v1_billing_proto protoreflect.FileDescriptor
 
 const file_restaurant_v1_billing_proto_rawDesc = "" +
 	"\n" +
-	"\x1brestaurant/v1/billing.proto\x12\rrestaurant.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1arestaurant/v1/common.proto\x1a\x19restaurant/v1/order.proto\x1a\x1crestaurant/v1/settings.proto\"\xbc\x01\n" +
+	"\x1brestaurant/v1/billing.proto\x12\rrestaurant.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1arestaurant/v1/common.proto\x1a\x1brestaurant/v1/loyalty.proto\x1a\x19restaurant/v1/order.proto\x1a\x1crestaurant/v1/settings.proto\"\xbc\x01\n" +
 	"\rDiscountInput\x12/\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x1b.restaurant.v1.DiscountTypeR\x04type\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x03R\x05value\x12\x16\n" +
@@ -2113,7 +2238,8 @@ const file_restaurant_v1_billing_proto_rawDesc = "" +
 	"\aat_unix\x18\x01 \x01(\x03R\x06atUnix\x12\x1c\n" +
 	"\n" +
 	"by_user_id\x18\x02 \x01(\tR\bbyUserId\x12\x17\n" +
-	"\aby_name\x18\x03 \x01(\tR\x06byName\"\xeb\t\n" +
+	"\aby_name\x18\x03 \x01(\tR\x06byName\"\xfa\n" +
+	"\n" +
 	"\aInvoice\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vfiscal_year\x18\x02 \x01(\tR\n" +
@@ -2151,7 +2277,11 @@ const file_restaurant_v1_billing_proto_rawDesc = "" +
 	"\x11cancelled_at_unix\x18\x1d \x01(\x03R\x0fcancelledAtUnix\x12/\n" +
 	"\x14cancelled_by_user_id\x18\x1e \x01(\tR\x11cancelledByUserId\x12:\n" +
 	"\x1acancel_approved_by_user_id\x18\x1f \x01(\tR\x16cancelApprovedByUserId\x123\n" +
-	"\x06prints\x18  \x03(\v2\x1b.restaurant.v1.InvoicePrintR\x06prints\"\x97\x02\n" +
+	"\x06prints\x18  \x03(\v2\x1b.restaurant.v1.InvoicePrintR\x06prints\x12!\n" +
+	"\freward_paisa\x18! \x01(\x03R\vrewardPaisa\x12\x1f\n" +
+	"\vcustomer_id\x18\" \x01(\tR\n" +
+	"customerId\x12I\n" +
+	"\x10loyalty_snapshot\x18# \x01(\v2\x1e.restaurant.v1.LoyaltySnapshotR\x0floyaltySnapshot\"\xa9\x03\n" +
 	"\vBillPreview\x12%\n" +
 	"\x0esubtotal_paisa\x18\x01 \x01(\x03R\rsubtotalPaisa\x12%\n" +
 	"\x0ediscount_paisa\x18\x02 \x01(\x03R\rdiscountPaisa\x120\n" +
@@ -2160,10 +2290,21 @@ const file_restaurant_v1_billing_proto_rawDesc = "" +
 	"\tvat_paisa\x18\x05 \x01(\x03R\bvatPaisa\x12%\n" +
 	"\x0erounding_paisa\x18\x06 \x01(\x03R\rroundingPaisa\x12\x1f\n" +
 	"\vtotal_paisa\x18\a \x01(\x03R\n" +
-	"totalPaisa\"\x91\x01\n" +
+	"totalPaisa\x12!\n" +
+	"\freward_paisa\x18\b \x01(\x03R\vrewardPaisa\x12$\n" +
+	"\vearns_stamp\x18\t \x01(\bH\x00R\n" +
+	"earnsStamp\x88\x01\x01\x12&\n" +
+	"\fstamps_after\x18\n" +
+	" \x01(\x05H\x01R\vstampsAfter\x88\x01\x01B\x0e\n" +
+	"\f_earns_stampB\x0f\n" +
+	"\r_stamps_after\"\x80\x02\n" +
 	"\x12PreviewBillRequest\x12/\n" +
 	"\x0forder_client_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\rorderClientId\x12=\n" +
-	"\bdiscount\x18\x02 \x01(\v2\x1c.restaurant.v1.DiscountInputH\x00R\bdiscount\x88\x01\x01B\v\n" +
+	"\bdiscount\x18\x02 \x01(\v2\x1c.restaurant.v1.DiscountInputH\x00R\bdiscount\x88\x01\x01\x12\x1f\n" +
+	"\vcustomer_id\x18\x03 \x01(\tR\n" +
+	"customerId\x12#\n" +
+	"\rredeem_reward\x18\x04 \x01(\bR\fredeemReward\x12'\n" +
+	"\x0fredeem_birthday\x18\x05 \x01(\bR\x0eredeemBirthdayB\v\n" +
 	"\t_discount\"\xf7\x01\n" +
 	"\x14IssueFullBillRequest\x12&\n" +
 	"\n" +
@@ -2216,7 +2357,7 @@ const file_restaurant_v1_billing_proto_rawDesc = "" +
 	"\famount_paisa\x18\x02 \x01(\x03R\vamountPaisa\x12\x1c\n" +
 	"\treference\x18\x03 \x01(\tR\treference\x12\x1f\n" +
 	"\vcustomer_id\x18\x04 \x01(\tR\n" +
-	"customerId\"\xa9\x03\n" +
+	"customerId\"\x98\x04\n" +
 	"\x10IssueBillRequest\x12&\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tcommandId\x12/\n" +
@@ -2227,9 +2368,14 @@ const file_restaurant_v1_billing_proto_rawDesc = "" +
 	"buyer_name\x18\x05 \x01(\tR\tbuyerName\x12\x1b\n" +
 	"\tbuyer_pan\x18\x06 \x01(\tR\bbuyerPan\x127\n" +
 	"\bpayments\x18\a \x03(\v2\x1b.restaurant.v1.PaymentInputR\bpayments\x12L\n" +
-	"\x0fcredit_approval\x18\b \x01(\v2\x1e.restaurant.v1.ManagerApprovalH\x01R\x0ecreditApproval\x88\x01\x01B\v\n" +
+	"\x0fcredit_approval\x18\b \x01(\v2\x1e.restaurant.v1.ManagerApprovalH\x01R\x0ecreditApproval\x88\x01\x01\x12\x1f\n" +
+	"\vcustomer_id\x18\t \x01(\tR\n" +
+	"customerId\x12#\n" +
+	"\rredeem_reward\x18\n" +
+	" \x01(\bR\fredeemReward\x12'\n" +
+	"\x0fredeem_birthday\x18\v \x01(\bR\x0eredeemBirthdayB\v\n" +
 	"\t_discountB\x12\n" +
-	"\x10_credit_approval\"\xcb\x03\n" +
+	"\x10_credit_approval\"\xba\x04\n" +
 	"\x12CounterSaleRequest\x12&\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tcommandId\x12&\n" +
@@ -2241,7 +2387,12 @@ const file_restaurant_v1_billing_proto_rawDesc = "" +
 	"buyer_name\x18\x06 \x01(\tR\tbuyerName\x12\x1b\n" +
 	"\tbuyer_pan\x18\a \x01(\tR\bbuyerPan\x127\n" +
 	"\bpayments\x18\b \x03(\v2\x1b.restaurant.v1.PaymentInputR\bpayments\x12L\n" +
-	"\x0fcredit_approval\x18\t \x01(\v2\x1e.restaurant.v1.ManagerApprovalH\x01R\x0ecreditApproval\x88\x01\x01B\v\n" +
+	"\x0fcredit_approval\x18\t \x01(\v2\x1e.restaurant.v1.ManagerApprovalH\x01R\x0ecreditApproval\x88\x01\x01\x12\x1f\n" +
+	"\vcustomer_id\x18\n" +
+	" \x01(\tR\n" +
+	"customerId\x12#\n" +
+	"\rredeem_reward\x18\v \x01(\bR\fredeemReward\x12'\n" +
+	"\x0fredeem_birthday\x18\f \x01(\bR\x0eredeemBirthdayB\v\n" +
 	"\t_discountB\x12\n" +
 	"\x10_credit_approval\"G\n" +
 	"\x0fInvoiceDayRange\x12\x1b\n" +
@@ -2327,7 +2478,8 @@ var file_restaurant_v1_billing_proto_goTypes = []any{
 	(*ManagerApproval)(nil),      // 26: restaurant.v1.ManagerApproval
 	(*LocalText)(nil),            // 27: restaurant.v1.LocalText
 	(BillingMode)(0),             // 28: restaurant.v1.BillingMode
-	(*NewItem)(nil),              // 29: restaurant.v1.NewItem
+	(*LoyaltySnapshot)(nil),      // 29: restaurant.v1.LoyaltySnapshot
+	(*NewItem)(nil),              // 30: restaurant.v1.NewItem
 }
 var file_restaurant_v1_billing_proto_depIdxs = []int32{
 	1,  // 0: restaurant.v1.DiscountInput.type:type_name -> restaurant.v1.DiscountType
@@ -2343,47 +2495,48 @@ var file_restaurant_v1_billing_proto_depIdxs = []int32{
 	5,  // 10: restaurant.v1.Invoice.payments:type_name -> restaurant.v1.Payment
 	6,  // 11: restaurant.v1.Invoice.seller:type_name -> restaurant.v1.InvoiceSeller
 	7,  // 12: restaurant.v1.Invoice.prints:type_name -> restaurant.v1.InvoicePrint
-	3,  // 13: restaurant.v1.PreviewBillRequest.discount:type_name -> restaurant.v1.DiscountInput
-	3,  // 14: restaurant.v1.IssueFullBillRequest.discount:type_name -> restaurant.v1.DiscountInput
-	12, // 15: restaurant.v1.SplitByItemRequest.groups:type_name -> restaurant.v1.LineGroup
-	8,  // 16: restaurant.v1.SplitByItemResponse.invoices:type_name -> restaurant.v1.Invoice
-	0,  // 17: restaurant.v1.RecordPaymentRequest.method:type_name -> restaurant.v1.PaymentMethod
-	26, // 18: restaurant.v1.CancelInvoiceRequest.approval:type_name -> restaurant.v1.ManagerApproval
-	0,  // 19: restaurant.v1.PaymentInput.method:type_name -> restaurant.v1.PaymentMethod
-	3,  // 20: restaurant.v1.IssueBillRequest.discount:type_name -> restaurant.v1.DiscountInput
-	20, // 21: restaurant.v1.IssueBillRequest.payments:type_name -> restaurant.v1.PaymentInput
-	26, // 22: restaurant.v1.IssueBillRequest.credit_approval:type_name -> restaurant.v1.ManagerApproval
-	29, // 23: restaurant.v1.CounterSaleRequest.lines:type_name -> restaurant.v1.NewItem
-	3,  // 24: restaurant.v1.CounterSaleRequest.discount:type_name -> restaurant.v1.DiscountInput
-	20, // 25: restaurant.v1.CounterSaleRequest.payments:type_name -> restaurant.v1.PaymentInput
-	26, // 26: restaurant.v1.CounterSaleRequest.credit_approval:type_name -> restaurant.v1.ManagerApproval
-	23, // 27: restaurant.v1.ListInvoicesRequest.ad_range:type_name -> restaurant.v1.InvoiceDayRange
-	8,  // 28: restaurant.v1.ListInvoicesResponse.invoices:type_name -> restaurant.v1.Invoice
-	10, // 29: restaurant.v1.BillingService.PreviewBill:input_type -> restaurant.v1.PreviewBillRequest
-	11, // 30: restaurant.v1.BillingService.IssueFullBill:input_type -> restaurant.v1.IssueFullBillRequest
-	13, // 31: restaurant.v1.BillingService.SplitByItem:input_type -> restaurant.v1.SplitByItemRequest
-	15, // 32: restaurant.v1.BillingService.RecordPayment:input_type -> restaurant.v1.RecordPaymentRequest
-	16, // 33: restaurant.v1.BillingService.CancelInvoice:input_type -> restaurant.v1.CancelInvoiceRequest
-	17, // 34: restaurant.v1.BillingService.MarkPrinted:input_type -> restaurant.v1.MarkPrintedRequest
-	19, // 35: restaurant.v1.BillingService.GetInvoice:input_type -> restaurant.v1.GetInvoiceRequest
-	21, // 36: restaurant.v1.BillingService.IssueBill:input_type -> restaurant.v1.IssueBillRequest
-	22, // 37: restaurant.v1.BillingService.CounterSale:input_type -> restaurant.v1.CounterSaleRequest
-	24, // 38: restaurant.v1.BillingService.ListInvoices:input_type -> restaurant.v1.ListInvoicesRequest
-	9,  // 39: restaurant.v1.BillingService.PreviewBill:output_type -> restaurant.v1.BillPreview
-	8,  // 40: restaurant.v1.BillingService.IssueFullBill:output_type -> restaurant.v1.Invoice
-	14, // 41: restaurant.v1.BillingService.SplitByItem:output_type -> restaurant.v1.SplitByItemResponse
-	5,  // 42: restaurant.v1.BillingService.RecordPayment:output_type -> restaurant.v1.Payment
-	8,  // 43: restaurant.v1.BillingService.CancelInvoice:output_type -> restaurant.v1.Invoice
-	18, // 44: restaurant.v1.BillingService.MarkPrinted:output_type -> restaurant.v1.PrintInfo
-	8,  // 45: restaurant.v1.BillingService.GetInvoice:output_type -> restaurant.v1.Invoice
-	8,  // 46: restaurant.v1.BillingService.IssueBill:output_type -> restaurant.v1.Invoice
-	8,  // 47: restaurant.v1.BillingService.CounterSale:output_type -> restaurant.v1.Invoice
-	25, // 48: restaurant.v1.BillingService.ListInvoices:output_type -> restaurant.v1.ListInvoicesResponse
-	39, // [39:49] is the sub-list for method output_type
-	29, // [29:39] is the sub-list for method input_type
-	29, // [29:29] is the sub-list for extension type_name
-	29, // [29:29] is the sub-list for extension extendee
-	0,  // [0:29] is the sub-list for field type_name
+	29, // 13: restaurant.v1.Invoice.loyalty_snapshot:type_name -> restaurant.v1.LoyaltySnapshot
+	3,  // 14: restaurant.v1.PreviewBillRequest.discount:type_name -> restaurant.v1.DiscountInput
+	3,  // 15: restaurant.v1.IssueFullBillRequest.discount:type_name -> restaurant.v1.DiscountInput
+	12, // 16: restaurant.v1.SplitByItemRequest.groups:type_name -> restaurant.v1.LineGroup
+	8,  // 17: restaurant.v1.SplitByItemResponse.invoices:type_name -> restaurant.v1.Invoice
+	0,  // 18: restaurant.v1.RecordPaymentRequest.method:type_name -> restaurant.v1.PaymentMethod
+	26, // 19: restaurant.v1.CancelInvoiceRequest.approval:type_name -> restaurant.v1.ManagerApproval
+	0,  // 20: restaurant.v1.PaymentInput.method:type_name -> restaurant.v1.PaymentMethod
+	3,  // 21: restaurant.v1.IssueBillRequest.discount:type_name -> restaurant.v1.DiscountInput
+	20, // 22: restaurant.v1.IssueBillRequest.payments:type_name -> restaurant.v1.PaymentInput
+	26, // 23: restaurant.v1.IssueBillRequest.credit_approval:type_name -> restaurant.v1.ManagerApproval
+	30, // 24: restaurant.v1.CounterSaleRequest.lines:type_name -> restaurant.v1.NewItem
+	3,  // 25: restaurant.v1.CounterSaleRequest.discount:type_name -> restaurant.v1.DiscountInput
+	20, // 26: restaurant.v1.CounterSaleRequest.payments:type_name -> restaurant.v1.PaymentInput
+	26, // 27: restaurant.v1.CounterSaleRequest.credit_approval:type_name -> restaurant.v1.ManagerApproval
+	23, // 28: restaurant.v1.ListInvoicesRequest.ad_range:type_name -> restaurant.v1.InvoiceDayRange
+	8,  // 29: restaurant.v1.ListInvoicesResponse.invoices:type_name -> restaurant.v1.Invoice
+	10, // 30: restaurant.v1.BillingService.PreviewBill:input_type -> restaurant.v1.PreviewBillRequest
+	11, // 31: restaurant.v1.BillingService.IssueFullBill:input_type -> restaurant.v1.IssueFullBillRequest
+	13, // 32: restaurant.v1.BillingService.SplitByItem:input_type -> restaurant.v1.SplitByItemRequest
+	15, // 33: restaurant.v1.BillingService.RecordPayment:input_type -> restaurant.v1.RecordPaymentRequest
+	16, // 34: restaurant.v1.BillingService.CancelInvoice:input_type -> restaurant.v1.CancelInvoiceRequest
+	17, // 35: restaurant.v1.BillingService.MarkPrinted:input_type -> restaurant.v1.MarkPrintedRequest
+	19, // 36: restaurant.v1.BillingService.GetInvoice:input_type -> restaurant.v1.GetInvoiceRequest
+	21, // 37: restaurant.v1.BillingService.IssueBill:input_type -> restaurant.v1.IssueBillRequest
+	22, // 38: restaurant.v1.BillingService.CounterSale:input_type -> restaurant.v1.CounterSaleRequest
+	24, // 39: restaurant.v1.BillingService.ListInvoices:input_type -> restaurant.v1.ListInvoicesRequest
+	9,  // 40: restaurant.v1.BillingService.PreviewBill:output_type -> restaurant.v1.BillPreview
+	8,  // 41: restaurant.v1.BillingService.IssueFullBill:output_type -> restaurant.v1.Invoice
+	14, // 42: restaurant.v1.BillingService.SplitByItem:output_type -> restaurant.v1.SplitByItemResponse
+	5,  // 43: restaurant.v1.BillingService.RecordPayment:output_type -> restaurant.v1.Payment
+	8,  // 44: restaurant.v1.BillingService.CancelInvoice:output_type -> restaurant.v1.Invoice
+	18, // 45: restaurant.v1.BillingService.MarkPrinted:output_type -> restaurant.v1.PrintInfo
+	8,  // 46: restaurant.v1.BillingService.GetInvoice:output_type -> restaurant.v1.Invoice
+	8,  // 47: restaurant.v1.BillingService.IssueBill:output_type -> restaurant.v1.Invoice
+	8,  // 48: restaurant.v1.BillingService.CounterSale:output_type -> restaurant.v1.Invoice
+	25, // 49: restaurant.v1.BillingService.ListInvoices:output_type -> restaurant.v1.ListInvoicesResponse
+	40, // [40:50] is the sub-list for method output_type
+	30, // [30:40] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_restaurant_v1_billing_proto_init() }
@@ -2392,9 +2545,11 @@ func file_restaurant_v1_billing_proto_init() {
 		return
 	}
 	file_restaurant_v1_common_proto_init()
+	file_restaurant_v1_loyalty_proto_init()
 	file_restaurant_v1_order_proto_init()
 	file_restaurant_v1_settings_proto_init()
 	file_restaurant_v1_billing_proto_msgTypes[0].OneofWrappers = []any{}
+	file_restaurant_v1_billing_proto_msgTypes[6].OneofWrappers = []any{}
 	file_restaurant_v1_billing_proto_msgTypes[7].OneofWrappers = []any{}
 	file_restaurant_v1_billing_proto_msgTypes[8].OneofWrappers = []any{}
 	file_restaurant_v1_billing_proto_msgTypes[18].OneofWrappers = []any{}

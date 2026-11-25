@@ -11,10 +11,11 @@ INSERT INTO invoices (
     taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason,
     discount_approved_by_user_id, created_by_user_id,
     display_number, seller_name_en, seller_name_ne, seller_address, seller_pan_number,
-    seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id
+    seller_vat_rate_bp, seller_vat_registered, seller_logo_url, issued_by_name, place, order_client_id,
+    loyalty_customer_id, reward_paisa, loyalty_snapshot
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-    $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31
+    $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34
 ) RETURNING *;
 
 -- name: CreateInvoiceLine :one

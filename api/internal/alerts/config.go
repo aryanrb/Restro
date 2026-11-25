@@ -30,8 +30,7 @@ type ruleMeta struct {
 	thresholds []thresholdMeta
 }
 
-// Defaults, in screen order (web lib/alerts/rules.ts ALERT_RULES). Loyalty rules
-// are added with their feature.
+// Defaults, in screen order (web lib/alerts/rules.ts ALERT_RULES).
 var ruleMetas = []ruleMeta{
 	{"CASH_SHORT", SeverityHigh, []thresholdMeta{{"amount", 50_000}}},
 	{"CANCEL_REBILL_LOWER", SeverityHigh, []thresholdMeta{{"windowMinutes", 120}}},
@@ -50,6 +49,10 @@ var ruleMetas = []ruleMeta{
 	{"PRICE_DIP", SeverityNormal, nil},
 	{"CREDIT_OVER_LIMIT", SeverityNormal, nil},
 	{"CREDIT_NEW_ACCOUNT", SeverityNormal, nil},
+	{"LOYALTY_STAFF_NUMBER", SeverityNormal, nil},
+	{"LOYALTY_ONE_CASHIER", SeverityNormal, []thresholdMeta{{"stamps", 6}, {"shareBp", 8000}}},
+	{"LOYALTY_MANY_REDEMPTIONS", SeverityNormal, []thresholdMeta{{"count", 3}}},
+	{"LOYALTY_STAMP_ADJUSTMENT", SeverityNormal, []thresholdMeta{{"stamps", 3}}},
 	{"LARGE_PAID_OUT", SeverityNormal, []thresholdMeta{{"amount", 500_000}, {"shiftTotal", 1_000_000}}},
 	{"HIGH_WASTE", SeverityNormal, []thresholdMeta{{"dayWaste", 200_000}, {"countLoss", 300_000}}},
 }

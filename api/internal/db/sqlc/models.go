@@ -135,18 +135,25 @@ type CountList struct {
 }
 
 type Customer struct {
-	ID               uuid.UUID   `json:"id"`
-	Name             string      `json:"name"`
-	Phone            string      `json:"phone"`
-	Notes            string      `json:"notes"`
-	CreditLimitPaisa int64       `json:"credit_limit_paisa"`
-	Active           bool        `json:"active"`
-	Pan              string      `json:"pan"`
-	Address          string      `json:"address"`
-	ContactPerson    string      `json:"contact_person"`
-	CreatedByUserID  pgtype.UUID `json:"created_by_user_id"`
-	CreatedAt        time.Time   `json:"created_at"`
-	UpdatedAt        time.Time   `json:"updated_at"`
+	ID                    uuid.UUID          `json:"id"`
+	Name                  string             `json:"name"`
+	Phone                 string             `json:"phone"`
+	Notes                 string             `json:"notes"`
+	CreditLimitPaisa      int64              `json:"credit_limit_paisa"`
+	Active                bool               `json:"active"`
+	Pan                   string             `json:"pan"`
+	Address               string             `json:"address"`
+	ContactPerson         string             `json:"contact_person"`
+	CreatedByUserID       pgtype.UUID        `json:"created_by_user_id"`
+	CreatedAt             time.Time          `json:"created_at"`
+	UpdatedAt             time.Time          `json:"updated_at"`
+	CreditAccount         bool               `json:"credit_account"`
+	LoyaltyMember         bool               `json:"loyalty_member"`
+	LoyaltyJoinedAt       pgtype.Timestamptz `json:"loyalty_joined_at"`
+	LoyaltyJoinedByUserID pgtype.UUID        `json:"loyalty_joined_by_user_id"`
+	LoyaltyConsentAt      pgtype.Timestamptz `json:"loyalty_consent_at"`
+	BirthMonthBs          pgtype.Int2        `json:"birth_month_bs"`
+	CardToken             pgtype.Text        `json:"card_token"`
 }
 
 type CustomerBalance struct {
@@ -163,12 +170,28 @@ type Device struct {
 }
 
 type DiningTable struct {
-	ID     uuid.UUID `json:"id"`
-	AreaID uuid.UUID `json:"area_id"`
-	Name   string    `json:"name"`
-	Seats  int32     `json:"seats"`
-	Sort   int32     `json:"sort"`
-	Active bool      `json:"active"`
+	ID            uuid.UUID `json:"id"`
+	AreaID        uuid.UUID `json:"area_id"`
+	Name          string    `json:"name"`
+	Seats         int32     `json:"seats"`
+	Sort          int32     `json:"sort"`
+	Active        bool      `json:"active"`
+	GuestCode     string    `json:"guest_code"`
+	GuestOrdering bool      `json:"guest_ordering"`
+}
+
+type GuestRequest struct {
+	ID              uuid.UUID          `json:"id"`
+	TableID         uuid.UUID          `json:"table_id"`
+	Kind            string             `json:"kind"`
+	Status          string             `json:"status"`
+	RequestID       string             `json:"request_id"`
+	Lines           []byte             `json:"lines"`
+	RejectReason    pgtype.Text        `json:"reject_reason"`
+	OrderID         pgtype.UUID        `json:"order_id"`
+	HandledByUserID pgtype.UUID        `json:"handled_by_user_id"`
+	HandledAt       pgtype.Timestamptz `json:"handled_at"`
+	CreatedAt       time.Time          `json:"created_at"`
 }
 
 type InventoryItem struct {
@@ -229,6 +252,9 @@ type Invoice struct {
 	IssuedByName             string             `json:"issued_by_name"`
 	Place                    string             `json:"place"`
 	OrderClientID            pgtype.UUID        `json:"order_client_id"`
+	LoyaltyCustomerID        pgtype.UUID        `json:"loyalty_customer_id"`
+	RewardPaisa              int64              `json:"reward_paisa"`
+	LoyaltySnapshot          []byte             `json:"loyalty_snapshot"`
 }
 
 type InvoiceCounter struct {
@@ -279,6 +305,34 @@ type ItemVariant struct {
 	NameNe     string    `json:"name_ne"`
 	PricePaisa int64     `json:"price_paisa"`
 	Sort       int32     `json:"sort"`
+}
+
+type LoyaltyEntry struct {
+	ID               uuid.UUID   `json:"id"`
+	Seq              int64       `json:"seq"`
+	CustomerID       uuid.UUID   `json:"customer_id"`
+	Kind             string      `json:"kind"`
+	Stamps           int32       `json:"stamps"`
+	Status           string      `json:"status"`
+	RewardValuePaisa pgtype.Int8 `json:"reward_value_paisa"`
+	InvoiceID        pgtype.UUID `json:"invoice_id"`
+	BusinessDate     pgtype.Date `json:"business_date"`
+	ByUserID         pgtype.UUID `json:"by_user_id"`
+	ApprovedByUserID pgtype.UUID `json:"approved_by_user_id"`
+	Reason           string      `json:"reason"`
+	CreatedAt        time.Time   `json:"created_at"`
+}
+
+type LoyaltySetting struct {
+	ID                  bool      `json:"id"`
+	Enabled             bool      `json:"enabled"`
+	StampsPerReward     int32     `json:"stamps_per_reward"`
+	MinSpendPaisa       int64     `json:"min_spend_paisa"`
+	RewardValuePaisa    int64     `json:"reward_value_paisa"`
+	ExpiryMonths        int32     `json:"expiry_months"`
+	CreditBillsEarn     bool      `json:"credit_bills_earn"`
+	BirthdayRewardPaisa int64     `json:"birthday_reward_paisa"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 type MenuCategory struct {
@@ -339,18 +393,19 @@ type ModifierRecipeLine struct {
 }
 
 type Order struct {
-	ID            uuid.UUID   `json:"id"`
-	ClientID      uuid.UUID   `json:"client_id"`
-	Type          string      `json:"type"`
-	TableID       pgtype.UUID `json:"table_id"`
-	WaiterUserID  uuid.UUID   `json:"waiter_user_id"`
-	Status        string      `json:"status"`
-	GuestCount    int32       `json:"guest_count"`
-	Version       int64       `json:"version"`
-	CreatedAt     time.Time   `json:"created_at"`
-	UpdatedAt     time.Time   `json:"updated_at"`
-	Label         string      `json:"label"`
-	ReservationID pgtype.UUID `json:"reservation_id"`
+	ID              uuid.UUID          `json:"id"`
+	ClientID        uuid.UUID          `json:"client_id"`
+	Type            string             `json:"type"`
+	TableID         pgtype.UUID        `json:"table_id"`
+	WaiterUserID    uuid.UUID          `json:"waiter_user_id"`
+	Status          string             `json:"status"`
+	GuestCount      int32              `json:"guest_count"`
+	Version         int64              `json:"version"`
+	CreatedAt       time.Time          `json:"created_at"`
+	UpdatedAt       time.Time          `json:"updated_at"`
+	Label           string             `json:"label"`
+	ReservationID   pgtype.UUID        `json:"reservation_id"`
+	BillRequestedAt pgtype.Timestamptz `json:"bill_requested_at"`
 }
 
 type OrderItem struct {
@@ -377,6 +432,7 @@ type OrderItem struct {
 	AddedByUserID        pgtype.UUID        `json:"added_by_user_id"`
 	VariantID            pgtype.UUID        `json:"variant_id"`
 	ModifierIds          []uuid.UUID        `json:"modifier_ids"`
+	Source               string             `json:"source"`
 }
 
 type OrderItemModifier struct {

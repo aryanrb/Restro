@@ -22,31 +22,34 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Rules built so far. Loyalty (4) and LARGE_PAID_OUT come with their features.
+// Rules built so far (loyalty rules 19-22 come with loyalty.proto).
 type AlertRule int32
 
 const (
-	AlertRule_ALERT_RULE_UNSPECIFIED         AlertRule = 0
-	AlertRule_ALERT_RULE_VOID_AFTER_KITCHEN  AlertRule = 1  // item voided after the kitchen started, value >= min_value
-	AlertRule_ALERT_RULE_REPEATED_VOIDS      AlertRule = 2  // one person's post-send voids in their shift (or business day) >= count
-	AlertRule_ALERT_RULE_SELF_APPROVED       AlertRule = 3  // a manager approved their own void/cancel/discount/credit with their own PIN
-	AlertRule_ALERT_RULE_HIGH_DISCOUNT       AlertRule = 4  // one bill's discount >= percent_bp of the subtotal or >= amount
-	AlertRule_ALERT_RULE_DISCOUNT_TOTAL      AlertRule = 5  // one person's discounts in a business day >= amount
-	AlertRule_ALERT_RULE_CANCEL_REBILL_LOWER AlertRule = 6  // bill cancelled, same items re-billed for less within window_minutes
-	AlertRule_ALERT_RULE_LATE_CANCELLATION   AlertRule = 7  // bill cancelled more than `minutes` after issue
-	AlertRule_ALERT_RULE_OLD_REPRINT         AlertRule = 8  // reprint of a bill older than age_minutes, or copy number >= copy
-	AlertRule_ALERT_RULE_CASH_SHORT          AlertRule = 9  // shift closed with difference <= -amount
-	AlertRule_ALERT_RULE_CASH_OVER           AlertRule = 10 // shift closed with difference >= amount
-	AlertRule_ALERT_RULE_REPEATED_SHORTAGES  AlertRule = 11 // same cashier short by >= min_short in >= count shifts in 7 days
-	AlertRule_ALERT_RULE_SERVED_NOT_BILLED   AlertRule = 12 // last open shift closed while an open order has served, unbilled items
-	AlertRule_ALERT_RULE_AFTER_HOURS_LOGIN   AlertRule = 13 // login outside opening hours +- grace
-	AlertRule_ALERT_RULE_MANAGER_PIN_LOCKED  AlertRule = 14 // an owner/manager PIN got locked out after failed attempts
-	AlertRule_ALERT_RULE_PRICE_DIP           AlertRule = 15 // item price lowered then raised back the same business day, with sales between
-	AlertRule_ALERT_RULE_CREDIT_OVER_LIMIT   AlertRule = 16 // on-account bill over the available credit, approved by a manager
-	AlertRule_ALERT_RULE_CREDIT_NEW_ACCOUNT  AlertRule = 17 // credit to an account the same person created that business day
-	AlertRule_ALERT_RULE_HIGH_WASTE          AlertRule = 18 // day's waste >= day_waste, or one posted count's loss >= count_loss
-	// 19-22 are kept for the loyalty rules.
-	AlertRule_ALERT_RULE_LARGE_PAID_OUT AlertRule = 23 // one till payment > amount, or one person's till paid-outs in a shift >= shift_total
+	AlertRule_ALERT_RULE_UNSPECIFIED              AlertRule = 0
+	AlertRule_ALERT_RULE_VOID_AFTER_KITCHEN       AlertRule = 1  // item voided after the kitchen started, value >= min_value
+	AlertRule_ALERT_RULE_REPEATED_VOIDS           AlertRule = 2  // one person's post-send voids in their shift (or business day) >= count
+	AlertRule_ALERT_RULE_SELF_APPROVED            AlertRule = 3  // a manager approved their own void/cancel/discount/credit with their own PIN
+	AlertRule_ALERT_RULE_HIGH_DISCOUNT            AlertRule = 4  // one bill's discount >= percent_bp of the subtotal or >= amount
+	AlertRule_ALERT_RULE_DISCOUNT_TOTAL           AlertRule = 5  // one person's discounts in a business day >= amount
+	AlertRule_ALERT_RULE_CANCEL_REBILL_LOWER      AlertRule = 6  // bill cancelled, same items re-billed for less within window_minutes
+	AlertRule_ALERT_RULE_LATE_CANCELLATION        AlertRule = 7  // bill cancelled more than `minutes` after issue
+	AlertRule_ALERT_RULE_OLD_REPRINT              AlertRule = 8  // reprint of a bill older than age_minutes, or copy number >= copy
+	AlertRule_ALERT_RULE_CASH_SHORT               AlertRule = 9  // shift closed with difference <= -amount
+	AlertRule_ALERT_RULE_CASH_OVER                AlertRule = 10 // shift closed with difference >= amount
+	AlertRule_ALERT_RULE_REPEATED_SHORTAGES       AlertRule = 11 // same cashier short by >= min_short in >= count shifts in 7 days
+	AlertRule_ALERT_RULE_SERVED_NOT_BILLED        AlertRule = 12 // last open shift closed while an open order has served, unbilled items
+	AlertRule_ALERT_RULE_AFTER_HOURS_LOGIN        AlertRule = 13 // login outside opening hours +- grace
+	AlertRule_ALERT_RULE_MANAGER_PIN_LOCKED       AlertRule = 14 // an owner/manager PIN got locked out after failed attempts
+	AlertRule_ALERT_RULE_PRICE_DIP                AlertRule = 15 // item price lowered then raised back the same business day, with sales between
+	AlertRule_ALERT_RULE_CREDIT_OVER_LIMIT        AlertRule = 16 // on-account bill over the available credit, approved by a manager
+	AlertRule_ALERT_RULE_CREDIT_NEW_ACCOUNT       AlertRule = 17 // credit to an account the same person created that business day
+	AlertRule_ALERT_RULE_HIGH_WASTE               AlertRule = 18 // day's waste >= day_waste, or one posted count's loss >= count_loss
+	AlertRule_ALERT_RULE_LOYALTY_STAFF_NUMBER     AlertRule = 19 // a bill's loyalty member has a staff member's phone
+	AlertRule_ALERT_RULE_LOYALTY_ONE_CASHIER      AlertRule = 20 // in 30 days a member earns >= stamps, >= share_bp of them on one cashier's bills
+	AlertRule_ALERT_RULE_LOYALTY_MANY_REDEMPTIONS AlertRule = 21 // one cashier redeems >= count rewards in a business day
+	AlertRule_ALERT_RULE_LOYALTY_STAMP_ADJUSTMENT AlertRule = 22 // a manual stamp adjustment of >= stamps (either way)
+	AlertRule_ALERT_RULE_LARGE_PAID_OUT           AlertRule = 23 // one till payment > amount, or one person's till paid-outs in a shift >= shift_total
 )
 
 // Enum value maps for AlertRule.
@@ -71,29 +74,37 @@ var (
 		16: "ALERT_RULE_CREDIT_OVER_LIMIT",
 		17: "ALERT_RULE_CREDIT_NEW_ACCOUNT",
 		18: "ALERT_RULE_HIGH_WASTE",
+		19: "ALERT_RULE_LOYALTY_STAFF_NUMBER",
+		20: "ALERT_RULE_LOYALTY_ONE_CASHIER",
+		21: "ALERT_RULE_LOYALTY_MANY_REDEMPTIONS",
+		22: "ALERT_RULE_LOYALTY_STAMP_ADJUSTMENT",
 		23: "ALERT_RULE_LARGE_PAID_OUT",
 	}
 	AlertRule_value = map[string]int32{
-		"ALERT_RULE_UNSPECIFIED":         0,
-		"ALERT_RULE_VOID_AFTER_KITCHEN":  1,
-		"ALERT_RULE_REPEATED_VOIDS":      2,
-		"ALERT_RULE_SELF_APPROVED":       3,
-		"ALERT_RULE_HIGH_DISCOUNT":       4,
-		"ALERT_RULE_DISCOUNT_TOTAL":      5,
-		"ALERT_RULE_CANCEL_REBILL_LOWER": 6,
-		"ALERT_RULE_LATE_CANCELLATION":   7,
-		"ALERT_RULE_OLD_REPRINT":         8,
-		"ALERT_RULE_CASH_SHORT":          9,
-		"ALERT_RULE_CASH_OVER":           10,
-		"ALERT_RULE_REPEATED_SHORTAGES":  11,
-		"ALERT_RULE_SERVED_NOT_BILLED":   12,
-		"ALERT_RULE_AFTER_HOURS_LOGIN":   13,
-		"ALERT_RULE_MANAGER_PIN_LOCKED":  14,
-		"ALERT_RULE_PRICE_DIP":           15,
-		"ALERT_RULE_CREDIT_OVER_LIMIT":   16,
-		"ALERT_RULE_CREDIT_NEW_ACCOUNT":  17,
-		"ALERT_RULE_HIGH_WASTE":          18,
-		"ALERT_RULE_LARGE_PAID_OUT":      23,
+		"ALERT_RULE_UNSPECIFIED":              0,
+		"ALERT_RULE_VOID_AFTER_KITCHEN":       1,
+		"ALERT_RULE_REPEATED_VOIDS":           2,
+		"ALERT_RULE_SELF_APPROVED":            3,
+		"ALERT_RULE_HIGH_DISCOUNT":            4,
+		"ALERT_RULE_DISCOUNT_TOTAL":           5,
+		"ALERT_RULE_CANCEL_REBILL_LOWER":      6,
+		"ALERT_RULE_LATE_CANCELLATION":        7,
+		"ALERT_RULE_OLD_REPRINT":              8,
+		"ALERT_RULE_CASH_SHORT":               9,
+		"ALERT_RULE_CASH_OVER":                10,
+		"ALERT_RULE_REPEATED_SHORTAGES":       11,
+		"ALERT_RULE_SERVED_NOT_BILLED":        12,
+		"ALERT_RULE_AFTER_HOURS_LOGIN":        13,
+		"ALERT_RULE_MANAGER_PIN_LOCKED":       14,
+		"ALERT_RULE_PRICE_DIP":                15,
+		"ALERT_RULE_CREDIT_OVER_LIMIT":        16,
+		"ALERT_RULE_CREDIT_NEW_ACCOUNT":       17,
+		"ALERT_RULE_HIGH_WASTE":               18,
+		"ALERT_RULE_LOYALTY_STAFF_NUMBER":     19,
+		"ALERT_RULE_LOYALTY_ONE_CASHIER":      20,
+		"ALERT_RULE_LOYALTY_MANY_REDEMPTIONS": 21,
+		"ALERT_RULE_LOYALTY_STAMP_ADJUSTMENT": 22,
+		"ALERT_RULE_LARGE_PAID_OUT":           23,
 	}
 )
 
@@ -1987,7 +1998,7 @@ const file_restaurant_v1_alerts_proto_rawDesc = "" +
 	"\x06_count\"\x1a\n" +
 	"\x18ListNotificationsRequest\"M\n" +
 	"\x19ListNotificationsResponse\x120\n" +
-	"\x06pushes\x18\x01 \x03(\v2\x18.restaurant.v1.AlertPushR\x06pushes*\xfe\x04\n" +
+	"\x06pushes\x18\x01 \x03(\v2\x18.restaurant.v1.AlertPushR\x06pushes*\x99\x06\n" +
 	"\tAlertRule\x12\x1a\n" +
 	"\x16ALERT_RULE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dALERT_RULE_VOID_AFTER_KITCHEN\x10\x01\x12\x1d\n" +
@@ -2008,7 +2019,11 @@ const file_restaurant_v1_alerts_proto_rawDesc = "" +
 	"\x14ALERT_RULE_PRICE_DIP\x10\x0f\x12 \n" +
 	"\x1cALERT_RULE_CREDIT_OVER_LIMIT\x10\x10\x12!\n" +
 	"\x1dALERT_RULE_CREDIT_NEW_ACCOUNT\x10\x11\x12\x19\n" +
-	"\x15ALERT_RULE_HIGH_WASTE\x10\x12\x12\x1d\n" +
+	"\x15ALERT_RULE_HIGH_WASTE\x10\x12\x12#\n" +
+	"\x1fALERT_RULE_LOYALTY_STAFF_NUMBER\x10\x13\x12\"\n" +
+	"\x1eALERT_RULE_LOYALTY_ONE_CASHIER\x10\x14\x12'\n" +
+	"#ALERT_RULE_LOYALTY_MANY_REDEMPTIONS\x10\x15\x12'\n" +
+	"#ALERT_RULE_LOYALTY_STAMP_ADJUSTMENT\x10\x16\x12\x1d\n" +
 	"\x19ALERT_RULE_LARGE_PAID_OUT\x10\x17*c\n" +
 	"\rAlertSeverity\x12\x1e\n" +
 	"\x1aALERT_SEVERITY_UNSPECIFIED\x10\x00\x12\x17\n" +

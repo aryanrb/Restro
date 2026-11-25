@@ -1,0 +1,244 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+import "buf/validate/validate.proto";
+import "restaurant/v1/common.proto";
+import "restaurant/v1/menu.proto";
+import "restaurant/v1/order.proto";
+
+// ---------------------------------------------------------------------------
+// Guest table ordering (QR menu) — web: guest-api.ts; design:
+// docs/superpowers/specs/2026-11-23-guest-table-ordering-design.md.
+//
+// GuestService is PUBLIC: no session (the server mounts it without the session
+// interceptor), identified only by the table's guest code from its QR
+// (/menu/?t=<code>). It never reaches a staff function. Errors: TABLE_CODE_INVALID,
+// GUEST_ORDERING_OFF, INVALID(field), ITEM_86D(field = menu_item_id),
+// TOO_MANY_PENDING, RATE_LIMITED.
+//
+// GuestDeskService is staff: list/accept/reject/resolve for OWNER, MANAGER, WAITER
+// and CASHIER; tables/enabled/table ordering/new code for OWNER and MANAGER.
+//
+// Limits: 30 lines and quantity 1–20 per guest order, note ≤ 140, 3 pending guest
+// orders per table, reject reason ≤ 200; per table 5 submits and 10 calls per
+// minute, per client address 10 submits and 20 calls per minute.
+//
+// Realtime: `guest.request` (id = guest request id) for staff screens on
+// /api/ws; `guest.status` (id = table id) for the guest page, which watches its
+// own table on the public socket /api/guest/ws?t=<code> (that socket only ever
+// sends `{"type":"guest.status","id":<table id>}` for that table — also when the
+// table's order changes — and closes when the code stops working). Polling
+// GetGuestStatus every 15 s is the fallback.
+// ---------------------------------------------------------------------------
+
+enum GuestRequestKind {
+  GUEST_REQUEST_KIND_UNSPECIFIED = 0;
+  GUEST_REQUEST_KIND_ORDER = 1;
+  GUEST_REQUEST_KIND_CALL_WAITER = 2;
+  GUEST_REQUEST_KIND_BILL = 3; // Ask for bill: also sets Order.bill_requested_at on the table's open orders
+}
+
+enum GuestRequestStatus {
+  GUEST_REQUEST_STATUS_UNSPECIFIED = 0;
+  GUEST_REQUEST_STATUS_PENDING = 1;
+  GUEST_REQUEST_STATUS_ACCEPTED = 2;
+  GUEST_REQUEST_STATUS_REJECTED = 3;
+  GUEST_REQUEST_STATUS_DONE = 4;
+}
+
+// One cart line from a guest phone. Prices are never sent: the server computes them.
+message GuestLineInput {
+  string menu_item_id = 1 [(buf.validate.field).string.min_len = 1];
+  optional string variant_id = 2;
+  repeated string modifier_ids = 3;
+  int32 quantity = 4; // 1–20 (INVALID "quantity")
+  string note = 5;    // ≤ 140 chars (INVALID "note")
+}
+
+message GuestLineModifier {
+  LocalText name = 1;
+  int64 price_delta_paisa = 2;
+}
+
+// A guest order line, priced by the server when it was sent.
+message GuestLine {
+  string line_id = 1;
+  string menu_item_id = 2;
+  optional string variant_id = 3;
+  repeated string modifier_ids = 4;
+  int32 quantity = 5;
+  string note = 6;
+  LocalText name = 7;
+  optional LocalText variant_name = 8;
+  repeated GuestLineModifier modifiers = 9;
+  int64 unit_price_paisa = 10; // per unit, incl. modifier deltas
+}
+
+// Staff view of a request.
+message GuestRequest {
+  string id = 1;
+  string table_id = 2;
+  string table_name = 3;
+  GuestRequestKind kind = 4;
+  GuestRequestStatus status = 5;
+  // ORDER only; for an accepted order, the lines as accepted (after staff edits).
+  repeated GuestLine lines = 6;
+  int64 created_at_unix = 7;
+  string handled_by_id = 8;   // "" while pending
+  string handled_by_name = 9; // "" while pending
+  int64 handled_at_unix = 10; // 0 while pending
+  string reject_reason = 11;  // a preset code (ITEM_FINISHED, NOT_THIS_TABLE) or free text; "" otherwise
+  string request_id = 12;     // idempotency key from the guest phone ("" for calls)
+}
+
+// A guest's view of a request: no staff names or ids.
+message GuestRequestView {
+  string id = 1;
+  GuestRequestKind kind = 2;
+  GuestRequestStatus status = 3;
+  repeated GuestLine lines = 4;
+  int64 created_at_unix = 5;
+  int64 handled_at_unix = 6;
+  string reject_reason = 7;
+  string request_id = 8;
+}
+
+// ---- public ----
+
+message GetGuestMenuRequest {
+  string table_code = 1;
+}
+message GuestMenu {
+  LocalText restaurant_name = 1;
+  string table_name = 2;
+  // False when guest ordering is off for the restaurant or this table: view-only menu.
+  bool ordering = 3;
+  // Active categories and their active items only; no recipes. Sold-out items have is_86d.
+  Menu menu = 4;
+}
+
+message SubmitGuestOrderRequest {
+  string table_code = 1;
+  repeated GuestLineInput lines = 2; // 1–30 (INVALID "lines")
+  // Client UUID from the guest phone: a retry returns the same request.
+  string request_id = 3 [(buf.validate.field).string = {min_len: 1, max_len: 64}];
+}
+
+message CallStaffRequest {
+  string table_code = 1;
+  GuestRequestKind kind = 2; // CALL_WAITER or BILL (INVALID "kind")
+}
+
+message GetGuestStatusRequest {
+  string table_code = 1;
+}
+
+message GuestStatusModifier {
+  LocalText name = 1;
+}
+message GuestStatusItem {
+  LocalText name = 1;
+  optional LocalText variant_name = 2;
+  repeated GuestStatusModifier modifiers = 3;
+  int32 quantity = 4;
+  int64 unit_price_paisa = 5;
+  OrderItemStatus status = 6;
+}
+message GuestStatus {
+  string table_name = 1;
+  bool ordering = 2;
+  // Everything the table's open orders hold (staff and guests), voids and drafts left out.
+  repeated GuestStatusItem items = 3;
+  // Running total in paisa with service charge and VAT, as the bill will show it.
+  int64 total_paisa = 4;
+  // This table's guest requests: pending, and handled during this seating (or the
+  // last 15 minutes when the table has no open order); oldest first.
+  repeated GuestRequestView requests = 5;
+}
+
+service GuestService {
+  rpc GetGuestMenu(GetGuestMenuRequest) returns (GuestMenu);
+  // Idempotent on request_id. Pending, priced by the server; nothing reaches the
+  // kitchen until a staff member accepts it.
+  rpc SubmitGuestOrder(SubmitGuestOrderRequest) returns (GuestRequestView);
+  // Call waiter / Ask for bill: the open alert of that kind (the existing one if open).
+  rpc CallStaff(CallStaffRequest) returns (GuestRequestView);
+  rpc GetGuestStatus(GetGuestStatusRequest) returns (GuestStatus);
+}
+
+// ---- staff ----
+
+message ListGuestRequestsRequest {}
+message ListGuestRequestsResponse {
+  // Pending requests and open alerts, plus those handled in the last 15 minutes; oldest first.
+  repeated GuestRequest requests = 1;
+}
+
+message AcceptedGuestLine {
+  string line_id = 1 [(buf.validate.field).string.min_len = 1];
+  int32 quantity = 2; // 1–20, may be lower than the guest's
+}
+// Adds the kept lines to the table's open order (or creates one) and sends them to
+// the kitchen in one transaction (stock deducted like any send). Errors:
+// ALREADY_HANDLED, STALE_VERSION, ITEM_86D (field = line_id), INVALID.
+message AcceptGuestOrderRequest {
+  string request_id = 1 [(buf.validate.field).string.min_len = 1]; // GuestRequest.id
+  repeated AcceptedGuestLine lines = 2 [(buf.validate.field).repeated.min_items = 1];
+  // The table's open order version; unset when the table had no open order.
+  optional int64 base_version = 3;
+}
+
+message RejectGuestOrderRequest {
+  string request_id = 1 [(buf.validate.field).string.min_len = 1];
+  string reason = 2; // 1–200 chars after trim (INVALID "reason")
+}
+message RejectGuestOrderResponse {}
+
+// Done for a Call waiter / Ask for bill alert (Ask for bill also clears bill_requested_at).
+message ResolveGuestAlertRequest {
+  string request_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+message ResolveGuestAlertResponse {}
+
+// One table's guest-ordering setup (owner/manager only: the code is the table's QR).
+message GuestTableConfig {
+  string table_id = 1;
+  string area_id = 2;
+  string name = 3;
+  bool active = 4;
+  string code = 5;
+  bool ordering = 6;
+}
+message ListGuestTablesRequest {}
+message ListGuestTablesResponse {
+  repeated GuestTableConfig tables = 1;
+}
+
+// Restaurant-wide switch (= Settings.guest_ordering).
+message SetGuestOrderingEnabledRequest {
+  bool enabled = 1;
+}
+message SetGuestOrderingEnabledResponse {}
+
+message SetTableGuestOrderingRequest {
+  string table_id = 1 [(buf.validate.field).string.min_len = 1];
+  bool ordering = 2;
+}
+message SetTableGuestOrderingResponse {}
+
+// A new random code: the table's old QR stops working (TABLE_CODE_INVALID).
+message NewGuestCodeRequest {
+  string table_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+service GuestDeskService {
+  rpc ListGuestRequests(ListGuestRequestsRequest) returns (ListGuestRequestsResponse);
+  rpc AcceptGuestOrder(AcceptGuestOrderRequest) returns (Order);
+  rpc RejectGuestOrder(RejectGuestOrderRequest) returns (RejectGuestOrderResponse);
+  rpc ResolveGuestAlert(ResolveGuestAlertRequest) returns (ResolveGuestAlertResponse);
+  rpc ListGuestTables(ListGuestTablesRequest) returns (ListGuestTablesResponse);
+  rpc SetGuestOrderingEnabled(SetGuestOrderingEnabledRequest) returns (SetGuestOrderingEnabledResponse);
+  rpc SetTableGuestOrdering(SetTableGuestOrderingRequest) returns (SetTableGuestOrderingResponse);
+  rpc NewGuestCode(NewGuestCodeRequest) returns (GuestTableConfig);
+}

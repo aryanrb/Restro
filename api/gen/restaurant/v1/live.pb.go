@@ -22,8 +22,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Table / order state, most urgent first (the web's STATE_PRIORITY). BILL_REQUESTED
-// needs an Order.bill_requested_at the backend doesn't have yet: it never appears.
+// Table / order state, most urgent first (the web's STATE_PRIORITY). BILL_REQUESTED:
+// the order's Order.bill_requested_at is set (a guest tapped Ask for bill).
 type LiveState int32
 
 const (
@@ -178,7 +178,7 @@ type LiveOrder struct {
 	GuestCount          int32                  `protobuf:"varint,6,opt,name=guest_count,json=guestCount,proto3" json:"guest_count,omitempty"`
 	CreatedAtUnix       int64                  `protobuf:"varint,7,opt,name=created_at_unix,json=createdAtUnix,proto3" json:"created_at_unix,omitempty"`
 	LastSentAtUnix      int64                  `protobuf:"varint,8,opt,name=last_sent_at_unix,json=lastSentAtUnix,proto3" json:"last_sent_at_unix,omitempty"`                // latest send to the kitchen; 0 = nothing sent
-	BillRequestedAtUnix int64                  `protobuf:"varint,9,opt,name=bill_requested_at_unix,json=billRequestedAtUnix,proto3" json:"bill_requested_at_unix,omitempty"` // always 0 for now (see LiveState)
+	BillRequestedAtUnix int64                  `protobuf:"varint,9,opt,name=bill_requested_at_unix,json=billRequestedAtUnix,proto3" json:"bill_requested_at_unix,omitempty"` // Order.bill_requested_at; 0 = none
 	State               LiveState              `protobuf:"varint,10,opt,name=state,proto3,enum=restaurant.v1.LiveState" json:"state,omitempty"`
 	// Live (non-voided) lines at their snapshotted prices, before service charge and
 	// VAT ("approx."); billed_total is the part already on issued bills.

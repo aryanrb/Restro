@@ -73,7 +73,7 @@ const createOrder = `-- name: CreateOrder :one
 INSERT INTO orders (client_id, type, table_id, waiter_user_id, guest_count, label)
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (client_id) DO NOTHING
-RETURNING id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label, reservation_id
+RETURNING id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label, reservation_id, bill_requested_at
 `
 
 type CreateOrderParams struct {
@@ -110,6 +110,7 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order
 		&i.UpdatedAt,
 		&i.Label,
 		&i.ReservationID,
+		&i.BillRequestedAt,
 	)
 	return i, err
 }
@@ -122,7 +123,7 @@ INSERT INTO order_items (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
     CASE WHEN $13::text = 'DRAFT' THEN NULL ELSE now() END)
 ON CONFLICT (client_id) DO NOTHING
-RETURNING id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id, variant_id, modifier_ids
+RETURNING id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id, variant_id, modifier_ids, source
 `
 
 type CreateOrderItemParams struct {
@@ -188,6 +189,7 @@ func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams
 		&i.AddedByUserID,
 		&i.VariantID,
 		&i.ModifierIds,
+		&i.Source,
 	)
 	return i, err
 }
@@ -215,7 +217,7 @@ func (q *Queries) CreateOrderItemModifier(ctx context.Context, arg CreateOrderIt
 }
 
 const getOrderByClientID = `-- name: GetOrderByClientID :one
-SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label, reservation_id FROM orders WHERE client_id = $1
+SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label, reservation_id, bill_requested_at FROM orders WHERE client_id = $1
 `
 
 func (q *Queries) GetOrderByClientID(ctx context.Context, clientID uuid.UUID) (Order, error) {
@@ -234,12 +236,13 @@ func (q *Queries) GetOrderByClientID(ctx context.Context, clientID uuid.UUID) (O
 		&i.UpdatedAt,
 		&i.Label,
 		&i.ReservationID,
+		&i.BillRequestedAt,
 	)
 	return i, err
 }
 
 const getOrderByID = `-- name: GetOrderByID :one
-SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label, reservation_id FROM orders WHERE id = $1
+SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label, reservation_id, bill_requested_at FROM orders WHERE id = $1
 `
 
 func (q *Queries) GetOrderByID(ctx context.Context, id uuid.UUID) (Order, error) {
@@ -258,6 +261,7 @@ func (q *Queries) GetOrderByID(ctx context.Context, id uuid.UUID) (Order, error)
 		&i.UpdatedAt,
 		&i.Label,
 		&i.ReservationID,
+		&i.BillRequestedAt,
 	)
 	return i, err
 }
@@ -291,7 +295,7 @@ func (q *Queries) GetOrderCloseState(ctx context.Context, id uuid.UUID) (GetOrde
 }
 
 const getOrderItem = `-- name: GetOrderItem :one
-SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id, variant_id, modifier_ids FROM order_items WHERE id = $1
+SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id, variant_id, modifier_ids, source FROM order_items WHERE id = $1
 `
 
 func (q *Queries) GetOrderItem(ctx context.Context, id uuid.UUID) (OrderItem, error) {
@@ -321,12 +325,13 @@ func (q *Queries) GetOrderItem(ctx context.Context, id uuid.UUID) (OrderItem, er
 		&i.AddedByUserID,
 		&i.VariantID,
 		&i.ModifierIds,
+		&i.Source,
 	)
 	return i, err
 }
 
 const getOrderItemByClientID = `-- name: GetOrderItemByClientID :one
-SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id, variant_id, modifier_ids FROM order_items WHERE client_id = $1
+SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id, variant_id, modifier_ids, source FROM order_items WHERE client_id = $1
 `
 
 func (q *Queries) GetOrderItemByClientID(ctx context.Context, clientID uuid.UUID) (OrderItem, error) {
@@ -356,6 +361,7 @@ func (q *Queries) GetOrderItemByClientID(ctx context.Context, clientID uuid.UUID
 		&i.AddedByUserID,
 		&i.VariantID,
 		&i.ModifierIds,
+		&i.Source,
 	)
 	return i, err
 }
@@ -405,7 +411,7 @@ func (q *Queries) InsertProcessedCommand(ctx context.Context, arg InsertProcesse
 }
 
 const listOpenOrders = `-- name: ListOpenOrders :many
-SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label, reservation_id FROM orders WHERE status IN ('OPEN', 'BILLED') ORDER BY created_at
+SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label, reservation_id, bill_requested_at FROM orders WHERE status IN ('OPEN', 'BILLED') ORDER BY created_at
 `
 
 func (q *Queries) ListOpenOrders(ctx context.Context) ([]Order, error) {
@@ -430,6 +436,7 @@ func (q *Queries) ListOpenOrders(ctx context.Context) ([]Order, error) {
 			&i.UpdatedAt,
 			&i.Label,
 			&i.ReservationID,
+			&i.BillRequestedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -474,7 +481,7 @@ func (q *Queries) ListOrderItemModifiersForOrder(ctx context.Context, orderID uu
 }
 
 const listOrderItems = `-- name: ListOrderItems :many
-SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id, variant_id, modifier_ids FROM order_items WHERE order_id = $1 ORDER BY created_at
+SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id, variant_id, modifier_ids, source FROM order_items WHERE order_id = $1 ORDER BY created_at
 `
 
 func (q *Queries) ListOrderItems(ctx context.Context, orderID uuid.UUID) ([]OrderItem, error) {
@@ -510,6 +517,7 @@ func (q *Queries) ListOrderItems(ctx context.Context, orderID uuid.UUID) ([]Orde
 			&i.AddedByUserID,
 			&i.VariantID,
 			&i.ModifierIds,
+			&i.Source,
 		); err != nil {
 			return nil, err
 		}
@@ -522,7 +530,7 @@ func (q *Queries) ListOrderItems(ctx context.Context, orderID uuid.UUID) ([]Orde
 }
 
 const lockOrderForUpdate = `-- name: LockOrderForUpdate :one
-SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label, reservation_id FROM orders WHERE id = $1 FOR UPDATE
+SELECT id, client_id, type, table_id, waiter_user_id, status, guest_count, version, created_at, updated_at, label, reservation_id, bill_requested_at FROM orders WHERE id = $1 FOR UPDATE
 `
 
 // Locks the order row so the close-rule evaluation that follows sees every
@@ -543,6 +551,7 @@ func (q *Queries) LockOrderForUpdate(ctx context.Context, id uuid.UUID) (Order, 
 		&i.UpdatedAt,
 		&i.Label,
 		&i.ReservationID,
+		&i.BillRequestedAt,
 	)
 	return i, err
 }

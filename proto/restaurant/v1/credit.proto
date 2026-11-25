@@ -38,6 +38,16 @@ message Customer {
   string created_by_user_id = 10;
   int64 created_at_unix = 11;
   int64 balance_paisa = 12;       // server-computed; negative = in the customer's favour
+  // Loyalty (loyalty.proto). credit_account false = a loyalty-only member: not in
+  // ListCustomers, no on-account billing (INVALID "customer_id") until a credit
+  // account is opened (CreateCustomer with their phone, or a limit > 0).
+  bool credit_account = 13;
+  bool loyalty_member = 14;
+  int64 loyalty_joined_at_unix = 15;
+  string loyalty_joined_by_user_id = 16;
+  int64 loyalty_consent_at_unix = 17;
+  int32 birth_month_bs = 18; // 1-12 (Baisakh = 1); 0 = none
+  string card_token = 19;    // public status-page token; "" = no link
 }
 
 // The editable fields. Validated by the service: name required (≤ 80 chars),

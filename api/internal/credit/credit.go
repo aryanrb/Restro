@@ -25,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 
 	restaurantv1 "github.com/oneaccord/restro/api/gen/restaurant/v1"
 	"github.com/oneaccord/restro/api/internal/audit"
@@ -167,7 +168,8 @@ func (s *Service) ListCustomers(ctx context.Context, req *restaurantv1.ListCusto
 	}
 	out := &restaurantv1.ListCustomersResponse{Customers: []*restaurantv1.Customer{}}
 	for _, r := range rows {
-		if (req.GetIncludeInactive() || r.Active) && matches(r.Name, r.Phone, req.GetQuery()) {
+		// Loyalty-only members (no credit account) are not browsable here.
+		if r.CreditAccount && (req.GetIncludeInactive() || r.Active) && matches(r.Name, r.Phone, req.GetQuery()) {
 			out.Customers = append(out.Customers, toCustomer(sqlc.GetCustomerWithBalanceRow(r)))
 		}
 	}
@@ -224,6 +226,14 @@ func (s *Service) CreateCustomer(ctx context.Context, req *restaurantv1.CreateCu
 	}
 	out := &restaurantv1.Customer{}
 	err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
+		// Loyalty: a member without a credit account gets one (same record, one per phone).
+		if phone, ok := auth.NormalisePhone(req.GetCustomer().GetPhone()); ok && phone != "" {
+			if id, e := q.CustomerIDByPhone(ctx, phone); e == nil {
+				if m, e := q.LockCustomer(ctx, id); e == nil && !m.CreditAccount {
+					return s.openAccount(ctx, q, actor, m, req.GetCustomer(), out)
+				}
+			}
+		}
 		f, e := clean(ctx, q, req.GetCustomer(), uuid.Nil)
 		if e != nil {
 			return e
@@ -287,6 +297,12 @@ func (s *Service) UpdateCustomer(ctx context.Context, req *restaurantv1.UpdateCu
 			ID: id, Name: f.name, Phone: f.phone, Notes: f.notes, Pan: f.pan, Address: f.address, ContactPerson: f.contact, CreditLimitPaisa: limit,
 		}); e != nil {
 			return uniquePhone(e)
+		}
+		// A credit limit given to a loyalty-only member opens their credit account.
+		if limitChanged && limit > 0 && !old.CreditAccount {
+			if e := q.OpenCreditAccount(ctx, id); e != nil {
+				return connecterr.Internal(e)
+			}
 		}
 		var changed []string
 		for _, c := range []struct {
@@ -466,11 +482,50 @@ func uuidStr(id pgtype.UUID) string {
 }
 
 func toCustomer(c sqlc.GetCustomerWithBalanceRow) *restaurantv1.Customer {
-	return &restaurantv1.Customer{
+	out := &restaurantv1.Customer{
 		Id: c.ID.String(), Name: c.Name, Phone: c.Phone, Notes: c.Notes, CreditLimitPaisa: c.CreditLimitPaisa, Active: c.Active,
 		Pan: c.Pan, Address: c.Address, ContactPerson: c.ContactPerson, CreatedByUserId: uuidStr(c.CreatedByUserID),
 		CreatedAtUnix: c.CreatedAt.Unix(), BalancePaisa: c.BalancePaisa,
+		CreditAccount: c.CreditAccount, LoyaltyMember: c.LoyaltyMember, LoyaltyJoinedByUserId: uuidStr(c.LoyaltyJoinedByUserID),
+		CardToken: c.CardToken.String,
 	}
+	if c.LoyaltyJoinedAt.Valid {
+		out.LoyaltyJoinedAtUnix = c.LoyaltyJoinedAt.Time.Unix()
+	}
+	if c.LoyaltyConsentAt.Valid {
+		out.LoyaltyConsentAtUnix = c.LoyaltyConsentAt.Time.Unix()
+	}
+	if c.BirthMonthBs.Valid {
+		out.BirthMonthBs = int32(c.BirthMonthBs.Int16)
+	}
+	return out
+}
+
+// openAccount turns a loyalty-only member into a credit account (CreateCustomer
+// with their phone): the input's fields are saved on the same record.
+func (s *Service) openAccount(ctx context.Context, q *sqlc.Queries, actor *auth.Actor, m sqlc.Customer, in *restaurantv1.CustomerInput, out *restaurantv1.Customer) error {
+	f, e := clean(ctx, q, in, m.ID)
+	if e != nil {
+		return e
+	}
+	if _, e := q.UpdateCustomer(ctx, sqlc.UpdateCustomerParams{
+		ID: m.ID, Name: f.name, Phone: f.phone, Notes: f.notes, Pan: f.pan, Address: f.address, ContactPerson: f.contact, CreditLimitPaisa: m.CreditLimitPaisa,
+	}); e != nil {
+		return uniquePhone(e)
+	}
+	if e := q.OpenCreditAccount(ctx, m.ID); e != nil {
+		return connecterr.Internal(e)
+	}
+	if e := audit.Write(ctx, q, audit.Entry{ActorID: actor.User.ID, Action: ActionCustomerChange, Entity: "customer", EntityID: m.ID.String(),
+		After: audit.JSON(map[string]any{"detail": "credit account opened"})}); e != nil {
+		return e
+	}
+	got, e := s.load(ctx, q, m.ID)
+	if e != nil {
+		return e
+	}
+	proto.Merge(out, got)
+	return nil
 }
 
 func rupees(paisa int64) string {

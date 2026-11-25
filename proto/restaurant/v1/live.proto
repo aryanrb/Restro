@@ -16,8 +16,8 @@ import "restaurant/v1/shift.proto";
 // every 30 s as a backup. Minute counters tick on the client from the timestamps.
 // ---------------------------------------------------------------------------
 
-// Table / order state, most urgent first (the web's STATE_PRIORITY). BILL_REQUESTED
-// needs an Order.bill_requested_at the backend doesn't have yet: it never appears.
+// Table / order state, most urgent first (the web's STATE_PRIORITY). BILL_REQUESTED:
+// the order's Order.bill_requested_at is set (a guest tapped Ask for bill).
 enum LiveState {
   LIVE_STATE_UNSPECIFIED = 0;
   LIVE_STATE_BILL_REQUESTED = 1;
@@ -48,7 +48,7 @@ message LiveOrder {
   int32 guest_count = 6;
   int64 created_at_unix = 7;
   int64 last_sent_at_unix = 8;         // latest send to the kitchen; 0 = nothing sent
-  int64 bill_requested_at_unix = 9;    // always 0 for now (see LiveState)
+  int64 bill_requested_at_unix = 9;    // Order.bill_requested_at; 0 = none
   LiveState state = 10;
   // Live (non-voided) lines at their snapshotted prices, before service charge and
   // VAT ("approx."); billed_total is the part already on issued bills.

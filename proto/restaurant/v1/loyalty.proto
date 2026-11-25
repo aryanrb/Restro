@@ -1,0 +1,232 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+import "buf/validate/validate.proto";
+import "restaurant/v1/common.proto";
+
+// ---------------------------------------------------------------------------
+// Loyalty stamp card (loyalty design).
+//
+// Members are the existing Customer records (one per phone; credit.proto). A bill
+// earns one stamp when subtotal - discount - reward >= min spend, at most one per
+// member per business day (a split bill of one order earns once across its parts).
+// N stamps = one reward: a fixed amount off, a discount BEFORE VAT (Invoice.reward_paisa),
+// used whole, one per bill, not counted in the cashier's 10% discount limit.
+// The member is attached before issue only: BillingService.PreviewBill / IssueBill /
+// CounterSale take customer_id + redeem_reward (billing.proto). On-account bills earn
+// a PENDING stamp, counted once the bill is fully repaid. Cancelling a bill reverses
+// its stamp and restores any reward used. A card with no visit for expiry_months
+// expires (EXPIRE entry).
+//
+// Roles: owner, manager, cashier find / join (and bill with a member); owner and
+// manager list, read, leave, new link and report; adjust is owner/manager (a
+// cashier only with a manager approval); settings changes are owner only.
+// GetCardStatus is public (no login).
+//
+// Errors: LOYALTY_OFF, NOT_A_MEMBER, OWN_NUMBER, NO_REWARD, REWARD_EXCEEDS_BILL;
+// PHONE_TAKEN = DUPLICATE "phone"; CONSENT_REQUIRED = INVALID "consent";
+// CARD_LINK_INVALID = NOT_FOUND "token". Realtime: `customer.updated` (id = customer id).
+//
+// Audit actions: LOYALTY_JOINED, LOYALTY_LEFT, LOYALTY_REDEEMED, LOYALTY_ADJUSTED,
+// LOYALTY_SETTINGS_CHANGED, LOYALTY_LINK_RESET.
+// ---------------------------------------------------------------------------
+
+message LoyaltySettings {
+  bool enabled = 1;
+  int32 stamps_per_reward = 2;     // 1..100
+  int64 min_spend_paisa = 3;       // 0..10,000,000
+  int64 reward_value_paisa = 4;    // 100..10,000,000
+  int32 expiry_months = 5;         // 1..120
+  bool credit_bills_earn = 6;      // on-account bills earn (pending until repaid)
+  int64 birthday_reward_paisa = 7; // 0 = off
+}
+
+enum LoyaltyEntryKind {
+  LOYALTY_ENTRY_KIND_UNSPECIFIED = 0;
+  LOYALTY_ENTRY_KIND_EARN = 1;
+  LOYALTY_ENTRY_KIND_REDEEM = 2;
+  LOYALTY_ENTRY_KIND_REVERSE = 3;
+  LOYALTY_ENTRY_KIND_EXPIRE = 4;
+  LOYALTY_ENTRY_KIND_ADJUST = 5;
+  LOYALTY_ENTRY_KIND_BIRTHDAY = 6;
+}
+
+enum LoyaltyEntryStatus {
+  LOYALTY_ENTRY_STATUS_UNSPECIFIED = 0;
+  LOYALTY_ENTRY_STATUS_PENDING = 1; // an on-account bill's stamp, until the bill is fully repaid
+  LOYALTY_ENTRY_STATUS_DONE = 2;
+}
+
+// The card's append-only ledger. Stamps = sum of DONE entries.
+message LoyaltyEntry {
+  string id = 1;
+  string customer_id = 2;
+  LoyaltyEntryKind kind = 3;
+  int32 stamps = 4; // + or -
+  LoyaltyEntryStatus status = 5;
+  int64 reward_value_paisa = 6; // REDEEM / BIRTHDAY (and their REVERSE); 0 otherwise
+  string invoice_id = 7;
+  string invoice_number = 8;
+  string business_date = 9; // YYYY-MM-DD
+  string by_user_id = 10;
+  string by_name = 11;
+  string approved_by_user_id = 12;
+  string reason = 13;
+  int64 at_unix = 14;
+}
+
+// What the till sees: no phone beyond the masked one.
+message MemberSummary {
+  string customer_id = 1;
+  string first_name = 2;
+  string masked_phone = 3; // "98XXXXX123"
+  int32 stamps = 4;
+  int32 pending_stamps = 5;
+  int32 rewards_ready = 6;
+  int32 per_reward = 7;
+  int64 reward_value_paisa = 8;
+  int64 min_spend_paisa = 9;
+  bool stamped_today = 10; // already earned today's stamp
+  bool birthday_ready = 11;
+  int64 birthday_reward_paisa = 12;
+  string valid_until_bs = 13; // YYYY.MM.DD; "" when the card was never used
+}
+
+// Printed on the bill and kept on the invoice, so reprints match the original.
+message LoyaltySnapshot {
+  string masked_phone = 1;
+  string first_name = 2;
+  int32 stamps_after = 3;
+  bool pending = 4; // this bill's stamp waits for its on-account amount to be repaid
+  int32 per_reward = 5;
+  int64 reward_value_paisa = 6;
+  string valid_until_bs = 7;
+  string card_token = 8;
+}
+
+// Exact phone match only. A member, a customer who isn't one yet (customer_name
+// set: confirm the name, then join), or nobody (both empty).
+message FindMemberRequest {
+  string phone = 1;
+}
+message FindMemberResponse {
+  MemberSummary member = 1;
+  string customer_name = 2;
+}
+
+// Consent is required. Phone: a Nepali mobile (97/98 + 8 digits). An existing
+// customer with this phone is enrolled (no second record); name is then ignored.
+// birth_month_bs (1-12) is kept only when the birthday reward is on.
+message JoinLoyaltyRequest {
+  string phone = 1;
+  string name = 2;
+  int32 birth_month_bs = 3;
+  bool consent = 4;
+}
+
+message MemberCard {
+  MemberSummary summary = 1;
+  string name = 2;
+  string phone = 3; // full for the owner, masked for a manager
+  int64 joined_at_unix = 4;
+  string joined_by_name = 5;
+  int32 birth_month_bs = 6; // 0 = none
+  string card_token = 7;    // status-page token; "" = no link
+  repeated LoyaltyEntry entries = 8; // newest first
+}
+
+message MemberRow {
+  string customer_id = 1;
+  string name = 2;
+  string phone = 3; // full for the owner, masked for a manager
+  int32 stamps = 4;
+  int32 rewards_ready = 5;
+  int64 joined_at_unix = 6;
+  int64 last_visit_at_unix = 7; // 0 = never
+}
+
+message ListMembersRequest {}
+message ListMembersResponse {
+  repeated MemberRow members = 1; // by name
+}
+
+message GetMemberRequest {
+  string customer_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// stamps: +/- 1..100, with a reason. Owner/manager; a cashier only with approval.
+// A manager's own adjustment is self-approved (SELF_APPROVED alert).
+message AdjustStampsRequest {
+  string customer_id = 1 [(buf.validate.field).string.min_len = 1];
+  int32 stamps = 2;
+  string reason = 3;
+  optional ManagerApproval approval = 4;
+}
+
+// Stamps removed; the phone is erased unless the customer has a credit account.
+message LeaveLoyaltyRequest {
+  string customer_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+message LeaveLoyaltyResponse {}
+
+// A new status link; the old one stops working.
+message NewCardLinkRequest {
+  string customer_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetLoyaltySettingsRequest {}
+message UpdateLoyaltySettingsRequest {
+  LoyaltySettings settings = 1 [(buf.validate.field).required = true];
+}
+
+// Kathmandu days, inclusive.
+message LoyaltyReportRequest {
+  string from = 1; // YYYY-MM-DD
+  string to = 2;
+}
+message LoyaltyCashierRow {
+  string user_id = 1;
+  string name = 2;
+  int32 count = 3;
+  int64 value_paisa = 4;
+}
+message LoyaltyReport {
+  string from = 1;
+  string to = 2;
+  int32 members_total = 3;
+  int32 members_new = 4;
+  int32 members_active_90 = 5;
+  int32 stamps_earned = 6;      // on bills still issued
+  int32 redemptions_count = 7;  // REDEEM + BIRTHDAY on bills still issued
+  int64 redemptions_value_paisa = 8;
+  int64 outstanding_paisa = 9;  // rewards ready x value + partial stamps x (value / N), now
+  repeated LoyaltyCashierRow by_cashier = 10;
+}
+
+// Public: no phone, no bill history.
+message GetCardStatusRequest {
+  string token = 1;
+}
+message CardStatus {
+  string first_name = 1;
+  int32 stamps = 2;
+  int32 per_reward = 3;
+  int32 rewards_ready = 4;
+  int64 reward_value_paisa = 5;
+  string valid_until_bs = 6;
+}
+
+service LoyaltyService {
+  rpc FindMember(FindMemberRequest) returns (FindMemberResponse);
+  rpc JoinLoyalty(JoinLoyaltyRequest) returns (MemberSummary);
+  rpc ListMembers(ListMembersRequest) returns (ListMembersResponse);   // owner/manager
+  rpc GetMember(GetMemberRequest) returns (MemberCard);                // owner/manager
+  rpc AdjustStamps(AdjustStampsRequest) returns (MemberCard);
+  rpc LeaveLoyalty(LeaveLoyaltyRequest) returns (LeaveLoyaltyResponse); // owner/manager
+  rpc NewCardLink(NewCardLinkRequest) returns (MemberCard);            // owner/manager
+  rpc GetLoyaltySettings(GetLoyaltySettingsRequest) returns (LoyaltySettings);
+  rpc UpdateLoyaltySettings(UpdateLoyaltySettingsRequest) returns (LoyaltySettings); // owner
+  rpc GetLoyaltyReport(LoyaltyReportRequest) returns (LoyaltyReport);  // owner/manager
+  rpc GetCardStatus(GetCardStatusRequest) returns (CardStatus);        // public
+}

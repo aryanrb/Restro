@@ -223,7 +223,7 @@ func (q *Queries) LiveItemsOfOrders(ctx context.Context, orderIds []uuid.UUID) (
 
 const liveOpenOrders = `-- name: LiveOpenOrders :many
 
-SELECT o.id, o.type, o.table_id, o.guest_count, o.created_at, o.label, o.status,
+SELECT o.id, o.type, o.table_id, o.guest_count, o.created_at, o.label, o.status, o.bill_requested_at,
        COALESCE(t.name, '')::text AS table_name,
        COALESCE(u.name, '')::text AS waiter_name
 FROM orders o
@@ -234,15 +234,16 @@ ORDER BY o.created_at, o.id
 `
 
 type LiveOpenOrdersRow struct {
-	ID         uuid.UUID   `json:"id"`
-	Type       string      `json:"type"`
-	TableID    pgtype.UUID `json:"table_id"`
-	GuestCount int32       `json:"guest_count"`
-	CreatedAt  time.Time   `json:"created_at"`
-	Label      string      `json:"label"`
-	Status     string      `json:"status"`
-	TableName  string      `json:"table_name"`
-	WaiterName string      `json:"waiter_name"`
+	ID              uuid.UUID          `json:"id"`
+	Type            string             `json:"type"`
+	TableID         pgtype.UUID        `json:"table_id"`
+	GuestCount      int32              `json:"guest_count"`
+	CreatedAt       time.Time          `json:"created_at"`
+	Label           string             `json:"label"`
+	Status          string             `json:"status"`
+	BillRequestedAt pgtype.Timestamptz `json:"bill_requested_at"`
+	TableName       string             `json:"table_name"`
+	WaiterName      string             `json:"waiter_name"`
 }
 
 // Live view (owner/manager, read-only). Open = OPEN or BILLED (not closed yet).
@@ -263,6 +264,7 @@ func (q *Queries) LiveOpenOrders(ctx context.Context) ([]LiveOpenOrdersRow, erro
 			&i.CreatedAt,
 			&i.Label,
 			&i.Status,
+			&i.BillRequestedAt,
 			&i.TableName,
 			&i.WaiterName,
 		); err != nil {
@@ -277,7 +279,7 @@ func (q *Queries) LiveOpenOrders(ctx context.Context) ([]LiveOpenOrdersRow, erro
 }
 
 const liveOrderByID = `-- name: LiveOrderByID :one
-SELECT o.id, o.type, o.table_id, o.guest_count, o.created_at, o.label, o.status,
+SELECT o.id, o.type, o.table_id, o.guest_count, o.created_at, o.label, o.status, o.bill_requested_at,
        COALESCE(t.name, '')::text AS table_name,
        COALESCE(u.name, '')::text AS waiter_name
 FROM orders o
@@ -287,15 +289,16 @@ WHERE o.id = $1
 `
 
 type LiveOrderByIDRow struct {
-	ID         uuid.UUID   `json:"id"`
-	Type       string      `json:"type"`
-	TableID    pgtype.UUID `json:"table_id"`
-	GuestCount int32       `json:"guest_count"`
-	CreatedAt  time.Time   `json:"created_at"`
-	Label      string      `json:"label"`
-	Status     string      `json:"status"`
-	TableName  string      `json:"table_name"`
-	WaiterName string      `json:"waiter_name"`
+	ID              uuid.UUID          `json:"id"`
+	Type            string             `json:"type"`
+	TableID         pgtype.UUID        `json:"table_id"`
+	GuestCount      int32              `json:"guest_count"`
+	CreatedAt       time.Time          `json:"created_at"`
+	Label           string             `json:"label"`
+	Status          string             `json:"status"`
+	BillRequestedAt pgtype.Timestamptz `json:"bill_requested_at"`
+	TableName       string             `json:"table_name"`
+	WaiterName      string             `json:"waiter_name"`
 }
 
 func (q *Queries) LiveOrderByID(ctx context.Context, id uuid.UUID) (LiveOrderByIDRow, error) {
@@ -309,6 +312,7 @@ func (q *Queries) LiveOrderByID(ctx context.Context, id uuid.UUID) (LiveOrderByI
 		&i.CreatedAt,
 		&i.Label,
 		&i.Status,
+		&i.BillRequestedAt,
 		&i.TableName,
 		&i.WaiterName,
 	)

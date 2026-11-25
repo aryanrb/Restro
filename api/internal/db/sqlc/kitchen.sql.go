@@ -91,7 +91,7 @@ func (q *Queries) ListModifiersByItemIDs(ctx context.Context, itemIds []uuid.UUI
 }
 
 const listOrderItemsByIDs = `-- name: ListOrderItemsByIDs :many
-SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id, variant_id, modifier_ids FROM order_items WHERE id = ANY($1::uuid[])
+SELECT id, order_id, client_id, menu_item_id, name_en, name_ne, variant_name_en, variant_name_ne, has_variant, unit_price_paisa, quantity, note, station_id, status, void_reason, voided_by_user_id, void_approved_by_user_id, created_at, invoice_id, sent_at, added_by_user_id, variant_id, modifier_ids, source FROM order_items WHERE id = ANY($1::uuid[])
 `
 
 func (q *Queries) ListOrderItemsByIDs(ctx context.Context, ids []uuid.UUID) ([]OrderItem, error) {
@@ -127,6 +127,7 @@ func (q *Queries) ListOrderItemsByIDs(ctx context.Context, ids []uuid.UUID) ([]O
 			&i.AddedByUserID,
 			&i.VariantID,
 			&i.ModifierIds,
+			&i.Source,
 		); err != nil {
 			return nil, err
 		}
@@ -140,7 +141,7 @@ func (q *Queries) ListOrderItemsByIDs(ctx context.Context, ids []uuid.UUID) ([]O
 
 const listStationOpenItems = `-- name: ListStationOpenItems :many
 SELECT
-    i.id, i.order_id, i.client_id, i.menu_item_id, i.name_en, i.name_ne, i.variant_name_en, i.variant_name_ne, i.has_variant, i.unit_price_paisa, i.quantity, i.note, i.station_id, i.status, i.void_reason, i.voided_by_user_id, i.void_approved_by_user_id, i.created_at, i.invoice_id, i.sent_at, i.added_by_user_id, i.variant_id, i.modifier_ids,
+    i.id, i.order_id, i.client_id, i.menu_item_id, i.name_en, i.name_ne, i.variant_name_en, i.variant_name_ne, i.has_variant, i.unit_price_paisa, i.quantity, i.note, i.station_id, i.status, i.void_reason, i.voided_by_user_id, i.void_approved_by_user_id, i.created_at, i.invoice_id, i.sent_at, i.added_by_user_id, i.variant_id, i.modifier_ids, i.source,
     o.client_id AS order_client_id,
     o.type      AS order_type,
     COALESCE(t.name, '') AS table_name
@@ -175,6 +176,7 @@ type ListStationOpenItemsRow struct {
 	AddedByUserID        pgtype.UUID        `json:"added_by_user_id"`
 	VariantID            pgtype.UUID        `json:"variant_id"`
 	ModifierIds          []uuid.UUID        `json:"modifier_ids"`
+	Source               string             `json:"source"`
 	OrderClientID        uuid.UUID          `json:"order_client_id"`
 	OrderType            string             `json:"order_type"`
 	TableName            string             `json:"table_name"`
@@ -213,6 +215,7 @@ func (q *Queries) ListStationOpenItems(ctx context.Context, stationID uuid.UUID)
 			&i.AddedByUserID,
 			&i.VariantID,
 			&i.ModifierIds,
+			&i.Source,
 			&i.OrderClientID,
 			&i.OrderType,
 			&i.TableName,

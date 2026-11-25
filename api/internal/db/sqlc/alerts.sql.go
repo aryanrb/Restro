@@ -492,7 +492,7 @@ func (q *Queries) AlertPushExists(ctx context.Context, arg AlertPushExistsParams
 }
 
 const alertRebillSource = `-- name: AlertRebillSource :one
-SELECT c.id, c.fiscal_year, c.number, c.mode, c.bs_date, c.bs_year, c.bs_month, c.bs_day, c.ad_datetime, c.order_id, c.buyer_name, c.buyer_pan, c.subtotal_paisa, c.discount_paisa, c.service_charge_paisa, c.taxable_paisa, c.vat_paisa, c.rounding_paisa, c.total_paisa, c.discount_reason, c.discount_approved_by_user_id, c.status, c.cancel_reason, c.cancelled_by_user_id, c.cancel_approved_by_user_id, c.cancelled_at, c.print_count, c.created_by_user_id, c.created_at, c.display_number, c.seller_name_en, c.seller_name_ne, c.seller_address, c.seller_pan_number, c.seller_vat_rate_bp, c.seller_vat_registered, c.seller_logo_url, c.issued_by_name, c.place, c.order_client_id FROM invoices c
+SELECT c.id, c.fiscal_year, c.number, c.mode, c.bs_date, c.bs_year, c.bs_month, c.bs_day, c.ad_datetime, c.order_id, c.buyer_name, c.buyer_pan, c.subtotal_paisa, c.discount_paisa, c.service_charge_paisa, c.taxable_paisa, c.vat_paisa, c.rounding_paisa, c.total_paisa, c.discount_reason, c.discount_approved_by_user_id, c.status, c.cancel_reason, c.cancelled_by_user_id, c.cancel_approved_by_user_id, c.cancelled_at, c.print_count, c.created_by_user_id, c.created_at, c.display_number, c.seller_name_en, c.seller_name_ne, c.seller_address, c.seller_pan_number, c.seller_vat_rate_bp, c.seller_vat_registered, c.seller_logo_url, c.issued_by_name, c.place, c.order_client_id, c.loyalty_customer_id, c.reward_paisa, c.loyalty_snapshot FROM invoices c
 WHERE c.status = 'CANCELLED' AND c.order_id = $1 AND c.cancelled_at >= $2 AND c.total_paisa > $3
   AND EXISTS (SELECT 1 FROM invoice_lines cl JOIN invoice_lines nl ON nl.order_item_id = cl.order_item_id
               WHERE cl.invoice_id = c.id AND nl.invoice_id = $4)
@@ -558,6 +558,9 @@ func (q *Queries) AlertRebillSource(ctx context.Context, arg AlertRebillSourcePa
 		&i.IssuedByName,
 		&i.Place,
 		&i.OrderClientID,
+		&i.LoyaltyCustomerID,
+		&i.RewardPaisa,
+		&i.LoyaltySnapshot,
 	)
 	return i, err
 }

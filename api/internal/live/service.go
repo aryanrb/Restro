@@ -159,8 +159,11 @@ func toLiveOrder(o orderRow, items []itemRow, now time.Time, red int32) *restaur
 		lo.OldestWaitingMinutes = &m
 		lo.Late = m >= red
 	}
-	// Order.bill_requested_at doesn't exist yet: BILL_REQUESTED never appears.
-	lo.State = orderState(states, false)
+	// A guest's Ask for bill (guest service) sets bill_requested_at until Done or a bill.
+	if o.BillRequestedAt.Valid {
+		lo.BillRequestedAtUnix = o.BillRequestedAt.Time.Unix()
+	}
+	lo.State = orderState(states, o.BillRequestedAt.Valid)
 	return lo
 }
 

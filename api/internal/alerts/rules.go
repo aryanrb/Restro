@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
+	"github.com/oneaccord/restro/api/internal/loyalty"
 	"github.com/oneaccord/restro/api/internal/shift"
 )
 
@@ -125,12 +126,18 @@ var registry = []ruleDef{
 	},
 	{
 		// A manager approving their own void / bill cancel / discount with their own PIN.
-		rule: "SELF_APPROVED", triggers: []string{"order.void", "invoice.cancel", "invoice.issue"},
+		rule: "SELF_APPROVED", triggers: []string{"order.void", "invoice.cancel", "invoice.issue", loyalty.ActionAdjusted},
 		eval: func(c *ruleCtx) ([]firing, error) {
 			actor, approver, text := c.actor(), c.approver(), ""
 			var invoiceID uuid.UUID
 			action := c.row.Action
 			switch c.row.Action {
+			case loyalty.ActionAdjusted:
+				// A manager's own stamp adjustment (no one else's PIN) is self-approved.
+				if approver == uuid.Nil || approver != actor {
+					return nil, nil
+				}
+				text = c.str("subject")
 			case "order.void":
 				if approver == uuid.Nil || approver != actor {
 					return nil, nil

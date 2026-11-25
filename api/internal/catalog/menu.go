@@ -22,27 +22,73 @@ func (s *Service) GetMenu(ctx context.Context) (*restaurantv1.Menu, error) {
 	if _, err := auth.RequireActor(ctx); err != nil {
 		return nil, err
 	}
-	cats, err := s.q.ListCategories(ctx)
+	out, err := buildMenu(ctx, s.q)
+	if err != nil {
+		return nil, err
+	}
+	if err := attachRecipes(ctx, s.q, out.Items, out.ModifierGroups); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// PublicMenu is the menu a guest sees (guest table ordering): active categories,
+// their active items and the modifier groups those items use; no recipes (they
+// carry costs) or anything staff-only. Sold-out items keep is_86d. It does not
+// check a session: the caller decides who may read it.
+func PublicMenu(ctx context.Context, q *sqlc.Queries) (*restaurantv1.Menu, error) {
+	full, err := buildMenu(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	out := &restaurantv1.Menu{}
+	activeCat := map[string]bool{}
+	for _, c := range full.Categories {
+		if c.Active {
+			activeCat[c.Id] = true
+			out.Categories = append(out.Categories, c)
+		}
+	}
+	used := map[string]bool{}
+	for _, it := range full.Items {
+		if it.Active && activeCat[it.CategoryId] {
+			out.Items = append(out.Items, it)
+			for _, g := range it.ModifierGroupIds {
+				used[g] = true
+			}
+		}
+	}
+	for _, g := range full.ModifierGroups {
+		if used[g.Id] {
+			out.ModifierGroups = append(out.ModifierGroups, g)
+		}
+	}
+	return out, nil
+}
+
+// buildMenu loads the whole menu (no recipes).
+func buildMenu(ctx context.Context, q *sqlc.Queries) (*restaurantv1.Menu, error) {
+	cats, err := q.ListCategories(ctx)
 	if err != nil {
 		return nil, connecterr.Internal(err)
 	}
-	items, err := s.q.ListItems(ctx)
+	items, err := q.ListItems(ctx)
 	if err != nil {
 		return nil, connecterr.Internal(err)
 	}
-	variants, err := s.q.ListVariants(ctx)
+	variants, err := q.ListVariants(ctx)
 	if err != nil {
 		return nil, connecterr.Internal(err)
 	}
-	groups, err := s.q.ListModifierGroups(ctx)
+	groups, err := q.ListModifierGroups(ctx)
 	if err != nil {
 		return nil, connecterr.Internal(err)
 	}
-	mods, err := s.q.ListModifiers(ctx)
+	mods, err := q.ListModifiers(ctx)
 	if err != nil {
 		return nil, connecterr.Internal(err)
 	}
-	links, err := s.q.ListItemModifierGroups(ctx)
+	links, err := q.ListItemModifierGroups(ctx)
 	if err != nil {
 		return nil, connecterr.Internal(err)
 	}
@@ -69,9 +115,6 @@ func (s *Service) GetMenu(ctx context.Context) (*restaurantv1.Menu, error) {
 	}
 	for _, g := range groups {
 		out.ModifierGroups = append(out.ModifierGroups, toModifierGroup(g, modsByGroup[g.ID]))
-	}
-	if err := attachRecipes(ctx, s.q, out.Items, out.ModifierGroups); err != nil {
-		return nil, err
 	}
 	return out, nil
 }

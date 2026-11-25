@@ -25,9 +25,11 @@ import (
 	"github.com/oneaccord/restro/api/internal/config"
 	"github.com/oneaccord/restro/api/internal/connecterr"
 	"github.com/oneaccord/restro/api/internal/credit"
+	"github.com/oneaccord/restro/api/internal/guest"
 	"github.com/oneaccord/restro/api/internal/inventory"
 	"github.com/oneaccord/restro/api/internal/kitchen"
 	"github.com/oneaccord/restro/api/internal/live"
+	"github.com/oneaccord/restro/api/internal/loyalty"
 	"github.com/oneaccord/restro/api/internal/orders"
 	"github.com/oneaccord/restro/api/internal/purchases"
 	"github.com/oneaccord/restro/api/internal/realtime"
@@ -150,6 +152,23 @@ func New(d Deps) *echo.Echo {
 
 	reservationPath, reservationHH := restaurantv1connect.NewReservationServiceHandler(reservations.NewHandler(reservations.NewService(d.Pool, d.Hub, d.Log)), ic)
 	mount(e, reservationPath, reservationHH)
+
+	// Loyalty stamp card. GetCardStatus is public: it reads no session.
+	loyaltyPath, loyaltyHH := restaurantv1connect.NewLoyaltyServiceHandler(loyalty.NewHandler(loyalty.NewService(d.Pool, d.Hub, authSvc, d.Log)), ic)
+	mount(e, loyaltyPath, loyaltyHH)
+
+	// Guest table ordering. The desk (staff) service uses the normal chain; the
+	// PUBLIC guest service gets a chain WITHOUT the session interceptor, so even a
+	// request carrying a staff cookie has no actor there: it is identified only by
+	// its table code and its handler type exposes only the four guest RPCs.
+	guestSvc := guest.NewService(d.Pool, d.Hub, d.Log)
+	guestDeskPath, guestDeskHH := restaurantv1connect.NewGuestDeskServiceHandler(guest.NewDeskHandler(guestSvc), ic)
+	mount(e, guestDeskPath, guestDeskHH)
+	publicIC := connect.WithInterceptors(connectvalidate.NewInterceptor(), connecterr.Interceptor())
+	guestPath, guestHH := restaurantv1connect.NewGuestServiceHandler(guest.NewPublicHandler(guestSvc), publicIC)
+	mount(e, guestPath, guestHH)
+	// The guest page's own socket: only that table's guest.status pokes.
+	e.GET("/api/guest/ws", echo.WrapHandler(guestSvc.WatchHandler()))
 
 	return e
 }
