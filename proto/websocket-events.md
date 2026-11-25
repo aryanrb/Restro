@@ -46,6 +46,7 @@ query via Connect; a missed or out-of-order event can only delay state, never co
 | `menu.updated`     | — (broadcast)       | any menu/category/variant/modifier change                 | admin, waiter    |
 | `settings.updated` | — (broadcast)       | settings saved                                            | admin            |
 | `station.updated`  | station id          | station added/renamed/removed                             | admin, kitchen   |
+| `invoice.issued`   | invoice id          | `IssueBill` / `CounterSale` issued (and paid) an invoice  | cashier, owner   |
 
 ### Later plans (reserved names — do not reuse)
 

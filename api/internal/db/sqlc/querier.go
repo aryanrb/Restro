@@ -97,6 +97,10 @@ type Querier interface {
 	ListAreas(ctx context.Context) ([]Area, error)
 	// Categories ---------------------------------------------------------------
 	ListCategories(ctx context.Context) ([]MenuCategory, error)
+	// Half-open AD range [from, to).
+	ListInvoicesByAdRange(ctx context.Context, arg ListInvoicesByAdRangeParams) ([]Invoice, error)
+	ListInvoicesByBsDate(ctx context.Context, bsDate string) ([]Invoice, error)
+	ListInvoicesForOrder(ctx context.Context, orderID pgtype.UUID) ([]Invoice, error)
 	ListItemModifierGroups(ctx context.Context) ([]ItemModifierGroup, error)
 	// Items --------------------------------------------------------------------
 	ListItems(ctx context.Context) ([]MenuItem, error)
@@ -120,6 +124,10 @@ type Querier interface {
 	// Variants -----------------------------------------------------------------
 	ListVariants(ctx context.Context) ([]ItemVariant, error)
 	ListVariantsForItem(ctx context.Context, itemID uuid.UUID) ([]ItemVariant, error)
+	// Reads the caller's open shift inside a billing transaction and holds a share
+	// lock on it, so a concurrent CloseShift waits until the payments recorded
+	// against it have committed (and are counted in its report).
+	LockOpenShiftForUser(ctx context.Context, cashierUserID uuid.UUID) (Shift, error)
 	// Locks the order row for the billing transaction so concurrent bills (different
 	// command ids) of the same order serialize; the loser then sees the new status /
 	// unbilled set. Order mutations (version bumps) also wait on this lock.

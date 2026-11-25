@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -372,6 +373,176 @@ func (q *Queries) IncrementPrintCount(ctx context.Context, id uuid.UUID) (int32,
 	var print_count int32
 	err := row.Scan(&print_count)
 	return print_count, err
+}
+
+const listInvoicesByAdRange = `-- name: ListInvoicesByAdRange :many
+SELECT id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at FROM invoices
+WHERE ad_datetime >= $1 AND ad_datetime < $2
+ORDER BY ad_datetime DESC, number DESC
+`
+
+type ListInvoicesByAdRangeParams struct {
+	FromTime time.Time `json:"from_time"`
+	ToTime   time.Time `json:"to_time"`
+}
+
+// Half-open AD range [from, to).
+func (q *Queries) ListInvoicesByAdRange(ctx context.Context, arg ListInvoicesByAdRangeParams) ([]Invoice, error) {
+	rows, err := q.db.Query(ctx, listInvoicesByAdRange, arg.FromTime, arg.ToTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Invoice{}
+	for rows.Next() {
+		var i Invoice
+		if err := rows.Scan(
+			&i.ID,
+			&i.FiscalYear,
+			&i.Number,
+			&i.Mode,
+			&i.BsDate,
+			&i.BsYear,
+			&i.BsMonth,
+			&i.BsDay,
+			&i.AdDatetime,
+			&i.OrderID,
+			&i.BuyerName,
+			&i.BuyerPan,
+			&i.SubtotalPaisa,
+			&i.DiscountPaisa,
+			&i.ServiceChargePaisa,
+			&i.TaxablePaisa,
+			&i.VatPaisa,
+			&i.RoundingPaisa,
+			&i.TotalPaisa,
+			&i.DiscountReason,
+			&i.DiscountApprovedByUserID,
+			&i.Status,
+			&i.CancelReason,
+			&i.CancelledByUserID,
+			&i.CancelApprovedByUserID,
+			&i.CancelledAt,
+			&i.PrintCount,
+			&i.CreatedByUserID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInvoicesByBsDate = `-- name: ListInvoicesByBsDate :many
+SELECT id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at FROM invoices WHERE bs_date = $1 ORDER BY ad_datetime DESC, number DESC
+`
+
+func (q *Queries) ListInvoicesByBsDate(ctx context.Context, bsDate string) ([]Invoice, error) {
+	rows, err := q.db.Query(ctx, listInvoicesByBsDate, bsDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Invoice{}
+	for rows.Next() {
+		var i Invoice
+		if err := rows.Scan(
+			&i.ID,
+			&i.FiscalYear,
+			&i.Number,
+			&i.Mode,
+			&i.BsDate,
+			&i.BsYear,
+			&i.BsMonth,
+			&i.BsDay,
+			&i.AdDatetime,
+			&i.OrderID,
+			&i.BuyerName,
+			&i.BuyerPan,
+			&i.SubtotalPaisa,
+			&i.DiscountPaisa,
+			&i.ServiceChargePaisa,
+			&i.TaxablePaisa,
+			&i.VatPaisa,
+			&i.RoundingPaisa,
+			&i.TotalPaisa,
+			&i.DiscountReason,
+			&i.DiscountApprovedByUserID,
+			&i.Status,
+			&i.CancelReason,
+			&i.CancelledByUserID,
+			&i.CancelApprovedByUserID,
+			&i.CancelledAt,
+			&i.PrintCount,
+			&i.CreatedByUserID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInvoicesForOrder = `-- name: ListInvoicesForOrder :many
+SELECT id, fiscal_year, number, mode, bs_date, bs_year, bs_month, bs_day, ad_datetime, order_id, buyer_name, buyer_pan, subtotal_paisa, discount_paisa, service_charge_paisa, taxable_paisa, vat_paisa, rounding_paisa, total_paisa, discount_reason, discount_approved_by_user_id, status, cancel_reason, cancelled_by_user_id, cancel_approved_by_user_id, cancelled_at, print_count, created_by_user_id, created_at FROM invoices WHERE order_id = $1 ORDER BY ad_datetime DESC, number DESC
+`
+
+func (q *Queries) ListInvoicesForOrder(ctx context.Context, orderID pgtype.UUID) ([]Invoice, error) {
+	rows, err := q.db.Query(ctx, listInvoicesForOrder, orderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Invoice{}
+	for rows.Next() {
+		var i Invoice
+		if err := rows.Scan(
+			&i.ID,
+			&i.FiscalYear,
+			&i.Number,
+			&i.Mode,
+			&i.BsDate,
+			&i.BsYear,
+			&i.BsMonth,
+			&i.BsDay,
+			&i.AdDatetime,
+			&i.OrderID,
+			&i.BuyerName,
+			&i.BuyerPan,
+			&i.SubtotalPaisa,
+			&i.DiscountPaisa,
+			&i.ServiceChargePaisa,
+			&i.TaxablePaisa,
+			&i.VatPaisa,
+			&i.RoundingPaisa,
+			&i.TotalPaisa,
+			&i.DiscountReason,
+			&i.DiscountApprovedByUserID,
+			&i.Status,
+			&i.CancelReason,
+			&i.CancelledByUserID,
+			&i.CancelApprovedByUserID,
+			&i.CancelledAt,
+			&i.PrintCount,
+			&i.CreatedByUserID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listPaymentsForInvoice = `-- name: ListPaymentsForInvoice :many

@@ -166,6 +166,29 @@ func (q *Queries) ListShiftQrPayments(ctx context.Context, shiftID uuid.UUID) ([
 	return items, nil
 }
 
+const lockOpenShiftForUser = `-- name: LockOpenShiftForUser :one
+SELECT id, cashier_user_id, opened_at, closed_at, opening_float_paisa, counted_cash_paisa, note, status FROM shifts WHERE cashier_user_id = $1 AND status = 'OPEN' FOR SHARE
+`
+
+// Reads the caller's open shift inside a billing transaction and holds a share
+// lock on it, so a concurrent CloseShift waits until the payments recorded
+// against it have committed (and are counted in its report).
+func (q *Queries) LockOpenShiftForUser(ctx context.Context, cashierUserID uuid.UUID) (Shift, error) {
+	row := q.db.QueryRow(ctx, lockOpenShiftForUser, cashierUserID)
+	var i Shift
+	err := row.Scan(
+		&i.ID,
+		&i.CashierUserID,
+		&i.OpenedAt,
+		&i.ClosedAt,
+		&i.OpeningFloatPaisa,
+		&i.CountedCashPaisa,
+		&i.Note,
+		&i.Status,
+	)
+	return i, err
+}
+
 const openShift = `-- name: OpenShift :one
 INSERT INTO shifts (cashier_user_id, opening_float_paisa, note) VALUES ($1, $2, $3) RETURNING id, cashier_user_id, opened_at, closed_at, opening_float_paisa, counted_cash_paisa, note, status
 `

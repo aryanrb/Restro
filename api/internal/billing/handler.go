@@ -41,6 +41,18 @@ func (h *Handler) GetInvoice(ctx context.Context, req *connect.Request[restauran
 	return wrap(h.svc.GetInvoice(ctx, req.Msg))
 }
 
+func (h *Handler) IssueBill(ctx context.Context, req *connect.Request[restaurantv1.IssueBillRequest]) (*connect.Response[restaurantv1.Invoice], error) {
+	return wrap(h.svc.IssueBill(ctx, req.Msg))
+}
+
+func (h *Handler) CounterSale(ctx context.Context, req *connect.Request[restaurantv1.CounterSaleRequest]) (*connect.Response[restaurantv1.Invoice], error) {
+	return wrap(h.svc.CounterSale(ctx, req.Msg))
+}
+
+func (h *Handler) ListInvoices(ctx context.Context, req *connect.Request[restaurantv1.ListInvoicesRequest]) (*connect.Response[restaurantv1.ListInvoicesResponse], error) {
+	return wrap(h.svc.ListInvoices(ctx, req.Msg))
+}
+
 func wrap[T any](v *T, err error) (*connect.Response[T], error) {
 	if err != nil {
 		return nil, err

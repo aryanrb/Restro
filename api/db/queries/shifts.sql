@@ -26,3 +26,9 @@ FROM payments p
 JOIN invoices i ON i.id = p.invoice_id
 WHERE p.shift_id = $1 AND p.method IN ('QR_FONEPAY', 'QR_OTHER')
 ORDER BY p.created_at;
+
+-- Reads the caller's open shift inside a billing transaction and holds a share
+-- lock on it, so a concurrent CloseShift waits until the payments recorded
+-- against it have committed (and are counted in its report).
+-- name: LockOpenShiftForUser :one
+SELECT * FROM shifts WHERE cashier_user_id = $1 AND status = 'OPEN' FOR SHARE;

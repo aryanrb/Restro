@@ -61,3 +61,15 @@ RETURNING *;
 
 -- name: ListPaymentsForInvoice :many
 SELECT * FROM payments WHERE invoice_id = $1 ORDER BY created_at;
+
+-- name: ListInvoicesForOrder :many
+SELECT * FROM invoices WHERE order_id = $1 ORDER BY ad_datetime DESC, number DESC;
+
+-- name: ListInvoicesByBsDate :many
+SELECT * FROM invoices WHERE bs_date = $1 ORDER BY ad_datetime DESC, number DESC;
+
+-- Half-open AD range [from, to).
+-- name: ListInvoicesByAdRange :many
+SELECT * FROM invoices
+WHERE ad_datetime >= @from_time AND ad_datetime < @to_time
+ORDER BY ad_datetime DESC, number DESC;

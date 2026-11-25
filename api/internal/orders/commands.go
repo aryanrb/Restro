@@ -165,66 +165,11 @@ func (s *Service) AddItems(ctx context.Context, req *restaurantv1.AddItemsReques
 		if req.GetSend() {
 			status = "SENT" // one-step add+send: the same state SendItems would produce
 		}
-		applied := 0
-		for _, ni := range req.GetItems() {
-			lineCID, perr := uuid.Parse(ni.GetClientId())
-			if perr != nil {
-				out.Rejected = append(out.Rejected, rejected(ni.GetClientId(), restaurantv1.ErrorReason_ERROR_REASON_INVALID, "line client_id is not a valid id"))
-				continue
-			}
-			// Per-line idempotency: a line already on this order (a re-sent queue entry
-			// under a new command id) is a no-op, checked before validation so a later
-			// 86 or menu edit cannot turn a replay into a rejection.
-			if existing, ge := q.GetOrderItemByClientID(ctx, lineCID); ge == nil {
-				if existing.OrderID != order.ID {
-					out.Rejected = append(out.Rejected, rejected(ni.GetClientId(), restaurantv1.ErrorReason_ERROR_REASON_INVALID, "line client_id is already used on another order"))
-				}
-				continue
-			} else if !errors.Is(ge, pgx.ErrNoRows) {
-				return connecterr.Internal(ge)
-			}
-
-			pl, rej, ve := priceLine(ctx, q, ni)
-			if ve != nil {
-				return ve
-			}
-			if rej != nil {
-				out.Rejected = append(out.Rejected, rejected(ni.GetClientId(), rej.reason, rej.msg))
-				continue
-			}
-			varEn, varNe, hasVar := "", "", false
-			if pl.variant != nil {
-				varEn, varNe, hasVar = pl.variant.NameEn, pl.variant.NameNe, true
-			}
-			oi, ce := q.CreateOrderItem(ctx, sqlc.CreateOrderItemParams{
-				OrderID: order.ID, ClientID: lineCID, MenuItemID: pl.item.ID,
-				NameEn: pl.item.NameEn, NameNe: pl.item.NameNe, VariantNameEn: varEn, VariantNameNe: varNe, HasVariant: hasVar,
-				UnitPricePaisa: pl.unitPrice, Quantity: ni.GetQuantity(), Note: ni.GetNote(), StationID: pl.item.StationID,
-				Status: status,
-			})
-			if errors.Is(ce, pgx.ErrNoRows) {
-				// Inserted concurrently (or earlier in this same request): same rule as above.
-				existing, ge := q.GetOrderItemByClientID(ctx, lineCID)
-				if ge != nil {
-					return connecterr.Internal(ge)
-				}
-				if existing.OrderID != order.ID {
-					out.Rejected = append(out.Rejected, rejected(ni.GetClientId(), restaurantv1.ErrorReason_ERROR_REASON_INVALID, "line client_id is already used on another order"))
-				}
-				continue
-			}
-			if ce != nil {
-				return connecterr.Internal(ce)
-			}
-			for _, m := range pl.modifiers {
-				if e := q.CreateOrderItemModifier(ctx, sqlc.CreateOrderItemModifierParams{
-					OrderItemID: oi.ID, NameEn: m.NameEn, NameNe: m.NameNe, PriceDeltaPaisa: m.PriceDeltaPaisa,
-				}); e != nil {
-					return connecterr.Internal(e)
-				}
-			}
-			applied++
+		applied, rej, e := InsertLines(ctx, q, order.ID, req.GetItems(), status)
+		if e != nil {
+			return e
 		}
+		out.Rejected = append(out.Rejected, rej...)
 		sent = req.GetSend() && applied > 0
 		if applied > 0 {
 			if _, e := q.BumpOrderVersion(ctx, order.ID); e != nil {

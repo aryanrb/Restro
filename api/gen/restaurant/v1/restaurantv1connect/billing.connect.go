@@ -54,6 +54,15 @@ const (
 	// BillingServiceGetInvoiceProcedure is the fully-qualified name of the BillingService's GetInvoice
 	// RPC.
 	BillingServiceGetInvoiceProcedure = "/restaurant.v1.BillingService/GetInvoice"
+	// BillingServiceIssueBillProcedure is the fully-qualified name of the BillingService's IssueBill
+	// RPC.
+	BillingServiceIssueBillProcedure = "/restaurant.v1.BillingService/IssueBill"
+	// BillingServiceCounterSaleProcedure is the fully-qualified name of the BillingService's
+	// CounterSale RPC.
+	BillingServiceCounterSaleProcedure = "/restaurant.v1.BillingService/CounterSale"
+	// BillingServiceListInvoicesProcedure is the fully-qualified name of the BillingService's
+	// ListInvoices RPC.
+	BillingServiceListInvoicesProcedure = "/restaurant.v1.BillingService/ListInvoices"
 )
 
 // BillingServiceClient is a client for the restaurant.v1.BillingService service.
@@ -65,6 +74,9 @@ type BillingServiceClient interface {
 	CancelInvoice(context.Context, *connect.Request[v1.CancelInvoiceRequest]) (*connect.Response[v1.Invoice], error)
 	MarkPrinted(context.Context, *connect.Request[v1.MarkPrintedRequest]) (*connect.Response[v1.PrintInfo], error)
 	GetInvoice(context.Context, *connect.Request[v1.GetInvoiceRequest]) (*connect.Response[v1.Invoice], error)
+	IssueBill(context.Context, *connect.Request[v1.IssueBillRequest]) (*connect.Response[v1.Invoice], error)
+	CounterSale(context.Context, *connect.Request[v1.CounterSaleRequest]) (*connect.Response[v1.Invoice], error)
+	ListInvoices(context.Context, *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error)
 }
 
 // NewBillingServiceClient constructs a client for the restaurant.v1.BillingService service. By
@@ -120,6 +132,24 @@ func NewBillingServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(billingServiceMethods.ByName("GetInvoice")),
 			connect.WithClientOptions(opts...),
 		),
+		issueBill: connect.NewClient[v1.IssueBillRequest, v1.Invoice](
+			httpClient,
+			baseURL+BillingServiceIssueBillProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("IssueBill")),
+			connect.WithClientOptions(opts...),
+		),
+		counterSale: connect.NewClient[v1.CounterSaleRequest, v1.Invoice](
+			httpClient,
+			baseURL+BillingServiceCounterSaleProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("CounterSale")),
+			connect.WithClientOptions(opts...),
+		),
+		listInvoices: connect.NewClient[v1.ListInvoicesRequest, v1.ListInvoicesResponse](
+			httpClient,
+			baseURL+BillingServiceListInvoicesProcedure,
+			connect.WithSchema(billingServiceMethods.ByName("ListInvoices")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -132,6 +162,9 @@ type billingServiceClient struct {
 	cancelInvoice *connect.Client[v1.CancelInvoiceRequest, v1.Invoice]
 	markPrinted   *connect.Client[v1.MarkPrintedRequest, v1.PrintInfo]
 	getInvoice    *connect.Client[v1.GetInvoiceRequest, v1.Invoice]
+	issueBill     *connect.Client[v1.IssueBillRequest, v1.Invoice]
+	counterSale   *connect.Client[v1.CounterSaleRequest, v1.Invoice]
+	listInvoices  *connect.Client[v1.ListInvoicesRequest, v1.ListInvoicesResponse]
 }
 
 // PreviewBill calls restaurant.v1.BillingService.PreviewBill.
@@ -169,6 +202,21 @@ func (c *billingServiceClient) GetInvoice(ctx context.Context, req *connect.Requ
 	return c.getInvoice.CallUnary(ctx, req)
 }
 
+// IssueBill calls restaurant.v1.BillingService.IssueBill.
+func (c *billingServiceClient) IssueBill(ctx context.Context, req *connect.Request[v1.IssueBillRequest]) (*connect.Response[v1.Invoice], error) {
+	return c.issueBill.CallUnary(ctx, req)
+}
+
+// CounterSale calls restaurant.v1.BillingService.CounterSale.
+func (c *billingServiceClient) CounterSale(ctx context.Context, req *connect.Request[v1.CounterSaleRequest]) (*connect.Response[v1.Invoice], error) {
+	return c.counterSale.CallUnary(ctx, req)
+}
+
+// ListInvoices calls restaurant.v1.BillingService.ListInvoices.
+func (c *billingServiceClient) ListInvoices(ctx context.Context, req *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error) {
+	return c.listInvoices.CallUnary(ctx, req)
+}
+
 // BillingServiceHandler is an implementation of the restaurant.v1.BillingService service.
 type BillingServiceHandler interface {
 	PreviewBill(context.Context, *connect.Request[v1.PreviewBillRequest]) (*connect.Response[v1.BillPreview], error)
@@ -178,6 +226,9 @@ type BillingServiceHandler interface {
 	CancelInvoice(context.Context, *connect.Request[v1.CancelInvoiceRequest]) (*connect.Response[v1.Invoice], error)
 	MarkPrinted(context.Context, *connect.Request[v1.MarkPrintedRequest]) (*connect.Response[v1.PrintInfo], error)
 	GetInvoice(context.Context, *connect.Request[v1.GetInvoiceRequest]) (*connect.Response[v1.Invoice], error)
+	IssueBill(context.Context, *connect.Request[v1.IssueBillRequest]) (*connect.Response[v1.Invoice], error)
+	CounterSale(context.Context, *connect.Request[v1.CounterSaleRequest]) (*connect.Response[v1.Invoice], error)
+	ListInvoices(context.Context, *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error)
 }
 
 // NewBillingServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -229,6 +280,24 @@ func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.Handler
 		connect.WithSchema(billingServiceMethods.ByName("GetInvoice")),
 		connect.WithHandlerOptions(opts...),
 	)
+	billingServiceIssueBillHandler := connect.NewUnaryHandler(
+		BillingServiceIssueBillProcedure,
+		svc.IssueBill,
+		connect.WithSchema(billingServiceMethods.ByName("IssueBill")),
+		connect.WithHandlerOptions(opts...),
+	)
+	billingServiceCounterSaleHandler := connect.NewUnaryHandler(
+		BillingServiceCounterSaleProcedure,
+		svc.CounterSale,
+		connect.WithSchema(billingServiceMethods.ByName("CounterSale")),
+		connect.WithHandlerOptions(opts...),
+	)
+	billingServiceListInvoicesHandler := connect.NewUnaryHandler(
+		BillingServiceListInvoicesProcedure,
+		svc.ListInvoices,
+		connect.WithSchema(billingServiceMethods.ByName("ListInvoices")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/restaurant.v1.BillingService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case BillingServicePreviewBillProcedure:
@@ -245,6 +314,12 @@ func NewBillingServiceHandler(svc BillingServiceHandler, opts ...connect.Handler
 			billingServiceMarkPrintedHandler.ServeHTTP(w, r)
 		case BillingServiceGetInvoiceProcedure:
 			billingServiceGetInvoiceHandler.ServeHTTP(w, r)
+		case BillingServiceIssueBillProcedure:
+			billingServiceIssueBillHandler.ServeHTTP(w, r)
+		case BillingServiceCounterSaleProcedure:
+			billingServiceCounterSaleHandler.ServeHTTP(w, r)
+		case BillingServiceListInvoicesProcedure:
+			billingServiceListInvoicesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -280,4 +355,16 @@ func (UnimplementedBillingServiceHandler) MarkPrinted(context.Context, *connect.
 
 func (UnimplementedBillingServiceHandler) GetInvoice(context.Context, *connect.Request[v1.GetInvoiceRequest]) (*connect.Response[v1.Invoice], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.BillingService.GetInvoice is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) IssueBill(context.Context, *connect.Request[v1.IssueBillRequest]) (*connect.Response[v1.Invoice], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.BillingService.IssueBill is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) CounterSale(context.Context, *connect.Request[v1.CounterSaleRequest]) (*connect.Response[v1.Invoice], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.BillingService.CounterSale is not implemented"))
+}
+
+func (UnimplementedBillingServiceHandler) ListInvoices(context.Context, *connect.Request[v1.ListInvoicesRequest]) (*connect.Response[v1.ListInvoicesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("restaurant.v1.BillingService.ListInvoices is not implemented"))
 }

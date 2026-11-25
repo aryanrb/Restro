@@ -4,6 +4,7 @@ package restaurant.v1;
 
 import "buf/validate/validate.proto";
 import "restaurant/v1/common.proto";
+import "restaurant/v1/order.proto";
 import "restaurant/v1/settings.proto";
 
 // ---------------------------------------------------------------------------
@@ -145,6 +146,61 @@ message GetInvoiceRequest {
   string id = 1 [(buf.validate.field).string.min_len = 1];
 }
 
+// One tender of a bill paid at issue time. Validated by the service (not
+// protovalidate) so every payment problem is reported as INVALID field "payments".
+message PaymentInput {
+  PaymentMethod method = 1;
+  int64 amount_paisa = 2;
+  string reference = 3;
+}
+
+// Issue + pay in one transaction. item_ids empty = every unbilled, non-voided item
+// of the order; otherwise a subset (a split bill), which still takes a discount and
+// buyer details. payments must be non-empty, each > 0, and sum to the invoice total.
+// Needs the caller's open shift. Retries with the same command_id return the same invoice.
+message IssueBillRequest {
+  string command_id = 1 [(buf.validate.field).string.min_len = 1];
+  string order_client_id = 2 [(buf.validate.field).string.min_len = 1];
+  repeated string item_ids = 3;
+  optional DiscountInput discount = 4; // carries reason + manager approval
+  string buyer_name = 5;
+  string buyer_pan = 6;
+  repeated PaymentInput payments = 7;
+}
+
+// Counter (pay first): creates a TAKEAWAY order, its lines already SENT, and the
+// paid invoice in one transaction. Any rejected line rejects the whole sale
+// (INVALID field "lines"). order_client_id is optional (generated when blank).
+message CounterSaleRequest {
+  string command_id = 1 [(buf.validate.field).string.min_len = 1];
+  string order_client_id = 2;
+  string label = 3; // not stored yet (orders have no label column)
+  repeated NewItem lines = 4;
+  optional DiscountInput discount = 5;
+  string buyer_name = 6;
+  string buyer_pan = 7;
+  repeated PaymentInput payments = 8;
+}
+
+// AD half-open range [from_unix, to_unix) in unix seconds.
+message InvoiceDayRange {
+  int64 from_unix = 1;
+  int64 to_unix = 2;
+}
+
+// Invoices newest first, cancelled ones included (with their status).
+message ListInvoicesRequest {
+  oneof filter {
+    option (buf.validate.oneof).required = true;
+    string order_client_id = 1;
+    string bs_date = 2; // YYYY.MM.DD
+    InvoiceDayRange ad_range = 3;
+  }
+}
+message ListInvoicesResponse {
+  repeated Invoice invoices = 1;
+}
+
 service BillingService {
   rpc PreviewBill(PreviewBillRequest) returns (BillPreview);
   rpc IssueFullBill(IssueFullBillRequest) returns (Invoice);
@@ -153,4 +209,7 @@ service BillingService {
   rpc CancelInvoice(CancelInvoiceRequest) returns (Invoice);        // reopens the order
   rpc MarkPrinted(MarkPrintedRequest) returns (PrintInfo);
   rpc GetInvoice(GetInvoiceRequest) returns (Invoice);
+  rpc IssueBill(IssueBillRequest) returns (Invoice);                // issue + pay in one step
+  rpc CounterSale(CounterSaleRequest) returns (Invoice);            // takeaway order + paid invoice in one step
+  rpc ListInvoices(ListInvoicesRequest) returns (ListInvoicesResponse);
 }
