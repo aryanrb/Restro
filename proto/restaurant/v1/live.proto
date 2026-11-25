@@ -124,6 +124,8 @@ message LiveTill {
 // audit log. entry.action is the backend action ("order.void", "invoice.cancel",
 // "invoice.reprint", "menu.item.86", "shift.close"); a discounted bill appears as
 // its "invoice.issue" entry (detail carries the discount), plain bills don't.
+// alert_id: the newest alert this entry fed; "" when none or the caller can't read
+// alerts (alerts_open is likewise absent for a manager who is not a recipient).
 message LiveException {
   AuditEntry entry = 1;
   string alert_id = 2;                 // "" until alerts link to audit entries

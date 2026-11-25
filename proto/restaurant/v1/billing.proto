@@ -153,6 +153,19 @@ message PreviewBillRequest {
   string customer_id = 3;  // loyalty member (as IssueBillRequest)
   bool redeem_reward = 4;
   bool redeem_birthday = 5;
+  // Empty = every unbilled, non-voided item; otherwise exactly these (a split
+  // bill, as IssueBillRequest.item_ids; same INVALID field "item_ids" errors).
+  repeated string item_ids = 6;
+}
+
+// Counter (pay first) preview: prices the lines against the live menu without
+// creating anything. Any rejected line is INVALID field "lines" (as CounterSale).
+message PreviewCounterSaleRequest {
+  repeated NewItem lines = 1;
+  optional DiscountInput discount = 2;
+  string customer_id = 3; // loyalty, as CounterSaleRequest
+  bool redeem_reward = 4;
+  bool redeem_birthday = 5;
 }
 
 message IssueFullBillRequest {
@@ -290,4 +303,5 @@ service BillingService {
   rpc IssueBill(IssueBillRequest) returns (Invoice);                // issue + pay in one step
   rpc CounterSale(CounterSaleRequest) returns (Invoice);            // takeaway order + paid invoice in one step
   rpc ListInvoices(ListInvoicesRequest) returns (ListInvoicesResponse);
+  rpc PreviewCounterSale(PreviewCounterSaleRequest) returns (BillPreview); // counter cart, nothing persisted
 }

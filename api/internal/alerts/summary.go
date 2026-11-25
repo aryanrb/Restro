@@ -35,6 +35,8 @@ func (s *Service) RunSummaryTimer(ctx context.Context, interval time.Duration) {
 
 // SendDueSummaries does one timer tick at now.
 func (s *Service) SendDueSummaries(ctx context.Context, now time.Time) error {
+	ctx, _ = WithEvents(ctx)
+	defer SendQueuedPushes(ctx) // after the transaction committed
 	return dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
 		cfg, err := loadConfig(ctx, q)
 		if err != nil {

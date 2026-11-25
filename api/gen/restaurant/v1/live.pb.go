@@ -841,6 +841,8 @@ func (x *LiveTill) GetExpectedCashPaisa() int64 {
 // audit log. entry.action is the backend action ("order.void", "invoice.cancel",
 // "invoice.reprint", "menu.item.86", "shift.close"); a discounted bill appears as
 // its "invoice.issue" entry (detail carries the discount), plain bills don't.
+// alert_id: the newest alert this entry fed; "" when none or the caller can't read
+// alerts (alerts_open is likewise absent for a manager who is not a recipient).
 type LiveException struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Entry         *AuditEntry            `protobuf:"bytes,1,opt,name=entry,proto3" json:"entry,omitempty"`

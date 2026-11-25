@@ -13,6 +13,30 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const activeOwnerIDs = `-- name: ActiveOwnerIDs :many
+SELECT id FROM users WHERE role = 'OWNER' AND active
+`
+
+func (q *Queries) ActiveOwnerIDs(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, activeOwnerIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const alertAuditEntries = `-- name: AlertAuditEntries :many
 SELECT a.id, a.actor_user_id, a.action, a.entity, a.entity_id, a.after, a.reason,
        a.approver_user_id, a.device_label, a.created_at,
@@ -719,6 +743,17 @@ func (q *Queries) CountDayAlertPushes(ctx context.Context, arg CountDayAlertPush
 	return column_1, err
 }
 
+const countUserPushSubscriptions = `-- name: CountUserPushSubscriptions :one
+SELECT count(*)::int FROM push_subscriptions WHERE user_id = $1
+`
+
+func (q *Queries) CountUserPushSubscriptions(ctx context.Context, userID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countUserPushSubscriptions, userID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const dayAlertsByRule = `-- name: DayAlertsByRule :many
 SELECT rule, bool_or(severity = 'HIGH')::bool AS any_high, count(*)::int AS total,
        count(*) FILTER (WHERE status = 'OPEN')::int AS open,
@@ -766,6 +801,32 @@ func (q *Queries) DayAlertsByRule(ctx context.Context, arg DayAlertsByRuleParams
 		return nil, err
 	}
 	return items, nil
+}
+
+const deletePushSubscriptionByEndpoint = `-- name: DeletePushSubscriptionByEndpoint :exec
+DELETE FROM push_subscriptions WHERE endpoint = $1
+`
+
+func (q *Queries) DeletePushSubscriptionByEndpoint(ctx context.Context, endpoint string) error {
+	_, err := q.db.Exec(ctx, deletePushSubscriptionByEndpoint, endpoint)
+	return err
+}
+
+const deleteUserPushSubscription = `-- name: DeleteUserPushSubscription :execrows
+DELETE FROM push_subscriptions WHERE endpoint = $1 AND user_id = $2
+`
+
+type DeleteUserPushSubscriptionParams struct {
+	Endpoint string    `json:"endpoint"`
+	UserID   uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) DeleteUserPushSubscription(ctx context.Context, arg DeleteUserPushSubscriptionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteUserPushSubscription, arg.Endpoint, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getAlert = `-- name: GetAlert :one
@@ -827,11 +888,35 @@ func (q *Queries) GetAlertConfig(ctx context.Context) (AlertConfig, error) {
 	return i, err
 }
 
-const insertAlertPush = `-- name: InsertAlertPush :exec
+const getAlertPush = `-- name: GetAlertPush :one
+
+SELECT id, at, business_date, kind, rule, amount_paisa, count, alert_id, exclude_ids FROM alert_pushes WHERE id = $1
+`
+
+// --- Web Push ---
+func (q *Queries) GetAlertPush(ctx context.Context, id uuid.UUID) (AlertPush, error) {
+	row := q.db.QueryRow(ctx, getAlertPush, id)
+	var i AlertPush
+	err := row.Scan(
+		&i.ID,
+		&i.At,
+		&i.BusinessDate,
+		&i.Kind,
+		&i.Rule,
+		&i.AmountPaisa,
+		&i.Count,
+		&i.AlertID,
+		&i.ExcludeIds,
+	)
+	return i, err
+}
+
+const insertAlertPush = `-- name: InsertAlertPush :many
 INSERT INTO alert_pushes (at, business_date, kind, rule, amount_paisa, count, alert_id, exclude_ids)
 VALUES ($1, $2, $3, $4, $5::bigint, $6::int,
         $7::uuid, $8::uuid[])
 ON CONFLICT DO NOTHING
+RETURNING id, at, business_date, kind, rule, amount_paisa, count, alert_id, exclude_ids
 `
 
 type InsertAlertPushParams struct {
@@ -845,9 +930,10 @@ type InsertAlertPushParams struct {
 	ExcludeIds   []uuid.UUID `json:"exclude_ids"`
 }
 
-// MORE and SUMMARY are once per business day (unique index): a repeat is a no-op.
-func (q *Queries) InsertAlertPush(ctx context.Context, arg InsertAlertPushParams) error {
-	_, err := q.db.Exec(ctx, insertAlertPush,
+// MORE and SUMMARY are once per business day (unique index): a repeat is a no-op
+// (no row returned). The returned row is handed to the Web Push sender.
+func (q *Queries) InsertAlertPush(ctx context.Context, arg InsertAlertPushParams) ([]AlertPush, error) {
+	rows, err := q.db.Query(ctx, insertAlertPush,
 		arg.At,
 		arg.BusinessDate,
 		arg.Kind,
@@ -857,7 +943,32 @@ func (q *Queries) InsertAlertPush(ctx context.Context, arg InsertAlertPushParams
 		arg.AlertID,
 		arg.ExcludeIds,
 	)
-	return err
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AlertPush{}
+	for rows.Next() {
+		var i AlertPush
+		if err := rows.Scan(
+			&i.ID,
+			&i.At,
+			&i.BusinessDate,
+			&i.Kind,
+			&i.Rule,
+			&i.AmountPaisa,
+			&i.Count,
+			&i.AlertID,
+			&i.ExcludeIds,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const insertAuditReturning = `-- name: InsertAuditReturning :one
@@ -1014,6 +1125,55 @@ func (q *Queries) ListAlerts(ctx context.Context, arg ListAlertsParams) ([]Alert
 			&i.ResolvedAt,
 			&i.Note,
 			&i.Version,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPushTargets = `-- name: ListPushTargets :many
+SELECT s.id, s.user_id, s.endpoint, s.p256dh, s.auth, s.device_label, s.created_at, u.language, u.role FROM push_subscriptions s JOIN users u ON u.id = s.user_id
+WHERE u.active AND s.user_id = ANY ($1::uuid[])
+ORDER BY s.created_at
+`
+
+type ListPushTargetsRow struct {
+	ID          uuid.UUID `json:"id"`
+	UserID      uuid.UUID `json:"user_id"`
+	Endpoint    string    `json:"endpoint"`
+	P256dh      string    `json:"p256dh"`
+	Auth        string    `json:"auth"`
+	DeviceLabel string    `json:"device_label"`
+	CreatedAt   time.Time `json:"created_at"`
+	Language    string    `json:"language"`
+	Role        string    `json:"role"`
+}
+
+// Subscriptions of active users with one of the given ids, with their language.
+func (q *Queries) ListPushTargets(ctx context.Context, userIds []uuid.UUID) ([]ListPushTargetsRow, error) {
+	rows, err := q.db.Query(ctx, listPushTargets, userIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPushTargetsRow{}
+	for rows.Next() {
+		var i ListPushTargetsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Endpoint,
+			&i.P256dh,
+			&i.Auth,
+			&i.DeviceLabel,
+			&i.CreatedAt,
+			&i.Language,
+			&i.Role,
 		); err != nil {
 			return nil, err
 		}
@@ -1252,6 +1412,45 @@ func (q *Queries) UpsertAlert(ctx context.Context, arg UpsertAlertParams) (Alert
 		&i.ResolvedAt,
 		&i.Note,
 		&i.Version,
+	)
+	return i, err
+}
+
+const upsertPushSubscription = `-- name: UpsertPushSubscription :one
+INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, device_label)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (endpoint) DO UPDATE
+SET user_id = EXCLUDED.user_id, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth,
+    device_label = EXCLUDED.device_label, created_at = now()
+RETURNING id, user_id, endpoint, p256dh, auth, device_label, created_at
+`
+
+type UpsertPushSubscriptionParams struct {
+	UserID      uuid.UUID `json:"user_id"`
+	Endpoint    string    `json:"endpoint"`
+	P256dh      string    `json:"p256dh"`
+	Auth        string    `json:"auth"`
+	DeviceLabel string    `json:"device_label"`
+}
+
+// A device re-subscribing (or now used by another user) replaces its row.
+func (q *Queries) UpsertPushSubscription(ctx context.Context, arg UpsertPushSubscriptionParams) (PushSubscription, error) {
+	row := q.db.QueryRow(ctx, upsertPushSubscription,
+		arg.UserID,
+		arg.Endpoint,
+		arg.P256dh,
+		arg.Auth,
+		arg.DeviceLabel,
+	)
+	var i PushSubscription
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Endpoint,
+		&i.P256dh,
+		&i.Auth,
+		&i.DeviceLabel,
+		&i.CreatedAt,
 	)
 	return i, err
 }

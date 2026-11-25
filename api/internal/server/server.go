@@ -68,6 +68,8 @@ func New(d Deps) *echo.Echo {
 	// validate the request (protovalidate), map service errors to ErrorInfo (inner).
 	// Suspicious-activity rules run on every audit_log write (audit/hook).
 	alerts.Install(d.Log)
+	// Web Push for alert notifications; off unless VAPID keys are configured.
+	alerts.EnablePush(d.Pool, alerts.PushConfig{PublicKey: d.Cfg.VAPIDPublicKey, PrivateKey: d.Cfg.VAPIDPrivateKey, Subject: d.Cfg.VAPIDSubject}, d.Log)
 	authSvc := auth.NewService(d.Pool, d.Log)
 	e.Any("/api/ws", echo.WrapHandler(wsAuth(authSvc, d.Hub)))
 

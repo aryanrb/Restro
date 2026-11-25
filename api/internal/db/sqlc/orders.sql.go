@@ -571,6 +571,37 @@ func (q *Queries) MoveOrderItemsToOrder(ctx context.Context, arg MoveOrderItemsT
 	return err
 }
 
+const orderItemIDsByClientIDs = `-- name: OrderItemIDsByClientIDs :many
+SELECT id, client_id FROM order_items WHERE client_id = ANY($1::uuid[])
+`
+
+type OrderItemIDsByClientIDsRow struct {
+	ID       uuid.UUID `json:"id"`
+	ClientID uuid.UUID `json:"client_id"`
+}
+
+// Item-level commands accept a line's server id or its client_id: maps the client
+// ids among @ids to server ids (ids that are no line's client_id are not returned).
+func (q *Queries) OrderItemIDsByClientIDs(ctx context.Context, ids []uuid.UUID) ([]OrderItemIDsByClientIDsRow, error) {
+	rows, err := q.db.Query(ctx, orderItemIDsByClientIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OrderItemIDsByClientIDsRow{}
+	for rows.Next() {
+		var i OrderItemIDsByClientIDsRow
+		if err := rows.Scan(&i.ID, &i.ClientID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setOrderGuestCount = `-- name: SetOrderGuestCount :exec
 UPDATE orders SET guest_count = $2, updated_at = now() WHERE id = $1
 `

@@ -541,6 +541,16 @@ type PurchaseReturnLine struct {
 	VatPaisa       int64     `json:"vat_paisa"`
 }
 
+type PushSubscription struct {
+	ID          uuid.UUID `json:"id"`
+	UserID      uuid.UUID `json:"user_id"`
+	Endpoint    string    `json:"endpoint"`
+	P256dh      string    `json:"p256dh"`
+	Auth        string    `json:"auth"`
+	DeviceLabel string    `json:"device_label"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
 type Repayment struct {
 	ID                uuid.UUID          `json:"id"`
 	Number            int32              `json:"number"`

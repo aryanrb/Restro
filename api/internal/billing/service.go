@@ -49,11 +49,36 @@ func (s *Service) PreviewBill(ctx context.Context, req *restaurantv1.PreviewBill
 	if err != nil {
 		return nil, connecterr.Internal(err)
 	}
+	if len(req.GetItemIds()) > 0 {
+		if items, err = pickItems(items, req.GetItemIds()); err != nil {
+			return nil, err
+		}
+	}
 	subtotal, _, err := s.subtotalOf(ctx, s.q, order.ID, items)
 	if err != nil {
 		return nil, err
 	}
-	discount := previewDiscount(req.GetDiscount(), subtotal)
+	return s.preview(ctx, actor, order.ID, subtotal, req.GetDiscount(), loyaltyRequest(req))
+}
+
+// PreviewCounterSale previews a counter (pay-first) sale: the lines are priced
+// against the live menu and nothing is created.
+func (s *Service) PreviewCounterSale(ctx context.Context, req *restaurantv1.PreviewCounterSaleRequest) (*restaurantv1.BillPreview, error) {
+	actor, err := requireBillingRole(ctx)
+	if err != nil {
+		return nil, err
+	}
+	subtotal, err := orders.PriceLines(ctx, s.q, req.GetLines())
+	if err != nil {
+		return nil, err
+	}
+	return s.preview(ctx, actor, uuid.Nil, subtotal, req.GetDiscount(), loyaltyRequest(req))
+}
+
+// preview computes a bill's figures, and with a loyalty member its reward and
+// stamp (orderID = uuid.Nil for a bill with no order yet).
+func (s *Service) preview(ctx context.Context, actor *auth.Actor, orderID uuid.UUID, subtotal int64, disc *restaurantv1.DiscountInput, loyReq loyalty.Request) (*restaurantv1.BillPreview, error) {
+	discount := previewDiscount(disc, subtotal)
 	settings, err := s.q.GetSettings(ctx)
 	if err != nil {
 		return nil, connecterr.Internal(err)
@@ -61,14 +86,14 @@ func (s *Service) PreviewBill(ctx context.Context, req *restaurantv1.PreviewBill
 	// Loyalty: the member's reward and whether the bill earns (in a transaction:
 	// reading a card can expire it).
 	var loy *loyalty.Bill
-	if req.GetCustomerId() != "" || req.GetRedeemReward() || req.GetRedeemBirthday() {
+	if loyReq.CustomerID != "" || loyReq.RedeemReward || loyReq.RedeemBirthday {
 		err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
-			b, e := loyalty.Check(ctx, q, actor, loyaltyRequest(req), subtotal-discount, false)
+			b, e := loyalty.Check(ctx, q, actor, loyReq, subtotal-discount, false)
 			if e != nil {
 				return e
 			}
 			loy = b
-			return b.Plan(ctx, q, order.ID, subtotal-discount-b.Reward, false)
+			return b.Plan(ctx, q, orderID, subtotal-discount-b.Reward, false)
 		})
 		if err != nil {
 			return nil, err
@@ -96,6 +121,11 @@ func loyaltyRequest(req interface {
 	return loyalty.Request{CustomerID: req.GetCustomerId(), RedeemReward: req.GetRedeemReward(), RedeemBirthday: req.GetRedeemBirthday()}
 }
 
+// IssueFullBill and SplitByItem are the older issue-then-pay RPCs. They take no
+// loyalty member (no customer_id / redeem fields), so their bills neither earn a
+// stamp nor use a reward: adding it needs new request fields and the payBill
+// loyalty flow (Check under lock, Plan, stamp settlement once paid on account),
+// so it is left out. Clients bill members through IssueBill / CounterSale.
 func (s *Service) IssueFullBill(ctx context.Context, req *restaurantv1.IssueFullBillRequest) (*restaurantv1.Invoice, error) {
 	actor, err := auth.RequireRole(ctx, auth.RoleOwner, auth.RoleManager, auth.RoleCashier)
 	if err != nil {

@@ -165,7 +165,8 @@ SELECT to_char(ad_datetime AT TIME ZONE 'Asia/Kathmandu', 'YYYY-MM-DD')::text AS
        (COALESCE(sum(taxable_paisa) FILTER (WHERE status = 'ISSUED'), 0))::bigint AS taxable_paisa,
        (COALESCE(sum(discount_paisa) FILTER (WHERE status = 'ISSUED'), 0))::bigint AS discount_paisa,
        (COALESCE(sum(service_charge_paisa) FILTER (WHERE status = 'ISSUED'), 0))::bigint AS service_charge_paisa,
-       (count(*) FILTER (WHERE status = 'CANCELLED'))::int AS cancelled_count
+       (count(*) FILTER (WHERE status = 'CANCELLED'))::int AS cancelled_count,
+       (COALESCE(sum(reward_paisa) FILTER (WHERE status = 'ISSUED'), 0))::bigint AS reward_paisa
 FROM invoices
 WHERE ad_datetime BETWEEN $1 AND $2
 GROUP BY 1 ORDER BY 1
@@ -186,6 +187,7 @@ type DailySalesDetailRow struct {
 	DiscountPaisa      int64  `json:"discount_paisa"`
 	ServiceChargePaisa int64  `json:"service_charge_paisa"`
 	CancelledCount     int32  `json:"cancelled_count"`
+	RewardPaisa        int64  `json:"reward_paisa"`
 }
 
 // Daily totals by Kathmandu AD day. Money columns count issued bills only;
@@ -209,6 +211,7 @@ func (q *Queries) DailySalesDetail(ctx context.Context, arg DailySalesDetailPara
 			&i.DiscountPaisa,
 			&i.ServiceChargePaisa,
 			&i.CancelledCount,
+			&i.RewardPaisa,
 		); err != nil {
 			return nil, err
 		}
@@ -379,6 +382,7 @@ func (q *Queries) QueryAuditLogDetail(ctx context.Context, arg QueryAuditLogDeta
 const salesBookDetail = `-- name: SalesBookDetail :many
 SELECT i.id, i.fiscal_year, i.number, i.mode, i.bs_date, i.ad_datetime, i.buyer_name, i.buyer_pan,
        i.subtotal_paisa, i.discount_paisa, i.taxable_paisa, i.vat_paisa, i.total_paisa, i.status, i.print_count,
+       i.reward_paisa,
        COALESCE(u.name, '')::text AS entered_by_name,
        COALESCE(floor(extract(epoch FROM lp.printed_at)), 0)::bigint AS last_printed_at_unix,
        COALESCE(lp.printed_by_name, '')::text AS last_printed_by_name
@@ -418,6 +422,7 @@ type SalesBookDetailRow struct {
 	TotalPaisa        int64     `json:"total_paisa"`
 	Status            string    `json:"status"`
 	PrintCount        int32     `json:"print_count"`
+	RewardPaisa       int64     `json:"reward_paisa"`
 	EnteredByName     string    `json:"entered_by_name"`
 	LastPrintedAtUnix int64     `json:"last_printed_at_unix"`
 	LastPrintedByName string    `json:"last_printed_by_name"`
@@ -450,6 +455,7 @@ func (q *Queries) SalesBookDetail(ctx context.Context, arg SalesBookDetailParams
 			&i.TotalPaisa,
 			&i.Status,
 			&i.PrintCount,
+			&i.RewardPaisa,
 			&i.EnteredByName,
 			&i.LastPrintedAtUnix,
 			&i.LastPrintedByName,
@@ -490,6 +496,25 @@ func (q *Queries) TodayDiscountTotal(ctx context.Context, adDatetime time.Time) 
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const todayRewards = `-- name: TodayRewards :one
+SELECT count(*) FILTER (WHERE reward_paisa > 0)::int AS reward_count,
+       COALESCE(sum(reward_paisa), 0)::bigint AS reward_paisa
+FROM invoices WHERE ad_datetime >= $1 AND status = 'ISSUED'
+`
+
+type TodayRewardsRow struct {
+	RewardCount int32 `json:"reward_count"`
+	RewardPaisa int64 `json:"reward_paisa"`
+}
+
+// Loyalty rewards on bills issued since $1 (still issued).
+func (q *Queries) TodayRewards(ctx context.Context, adDatetime time.Time) (TodayRewardsRow, error) {
+	row := q.db.QueryRow(ctx, todayRewards, adDatetime)
+	var i TodayRewardsRow
+	err := row.Scan(&i.RewardCount, &i.RewardPaisa)
+	return i, err
 }
 
 const todaySalesByMethod = `-- name: TodaySalesByMethod :many

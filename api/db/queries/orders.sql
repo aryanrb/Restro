@@ -129,3 +129,8 @@ WHERE i.order_id = $1;
 
 -- name: SetOrderReservation :exec
 UPDATE orders SET reservation_id = @reservation_id WHERE id = @id;
+
+-- Item-level commands accept a line's server id or its client_id: maps the client
+-- ids among @ids to server ids (ids that are no line's client_id are not returned).
+-- name: OrderItemIDsByClientIDs :many
+SELECT id, client_id FROM order_items WHERE client_id = ANY(@ids::uuid[]);

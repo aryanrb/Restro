@@ -1852,6 +1852,283 @@ func (x *ListNotificationsResponse) GetPushes() []*AlertPush {
 	return nil
 }
 
+type GetPushConfigRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetPushConfigRequest) Reset() {
+	*x = GetPushConfigRequest{}
+	mi := &file_restaurant_v1_alerts_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetPushConfigRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetPushConfigRequest) ProtoMessage() {}
+
+func (x *GetPushConfigRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_alerts_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetPushConfigRequest.ProtoReflect.Descriptor instead.
+func (*GetPushConfigRequest) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_alerts_proto_rawDescGZIP(), []int{23}
+}
+
+// enabled is false when the server has no VAPID keys (push is then off; the
+// in-app notifications still work).
+type GetPushConfigResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Enabled       bool                   `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	PublicKey     string                 `protobuf:"bytes,2,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"` // VAPID application server key (base64url)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetPushConfigResponse) Reset() {
+	*x = GetPushConfigResponse{}
+	mi := &file_restaurant_v1_alerts_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetPushConfigResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetPushConfigResponse) ProtoMessage() {}
+
+func (x *GetPushConfigResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_alerts_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetPushConfigResponse.ProtoReflect.Descriptor instead.
+func (*GetPushConfigResponse) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_alerts_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *GetPushConfigResponse) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *GetPushConfigResponse) GetPublicKey() string {
+	if x != nil {
+		return x.PublicKey
+	}
+	return ""
+}
+
+// A browser PushSubscription for the caller (owner or manager). Saving the same
+// endpoint again replaces it.
+type SavePushSubscriptionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Endpoint      string                 `protobuf:"bytes,1,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
+	P256Dh        string                 `protobuf:"bytes,2,opt,name=p256dh,proto3" json:"p256dh,omitempty"`
+	Auth          string                 `protobuf:"bytes,3,opt,name=auth,proto3" json:"auth,omitempty"`
+	DeviceLabel   string                 `protobuf:"bytes,4,opt,name=device_label,json=deviceLabel,proto3" json:"device_label,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SavePushSubscriptionRequest) Reset() {
+	*x = SavePushSubscriptionRequest{}
+	mi := &file_restaurant_v1_alerts_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SavePushSubscriptionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SavePushSubscriptionRequest) ProtoMessage() {}
+
+func (x *SavePushSubscriptionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_alerts_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SavePushSubscriptionRequest.ProtoReflect.Descriptor instead.
+func (*SavePushSubscriptionRequest) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_alerts_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *SavePushSubscriptionRequest) GetEndpoint() string {
+	if x != nil {
+		return x.Endpoint
+	}
+	return ""
+}
+
+func (x *SavePushSubscriptionRequest) GetP256Dh() string {
+	if x != nil {
+		return x.P256Dh
+	}
+	return ""
+}
+
+func (x *SavePushSubscriptionRequest) GetAuth() string {
+	if x != nil {
+		return x.Auth
+	}
+	return ""
+}
+
+func (x *SavePushSubscriptionRequest) GetDeviceLabel() string {
+	if x != nil {
+		return x.DeviceLabel
+	}
+	return ""
+}
+
+type SavePushSubscriptionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SavePushSubscriptionResponse) Reset() {
+	*x = SavePushSubscriptionResponse{}
+	mi := &file_restaurant_v1_alerts_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SavePushSubscriptionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SavePushSubscriptionResponse) ProtoMessage() {}
+
+func (x *SavePushSubscriptionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_alerts_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SavePushSubscriptionResponse.ProtoReflect.Descriptor instead.
+func (*SavePushSubscriptionResponse) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_alerts_proto_rawDescGZIP(), []int{26}
+}
+
+// Removes the caller's subscription for this endpoint (unknown = no-op).
+type DeletePushSubscriptionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Endpoint      string                 `protobuf:"bytes,1,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeletePushSubscriptionRequest) Reset() {
+	*x = DeletePushSubscriptionRequest{}
+	mi := &file_restaurant_v1_alerts_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeletePushSubscriptionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeletePushSubscriptionRequest) ProtoMessage() {}
+
+func (x *DeletePushSubscriptionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_alerts_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeletePushSubscriptionRequest.ProtoReflect.Descriptor instead.
+func (*DeletePushSubscriptionRequest) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_alerts_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *DeletePushSubscriptionRequest) GetEndpoint() string {
+	if x != nil {
+		return x.Endpoint
+	}
+	return ""
+}
+
+type DeletePushSubscriptionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeletePushSubscriptionResponse) Reset() {
+	*x = DeletePushSubscriptionResponse{}
+	mi := &file_restaurant_v1_alerts_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeletePushSubscriptionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeletePushSubscriptionResponse) ProtoMessage() {}
+
+func (x *DeletePushSubscriptionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_restaurant_v1_alerts_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeletePushSubscriptionResponse.ProtoReflect.Descriptor instead.
+func (*DeletePushSubscriptionResponse) Descriptor() ([]byte, []int) {
+	return file_restaurant_v1_alerts_proto_rawDescGZIP(), []int{28}
+}
+
 var File_restaurant_v1_alerts_proto protoreflect.FileDescriptor
 
 const file_restaurant_v1_alerts_proto_rawDesc = "" +
@@ -1998,7 +2275,25 @@ const file_restaurant_v1_alerts_proto_rawDesc = "" +
 	"\x06_count\"\x1a\n" +
 	"\x18ListNotificationsRequest\"M\n" +
 	"\x19ListNotificationsResponse\x120\n" +
-	"\x06pushes\x18\x01 \x03(\v2\x18.restaurant.v1.AlertPushR\x06pushes*\x99\x06\n" +
+	"\x06pushes\x18\x01 \x03(\v2\x18.restaurant.v1.AlertPushR\x06pushes\"\x16\n" +
+	"\x14GetPushConfigRequest\"P\n" +
+	"\x15GetPushConfigResponse\x12\x18\n" +
+	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x1d\n" +
+	"\n" +
+	"public_key\x18\x02 \x01(\tR\tpublicKey\"\xb5\x01\n" +
+	"\x1bSavePushSubscriptionRequest\x12&\n" +
+	"\bendpoint\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x10R\bendpoint\x12\"\n" +
+	"\x06p256dh\x18\x02 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x02R\x06p256dh\x12\x1e\n" +
+	"\x04auth\x18\x03 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x02R\x04auth\x12*\n" +
+	"\fdevice_label\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x18xR\vdeviceLabel\"\x1e\n" +
+	"\x1cSavePushSubscriptionResponse\"G\n" +
+	"\x1dDeletePushSubscriptionRequest\x12&\n" +
+	"\bendpoint\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x10R\bendpoint\" \n" +
+	"\x1eDeletePushSubscriptionResponse*\x99\x06\n" +
 	"\tAlertRule\x12\x1a\n" +
 	"\x16ALERT_RULE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dALERT_RULE_VOID_AFTER_KITCHEN\x10\x01\x12\x1d\n" +
@@ -2038,7 +2333,7 @@ const file_restaurant_v1_alerts_proto_rawDesc = "" +
 	"\x1bALERT_PUSH_KIND_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15ALERT_PUSH_KIND_ALERT\x10\x01\x12\x18\n" +
 	"\x14ALERT_PUSH_KIND_MORE\x10\x02\x12\x1b\n" +
-	"\x17ALERT_PUSH_KIND_SUMMARY\x10\x032\xd0\x05\n" +
+	"\x17ALERT_PUSH_KIND_SUMMARY\x10\x032\x94\b\n" +
 	"\fAlertService\x12Q\n" +
 	"\n" +
 	"ListAlerts\x12 .restaurant.v1.ListAlertsRequest\x1a!.restaurant.v1.ListAlertsResponse\x12K\n" +
@@ -2048,7 +2343,10 @@ const file_restaurant_v1_alerts_proto_rawDesc = "" +
 	"\x0eGetAlertConfig\x12$.restaurant.v1.GetAlertConfigRequest\x1a\x1a.restaurant.v1.AlertConfig\x12X\n" +
 	"\x11UpdateAlertConfig\x12'.restaurant.v1.UpdateAlertConfigRequest\x1a\x1a.restaurant.v1.AlertConfig\x12O\n" +
 	"\rGetDaySummary\x12#.restaurant.v1.GetDaySummaryRequest\x1a\x19.restaurant.v1.DaySummary\x12f\n" +
-	"\x11ListNotifications\x12'.restaurant.v1.ListNotificationsRequest\x1a(.restaurant.v1.ListNotificationsResponseB\xb5\x01\n" +
+	"\x11ListNotifications\x12'.restaurant.v1.ListNotificationsRequest\x1a(.restaurant.v1.ListNotificationsResponse\x12Z\n" +
+	"\rGetPushConfig\x12#.restaurant.v1.GetPushConfigRequest\x1a$.restaurant.v1.GetPushConfigResponse\x12o\n" +
+	"\x14SavePushSubscription\x12*.restaurant.v1.SavePushSubscriptionRequest\x1a+.restaurant.v1.SavePushSubscriptionResponse\x12u\n" +
+	"\x16DeletePushSubscription\x12,.restaurant.v1.DeletePushSubscriptionRequest\x1a-.restaurant.v1.DeletePushSubscriptionResponseB\xb5\x01\n" +
 	"\x11com.restaurant.v1B\vAlertsProtoP\x01Z>github.com/oneaccord/restro/api/gen/restaurant/v1;restaurantv1\xa2\x02\x03RXX\xaa\x02\rRestaurant.V1\xca\x02\rRestaurant\\V1\xe2\x02\x19Restaurant\\V1\\GPBMetadata\xea\x02\x0eRestaurant::V1b\x06proto3"
 
 var (
@@ -2064,57 +2362,63 @@ func file_restaurant_v1_alerts_proto_rawDescGZIP() []byte {
 }
 
 var file_restaurant_v1_alerts_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_restaurant_v1_alerts_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
+var file_restaurant_v1_alerts_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_restaurant_v1_alerts_proto_goTypes = []any{
-	(AlertRule)(0),                    // 0: restaurant.v1.AlertRule
-	(AlertSeverity)(0),                // 1: restaurant.v1.AlertSeverity
-	(AlertStatus)(0),                  // 2: restaurant.v1.AlertStatus
-	(AlertPushKind)(0),                // 3: restaurant.v1.AlertPushKind
-	(*Alert)(nil),                     // 4: restaurant.v1.Alert
-	(*ListAlertsRequest)(nil),         // 5: restaurant.v1.ListAlertsRequest
-	(*ListAlertsResponse)(nil),        // 6: restaurant.v1.ListAlertsResponse
-	(*GetAlertRequest)(nil),           // 7: restaurant.v1.GetAlertRequest
-	(*GetAlertResponse)(nil),          // 8: restaurant.v1.GetAlertResponse
-	(*ResolveAlertsRequest)(nil),      // 9: restaurant.v1.ResolveAlertsRequest
-	(*ResolveAlertsResponse)(nil),     // 10: restaurant.v1.ResolveAlertsResponse
-	(*GetAlertCountsRequest)(nil),     // 11: restaurant.v1.GetAlertCountsRequest
-	(*GetAlertCountsResponse)(nil),    // 12: restaurant.v1.GetAlertCountsResponse
-	(*AlertRuleSetting)(nil),          // 13: restaurant.v1.AlertRuleSetting
-	(*DayHours)(nil),                  // 14: restaurant.v1.DayHours
-	(*WeekHours)(nil),                 // 15: restaurant.v1.WeekHours
-	(*QuietHours)(nil),                // 16: restaurant.v1.QuietHours
-	(*AlertConfig)(nil),               // 17: restaurant.v1.AlertConfig
-	(*GetAlertConfigRequest)(nil),     // 18: restaurant.v1.GetAlertConfigRequest
-	(*UpdateAlertConfigRequest)(nil),  // 19: restaurant.v1.UpdateAlertConfigRequest
-	(*GetDaySummaryRequest)(nil),      // 20: restaurant.v1.GetDaySummaryRequest
-	(*DaySummaryShift)(nil),           // 21: restaurant.v1.DaySummaryShift
-	(*DaySummaryRuleTotal)(nil),       // 22: restaurant.v1.DaySummaryRuleTotal
-	(*DaySummary)(nil),                // 23: restaurant.v1.DaySummary
-	(*AlertPush)(nil),                 // 24: restaurant.v1.AlertPush
-	(*ListNotificationsRequest)(nil),  // 25: restaurant.v1.ListNotificationsRequest
-	(*ListNotificationsResponse)(nil), // 26: restaurant.v1.ListNotificationsResponse
-	nil,                               // 27: restaurant.v1.Alert.NumParamsEntry
-	nil,                               // 28: restaurant.v1.Alert.TextParamsEntry
-	nil,                               // 29: restaurant.v1.AlertRuleSetting.ThresholdsEntry
-	(*AuditEntry)(nil),                // 30: restaurant.v1.AuditEntry
-	(*MethodTotal)(nil),               // 31: restaurant.v1.MethodTotal
+	(AlertRule)(0),                         // 0: restaurant.v1.AlertRule
+	(AlertSeverity)(0),                     // 1: restaurant.v1.AlertSeverity
+	(AlertStatus)(0),                       // 2: restaurant.v1.AlertStatus
+	(AlertPushKind)(0),                     // 3: restaurant.v1.AlertPushKind
+	(*Alert)(nil),                          // 4: restaurant.v1.Alert
+	(*ListAlertsRequest)(nil),              // 5: restaurant.v1.ListAlertsRequest
+	(*ListAlertsResponse)(nil),             // 6: restaurant.v1.ListAlertsResponse
+	(*GetAlertRequest)(nil),                // 7: restaurant.v1.GetAlertRequest
+	(*GetAlertResponse)(nil),               // 8: restaurant.v1.GetAlertResponse
+	(*ResolveAlertsRequest)(nil),           // 9: restaurant.v1.ResolveAlertsRequest
+	(*ResolveAlertsResponse)(nil),          // 10: restaurant.v1.ResolveAlertsResponse
+	(*GetAlertCountsRequest)(nil),          // 11: restaurant.v1.GetAlertCountsRequest
+	(*GetAlertCountsResponse)(nil),         // 12: restaurant.v1.GetAlertCountsResponse
+	(*AlertRuleSetting)(nil),               // 13: restaurant.v1.AlertRuleSetting
+	(*DayHours)(nil),                       // 14: restaurant.v1.DayHours
+	(*WeekHours)(nil),                      // 15: restaurant.v1.WeekHours
+	(*QuietHours)(nil),                     // 16: restaurant.v1.QuietHours
+	(*AlertConfig)(nil),                    // 17: restaurant.v1.AlertConfig
+	(*GetAlertConfigRequest)(nil),          // 18: restaurant.v1.GetAlertConfigRequest
+	(*UpdateAlertConfigRequest)(nil),       // 19: restaurant.v1.UpdateAlertConfigRequest
+	(*GetDaySummaryRequest)(nil),           // 20: restaurant.v1.GetDaySummaryRequest
+	(*DaySummaryShift)(nil),                // 21: restaurant.v1.DaySummaryShift
+	(*DaySummaryRuleTotal)(nil),            // 22: restaurant.v1.DaySummaryRuleTotal
+	(*DaySummary)(nil),                     // 23: restaurant.v1.DaySummary
+	(*AlertPush)(nil),                      // 24: restaurant.v1.AlertPush
+	(*ListNotificationsRequest)(nil),       // 25: restaurant.v1.ListNotificationsRequest
+	(*ListNotificationsResponse)(nil),      // 26: restaurant.v1.ListNotificationsResponse
+	(*GetPushConfigRequest)(nil),           // 27: restaurant.v1.GetPushConfigRequest
+	(*GetPushConfigResponse)(nil),          // 28: restaurant.v1.GetPushConfigResponse
+	(*SavePushSubscriptionRequest)(nil),    // 29: restaurant.v1.SavePushSubscriptionRequest
+	(*SavePushSubscriptionResponse)(nil),   // 30: restaurant.v1.SavePushSubscriptionResponse
+	(*DeletePushSubscriptionRequest)(nil),  // 31: restaurant.v1.DeletePushSubscriptionRequest
+	(*DeletePushSubscriptionResponse)(nil), // 32: restaurant.v1.DeletePushSubscriptionResponse
+	nil,                                    // 33: restaurant.v1.Alert.NumParamsEntry
+	nil,                                    // 34: restaurant.v1.Alert.TextParamsEntry
+	nil,                                    // 35: restaurant.v1.AlertRuleSetting.ThresholdsEntry
+	(*AuditEntry)(nil),                     // 36: restaurant.v1.AuditEntry
+	(*MethodTotal)(nil),                    // 37: restaurant.v1.MethodTotal
 }
 var file_restaurant_v1_alerts_proto_depIdxs = []int32{
 	0,  // 0: restaurant.v1.Alert.rule:type_name -> restaurant.v1.AlertRule
 	1,  // 1: restaurant.v1.Alert.severity:type_name -> restaurant.v1.AlertSeverity
 	2,  // 2: restaurant.v1.Alert.status:type_name -> restaurant.v1.AlertStatus
-	27, // 3: restaurant.v1.Alert.num_params:type_name -> restaurant.v1.Alert.NumParamsEntry
-	28, // 4: restaurant.v1.Alert.text_params:type_name -> restaurant.v1.Alert.TextParamsEntry
+	33, // 3: restaurant.v1.Alert.num_params:type_name -> restaurant.v1.Alert.NumParamsEntry
+	34, // 4: restaurant.v1.Alert.text_params:type_name -> restaurant.v1.Alert.TextParamsEntry
 	2,  // 5: restaurant.v1.ListAlertsRequest.status:type_name -> restaurant.v1.AlertStatus
 	0,  // 6: restaurant.v1.ListAlertsRequest.rule:type_name -> restaurant.v1.AlertRule
 	4,  // 7: restaurant.v1.ListAlertsResponse.alerts:type_name -> restaurant.v1.Alert
 	4,  // 8: restaurant.v1.GetAlertResponse.alert:type_name -> restaurant.v1.Alert
-	30, // 9: restaurant.v1.GetAlertResponse.audit_entries:type_name -> restaurant.v1.AuditEntry
+	36, // 9: restaurant.v1.GetAlertResponse.audit_entries:type_name -> restaurant.v1.AuditEntry
 	2,  // 10: restaurant.v1.ResolveAlertsRequest.status:type_name -> restaurant.v1.AlertStatus
 	4,  // 11: restaurant.v1.ResolveAlertsResponse.alerts:type_name -> restaurant.v1.Alert
 	0,  // 12: restaurant.v1.AlertRuleSetting.rule:type_name -> restaurant.v1.AlertRule
 	1,  // 13: restaurant.v1.AlertRuleSetting.severity:type_name -> restaurant.v1.AlertSeverity
-	29, // 14: restaurant.v1.AlertRuleSetting.thresholds:type_name -> restaurant.v1.AlertRuleSetting.ThresholdsEntry
+	35, // 14: restaurant.v1.AlertRuleSetting.thresholds:type_name -> restaurant.v1.AlertRuleSetting.ThresholdsEntry
 	14, // 15: restaurant.v1.WeekHours.days:type_name -> restaurant.v1.DayHours
 	13, // 16: restaurant.v1.AlertConfig.rules:type_name -> restaurant.v1.AlertRuleSetting
 	15, // 17: restaurant.v1.AlertConfig.opening_hours:type_name -> restaurant.v1.WeekHours
@@ -2122,7 +2426,7 @@ var file_restaurant_v1_alerts_proto_depIdxs = []int32{
 	17, // 19: restaurant.v1.UpdateAlertConfigRequest.config:type_name -> restaurant.v1.AlertConfig
 	0,  // 20: restaurant.v1.DaySummaryRuleTotal.rule:type_name -> restaurant.v1.AlertRule
 	1,  // 21: restaurant.v1.DaySummaryRuleTotal.severity:type_name -> restaurant.v1.AlertSeverity
-	31, // 22: restaurant.v1.DaySummary.by_method:type_name -> restaurant.v1.MethodTotal
+	37, // 22: restaurant.v1.DaySummary.by_method:type_name -> restaurant.v1.MethodTotal
 	21, // 23: restaurant.v1.DaySummary.shifts:type_name -> restaurant.v1.DaySummaryShift
 	22, // 24: restaurant.v1.DaySummary.alerts:type_name -> restaurant.v1.DaySummaryRuleTotal
 	3,  // 25: restaurant.v1.AlertPush.kind:type_name -> restaurant.v1.AlertPushKind
@@ -2136,16 +2440,22 @@ var file_restaurant_v1_alerts_proto_depIdxs = []int32{
 	19, // 33: restaurant.v1.AlertService.UpdateAlertConfig:input_type -> restaurant.v1.UpdateAlertConfigRequest
 	20, // 34: restaurant.v1.AlertService.GetDaySummary:input_type -> restaurant.v1.GetDaySummaryRequest
 	25, // 35: restaurant.v1.AlertService.ListNotifications:input_type -> restaurant.v1.ListNotificationsRequest
-	6,  // 36: restaurant.v1.AlertService.ListAlerts:output_type -> restaurant.v1.ListAlertsResponse
-	8,  // 37: restaurant.v1.AlertService.GetAlert:output_type -> restaurant.v1.GetAlertResponse
-	10, // 38: restaurant.v1.AlertService.ResolveAlerts:output_type -> restaurant.v1.ResolveAlertsResponse
-	12, // 39: restaurant.v1.AlertService.GetAlertCounts:output_type -> restaurant.v1.GetAlertCountsResponse
-	17, // 40: restaurant.v1.AlertService.GetAlertConfig:output_type -> restaurant.v1.AlertConfig
-	17, // 41: restaurant.v1.AlertService.UpdateAlertConfig:output_type -> restaurant.v1.AlertConfig
-	23, // 42: restaurant.v1.AlertService.GetDaySummary:output_type -> restaurant.v1.DaySummary
-	26, // 43: restaurant.v1.AlertService.ListNotifications:output_type -> restaurant.v1.ListNotificationsResponse
-	36, // [36:44] is the sub-list for method output_type
-	28, // [28:36] is the sub-list for method input_type
+	27, // 36: restaurant.v1.AlertService.GetPushConfig:input_type -> restaurant.v1.GetPushConfigRequest
+	29, // 37: restaurant.v1.AlertService.SavePushSubscription:input_type -> restaurant.v1.SavePushSubscriptionRequest
+	31, // 38: restaurant.v1.AlertService.DeletePushSubscription:input_type -> restaurant.v1.DeletePushSubscriptionRequest
+	6,  // 39: restaurant.v1.AlertService.ListAlerts:output_type -> restaurant.v1.ListAlertsResponse
+	8,  // 40: restaurant.v1.AlertService.GetAlert:output_type -> restaurant.v1.GetAlertResponse
+	10, // 41: restaurant.v1.AlertService.ResolveAlerts:output_type -> restaurant.v1.ResolveAlertsResponse
+	12, // 42: restaurant.v1.AlertService.GetAlertCounts:output_type -> restaurant.v1.GetAlertCountsResponse
+	17, // 43: restaurant.v1.AlertService.GetAlertConfig:output_type -> restaurant.v1.AlertConfig
+	17, // 44: restaurant.v1.AlertService.UpdateAlertConfig:output_type -> restaurant.v1.AlertConfig
+	23, // 45: restaurant.v1.AlertService.GetDaySummary:output_type -> restaurant.v1.DaySummary
+	26, // 46: restaurant.v1.AlertService.ListNotifications:output_type -> restaurant.v1.ListNotificationsResponse
+	28, // 47: restaurant.v1.AlertService.GetPushConfig:output_type -> restaurant.v1.GetPushConfigResponse
+	30, // 48: restaurant.v1.AlertService.SavePushSubscription:output_type -> restaurant.v1.SavePushSubscriptionResponse
+	32, // 49: restaurant.v1.AlertService.DeletePushSubscription:output_type -> restaurant.v1.DeletePushSubscriptionResponse
+	39, // [39:50] is the sub-list for method output_type
+	28, // [28:39] is the sub-list for method input_type
 	28, // [28:28] is the sub-list for extension type_name
 	28, // [28:28] is the sub-list for extension extendee
 	0,  // [0:28] is the sub-list for field type_name
@@ -2166,7 +2476,7 @@ func file_restaurant_v1_alerts_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_restaurant_v1_alerts_proto_rawDesc), len(file_restaurant_v1_alerts_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   26,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

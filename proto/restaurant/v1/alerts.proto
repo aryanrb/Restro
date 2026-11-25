@@ -239,6 +239,32 @@ message ListNotificationsResponse {
   repeated AlertPush pushes = 1;
 }
 
+// --- Web Push (spec "Push setup") ---
+
+message GetPushConfigRequest {}
+// enabled is false when the server has no VAPID keys (push is then off; the
+// in-app notifications still work).
+message GetPushConfigResponse {
+  bool enabled = 1;
+  string public_key = 2; // VAPID application server key (base64url)
+}
+
+// A browser PushSubscription for the caller (owner or manager). Saving the same
+// endpoint again replaces it.
+message SavePushSubscriptionRequest {
+  string endpoint = 1 [(buf.validate.field).string = {min_len: 1, max_len: 2048}];
+  string p256dh = 2 [(buf.validate.field).string = {min_len: 1, max_len: 256}];
+  string auth = 3 [(buf.validate.field).string = {min_len: 1, max_len: 256}];
+  string device_label = 4 [(buf.validate.field).string.max_len = 120];
+}
+message SavePushSubscriptionResponse {}
+
+// Removes the caller's subscription for this endpoint (unknown = no-op).
+message DeletePushSubscriptionRequest {
+  string endpoint = 1 [(buf.validate.field).string = {min_len: 1, max_len: 2048}];
+}
+message DeletePushSubscriptionResponse {}
+
 service AlertService {
   rpc ListAlerts(ListAlertsRequest) returns (ListAlertsResponse);
   rpc GetAlert(GetAlertRequest) returns (GetAlertResponse);
@@ -249,4 +275,9 @@ service AlertService {
   rpc UpdateAlertConfig(UpdateAlertConfigRequest) returns (AlertConfig);
   rpc GetDaySummary(GetDaySummaryRequest) returns (DaySummary);
   rpc ListNotifications(ListNotificationsRequest) returns (ListNotificationsResponse);
+  // Web Push: owner or manager. Sending applies quiet hours, the daily cap and
+  // the recipient list exactly like ListNotifications.
+  rpc GetPushConfig(GetPushConfigRequest) returns (GetPushConfigResponse);
+  rpc SavePushSubscription(SavePushSubscriptionRequest) returns (SavePushSubscriptionResponse);
+  rpc DeletePushSubscription(DeletePushSubscriptionRequest) returns (DeletePushSubscriptionResponse);
 }

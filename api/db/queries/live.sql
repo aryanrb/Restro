@@ -72,3 +72,12 @@ WHERE a.created_at >= @since
        OR (a.action = 'invoice.issue' AND inv.discount_paisa > 0))
 ORDER BY a.created_at DESC, a.id DESC
 LIMIT 50;
+
+-- The newest alert each of the given audit entries fed (alerts.audit_ids), minus
+-- alerts about hide_for (a manager never sees alerts involving themselves).
+-- name: LiveExceptionAlerts :many
+SELECT DISTINCT ON (x.audit_id) x.audit_id::bigint AS audit_id, al.id AS alert_id
+FROM alerts al, unnest(al.audit_ids) AS x(audit_id)
+WHERE x.audit_id = ANY(@audit_ids::bigint[])
+  AND (sqlc.narg('hide_for')::uuid IS NULL OR NOT (sqlc.narg('hide_for')::uuid = ANY (al.involved_ids)))
+ORDER BY x.audit_id, al.seq DESC;

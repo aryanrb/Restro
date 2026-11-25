@@ -363,3 +363,36 @@ func TestLiveOrderCard(t *testing.T) {
 		t.Fatalf("bad id: %v", err)
 	}
 }
+
+// The owner sees the open-alert count and each exception's alert; a manager who
+// is not an alert recipient sees neither.
+func TestLiveAlertsOpenAndExceptionAlertID(t *testing.T) {
+	f := newFixture(t)
+	f.exec(`TRUNCATE alerts CASCADE`)
+	owner, _ := f.as(auth.RoleOwner, "Ram")
+	var voidAudit int64
+	if err := f.pool.QueryRow(f.ctx, `SELECT id FROM audit_log WHERE action = 'order.void'`).Scan(&voidAudit); err != nil {
+		t.Fatal(err)
+	}
+	alertID := f.id(`INSERT INTO alerts (rule, severity, business_date, first_at, last_at, group_key, audit_ids)
+		VALUES ('VOID_AFTER_PREP', 'HIGH', current_date, now(), now(), 'g', ARRAY[$1::bigint]) RETURNING id`, voidAudit)
+	snap, err := f.svc.Snapshot(owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Today.AlertsOpen == nil || *snap.Today.AlertsOpen != 1 {
+		t.Fatalf("alerts open = %v", snap.Today.AlertsOpen)
+	}
+	var got string
+	for _, x := range snap.Exceptions {
+		if x.Entry.Id == voidAudit {
+			got = x.AlertId
+		}
+	}
+	if got != alertID.String() {
+		t.Fatalf("void alert id = %q, want %s", got, alertID)
+	}
+	if snap, _ = f.svc.Snapshot(f.sita); snap.Today.AlertsOpen != nil || snap.Exceptions[0].AlertId != "" {
+		t.Fatalf("non-recipient manager sees alerts: %v %q", snap.Today.AlertsOpen, snap.Exceptions[0].AlertId)
+	}
+}

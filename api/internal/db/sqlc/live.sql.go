@@ -55,6 +55,46 @@ func (q *Queries) LiveCoversSince(ctx context.Context, createdAt time.Time) (int
 	return column_1, err
 }
 
+const liveExceptionAlerts = `-- name: LiveExceptionAlerts :many
+SELECT DISTINCT ON (x.audit_id) x.audit_id::bigint AS audit_id, al.id AS alert_id
+FROM alerts al, unnest(al.audit_ids) AS x(audit_id)
+WHERE x.audit_id = ANY($1::bigint[])
+  AND ($2::uuid IS NULL OR NOT ($2::uuid = ANY (al.involved_ids)))
+ORDER BY x.audit_id, al.seq DESC
+`
+
+type LiveExceptionAlertsParams struct {
+	AuditIds []int64     `json:"audit_ids"`
+	HideFor  pgtype.UUID `json:"hide_for"`
+}
+
+type LiveExceptionAlertsRow struct {
+	AuditID int64     `json:"audit_id"`
+	AlertID uuid.UUID `json:"alert_id"`
+}
+
+// The newest alert each of the given audit entries fed (alerts.audit_ids), minus
+// alerts about hide_for (a manager never sees alerts involving themselves).
+func (q *Queries) LiveExceptionAlerts(ctx context.Context, arg LiveExceptionAlertsParams) ([]LiveExceptionAlertsRow, error) {
+	rows, err := q.db.Query(ctx, liveExceptionAlerts, arg.AuditIds, arg.HideFor)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LiveExceptionAlertsRow{}
+	for rows.Next() {
+		var i LiveExceptionAlertsRow
+		if err := rows.Scan(&i.AuditID, &i.AlertID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const liveExceptions = `-- name: LiveExceptions :many
 SELECT a.id, a.actor_user_id, a.action, a.entity, a.entity_id, a.after, a.reason,
        a.approver_user_id, a.device_label, a.created_at,

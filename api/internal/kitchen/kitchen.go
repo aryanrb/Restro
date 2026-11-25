@@ -93,7 +93,8 @@ func (s *Service) ListStationTickets(ctx context.Context, stationID string) ([]*
 }
 
 func (s *Service) StartItems(ctx context.Context, itemIDs []string) (*restaurantv1.KitchenActionResponse, error) {
-	return s.transition(ctx, itemIDs, "PREPARING", []string{"SENT"}, false)
+	// READY -> PREPARING is the KDS's "undo ready" (same as the web's fake backend).
+	return s.transition(ctx, itemIDs, "PREPARING", []string{"SENT", "READY"}, false)
 }
 
 func (s *Service) MarkItemsReady(ctx context.Context, itemIDs []string) (*restaurantv1.KitchenActionResponse, error) {
@@ -129,6 +130,11 @@ func (s *Service) transition(ctx context.Context, itemIDs []string, to string, f
 	}
 	var updated []*restaurantv1.Order
 	err = dbx.WithTx(ctx, s.pool, s.q, func(q *sqlc.Queries) error {
+		// Lines may be named by their client_id too.
+		var e error
+		if ids, e = orders.ResolveItemIDs(ctx, q, ids); e != nil {
+			return e
+		}
 		if e := q.KdsSetItemsStatus(ctx, sqlc.KdsSetItemsStatusParams{Status: to, Ids: ids, FromStatus: from}); e != nil {
 			return connecterr.Internal(e)
 		}
@@ -160,8 +166,8 @@ func (s *Service) transition(ctx context.Context, itemIDs []string, to string, f
 		return nil, err
 	}
 	if notifyWaiter {
-		for _, id := range itemIDs {
-			s.emit(realtime.Event{Type: "item.ready", ID: id})
+		for _, id := range ids {
+			s.emit(realtime.Event{Type: "item.ready", ID: id.String()})
 		}
 	}
 	s.emitOrders(updated)

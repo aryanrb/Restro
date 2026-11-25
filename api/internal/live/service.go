@@ -21,6 +21,7 @@ import (
 	"go.uber.org/zap"
 
 	restaurantv1 "github.com/oneaccord/restro/api/gen/restaurant/v1"
+	"github.com/oneaccord/restro/api/internal/alerts"
 	"github.com/oneaccord/restro/api/internal/auth"
 	"github.com/oneaccord/restro/api/internal/connecterr"
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
@@ -346,6 +347,9 @@ func (s *Service) Snapshot(ctx context.Context) (*restaurantv1.LiveSnapshot, err
 	if snap.Exceptions, err = s.exceptions(ctx, since); err != nil {
 		return nil, err
 	}
+	if err := s.alerts(ctx, snap); err != nil {
+		return nil, err
+	}
 	return snap, nil
 }
 
@@ -465,6 +469,39 @@ func (s *Service) exceptions(ctx context.Context, since time.Time) ([]*restauran
 		}})
 	}
 	return out, nil
+}
+
+// alerts fills today.alerts_open (the bell's open count) and each exception's
+// alert_id, for a caller who may read alerts; others keep them absent / "".
+func (s *Service) alerts(ctx context.Context, snap *restaurantv1.LiveSnapshot) error {
+	ok, hideFor, err := alerts.ReaderScope(ctx, s.q)
+	if err != nil || !ok {
+		return err
+	}
+	counts, err := s.q.AlertCounts(ctx, hideFor)
+	if err != nil {
+		return connecterr.Internal(err)
+	}
+	snap.Today.AlertsOpen = &counts.Open
+	if len(snap.Exceptions) == 0 {
+		return nil
+	}
+	ids := make([]int64, len(snap.Exceptions))
+	for i, x := range snap.Exceptions {
+		ids[i] = x.Entry.Id
+	}
+	rows, err := s.q.LiveExceptionAlerts(ctx, sqlc.LiveExceptionAlertsParams{AuditIds: ids, HideFor: hideFor})
+	if err != nil {
+		return connecterr.Internal(err)
+	}
+	alertOf := make(map[int64]string, len(rows))
+	for _, r := range rows {
+		alertOf[r.AuditID] = r.AlertID.String()
+	}
+	for _, x := range snap.Exceptions {
+		x.AlertId = alertOf[x.Entry.Id]
+	}
+	return nil
 }
 
 // Order is the read-only order card of any order (open or not).

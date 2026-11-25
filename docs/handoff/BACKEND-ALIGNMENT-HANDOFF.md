@@ -6,9 +6,10 @@ The web frontend (Next.js, repo BsalRbh/POS) talks to this backend through Conne
 
 ## Status of `feat/wave-2`
 
-- **Full test suite green** on a fresh database (all 22 packages, migrations 001–018 from scratch) on 2026-11-25.
+- **Full test suite green** on a fresh database (all packages, migrations 001–019 from scratch) on 2026-11-25.
 - **Stage 3 wave 2 built**: purchases + suppliers, reservations, loyalty, guest table ordering, plus the alert rules that waited on them (loyalty rules 19–22, LARGE_PAID_OUT 23).
-- ⚠️ **Merging into `master` deploys to Render and runs migrations 015–018 on the live database on boot.** They are additive (new tables; new columns on `customers`, `invoices`, `orders`, `order_items`, `dining_tables`), but tell whoever runs the live deploy before merging, and take a Neon backup/branch first.
+- ⚠️ **Deploy order:** deploy this backend before the matching frontend — the new frontend sends line client ids to item RPCs, which the old backend rejects.
+- ⚠️ **Merging into `master` deploys to Render and runs migrations 015–019 on the live database on boot.** They are additive (new tables; new columns on `customers`, `invoices`, `orders`, `order_items`, `dining_tables`), but tell whoever runs the live deploy before merging, and take a Neon backup/branch first.
 
 ## What has been built
 
@@ -40,6 +41,26 @@ The web frontend (Next.js, repo BsalRbh/POS) talks to this backend through Conne
 - Proto: `buf generate proto`, `buf lint proto`, `buf breaking proto --against '.git#branch=master,subdir=proto'`. All proto changes are additive.
 - Frontend live end-to-end test (16 steps, a full service day): in the web repo, `RESTRO_LIVE_API=http://localhost:8092/api pnpm vitest run src/lib/api/real/live.e2e.test.ts` with this backend running on 8092.
 
+## Deploy settings (Render)
+
+| Variable | Value | Notes |
+|---|---|---|
+| `COOKIE_SAMESITE` | `none` | Needed while the web app is on Vercel and the API on Render (different sites). Cookies become `SameSite=None; Secure` (HTTPS only). Leave unset for same-origin hosting / local dev (stays `Lax`). |
+| `CORS_ORIGINS` | the Vercel URL(s), comma-separated | Must be exact origins, no `*` (cookies ride on credentialed CORS). |
+| `VAPID_PUBLIC_KEY` | generated, see below | Web Push for alerts. Not secret: sent to the browser when a user turns notifications on. |
+| `VAPID_PRIVATE_KEY` | generated, see below | **Secret.** Signs every push. Store only in Render's env, never in git. |
+| `VAPID_SUBJECT` | `mailto:<owner or ops email>` | Contact the push services (Google/Apple/Mozilla) use if there is a problem with our pushes. |
+
+### VAPID (Web Push) — what and how
+
+Alert pushes go through the browser vendor's push service, not directly to the phone. When an owner/manager taps "Allow notifications", the browser ties the subscription to our **public** key; the push service then only accepts messages signed with the matching **private** key, so a leaked subscription can't be used by anyone else.
+
+- Generate the pair **once** (free, no account): `npx web-push generate-vapid-keys` (or `go run github.com/SherClockHolmes/webpush-go/...` equivalent). Put both keys and the subject on Render and redeploy.
+- **Never rotate them casually:** new keys invalidate every existing subscription; users must turn notifications on again.
+- If the three variables are unset, Web Push is disabled and alerts still appear in the app (polling `ListNotifications`).
+- Subscriptions are stored per user + device; ones the push service reports gone (404/410) are deleted automatically.
+- Quiet hours, the daily push cap, the recipient list and "never about your own action" are applied before sending, the same as for in-app notifications.
+
 ## Plans (all in `docs/`)
 
 - `docs/handoff/backend-gap-report-2026-11-25.md` — original frontend↔backend comparison (most items now fixed).
@@ -48,15 +69,10 @@ The web frontend (Next.js, repo BsalRbh/POS) talks to this backend through Conne
 ## Remaining work, in order
 
 1. **Login from the Vercel frontend**: set `COOKIE_SAMESITE=none` on Render (cookies become `SameSite=None; Secure`) and make sure `CORS_ORIGINS` lists the Vercel URL. Default stays `Lax` for same-origin hosting and local dev.
-2. **Smaller gaps still open** (frontend has `// GAP:` comments for each):
-   - no server preview for counter lines / item-subset bills (frontend estimates client-side; with a loyalty reward it can't show whether a stamp is earned);
-   - loyalty not on the older `IssueFullBill` / `SplitByItem` RPCs; no reward column in the sales book; no "rewards today" on the dashboard;
-   - one audit action vocabulary (see deviations above);
-   - kitchen `StartItems` ignores READY → PREPARING;
-   - item-level RPCs take server item ids (frontend keeps a client↔server id map);
-   - live view: alert counts / exception alert ids not wired, no `audit.created` event;
-   - Web Push for alerts not implemented (in-app polling via `ListNotifications`);
-   - untested so far: supplier statement, purchase book, buy list, loyalty expiry/birthday/leave/report, guest rate limits and socket forwarding.
+2. **Smaller gaps** — closed on this branch: server previews for item subsets and counter lines (with loyalty), sales-book / daily-sales reward + dashboard "rewards today", kitchen READY → PREPARING, live view alert counts + `audit.created` event, item RPCs accept the line `client_id`, every audit name mapped in the frontend, Web Push for alerts (mig 019). Still open:
+   - loyalty not on the older `IssueFullBill` / `SplitByItem` RPCs (frontend doesn't use them);
+   - `audit.created` goes to every session (mock: owner/manager only) — harmless refetch;
+   - untested: supplier statement, purchase book, buy list, loyalty expiry/birthday/leave/report, guest rate limits and socket forwarding, the service worker's push handlers.
 3. **Multi-tenancy (decided)** — before go-live, move from one deployment per restaurant to one shared deployment: `restaurant_id` on every row, Postgres row-level security (FORCE RLS + non-owner app role) behind app-level filtering; invoice numbering per restaurant/fiscal year/mode; organisation → restaurants hierarchy (makes multi-branch cheap). Needs a short design first (restaurant selection at login, cross-restaurant staff, onboarding, per-restaurant backup/export).
 4. **Go-live** — production secrets, backups, deploy; frontend switches with `NEXT_PUBLIC_API_MODE=real`.
 5. Optional: same-origin hosting (Caddy: `/` → web static export, `/api` + `/api/ws` → Go) removes the cookie/CORS issue entirely.

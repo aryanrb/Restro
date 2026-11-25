@@ -15,6 +15,7 @@ import (
 type Querier interface {
 	// BOOKED bookings that may hold a table now (the live view picks HOLD/LATE in Go).
 	ActiveBookedReservations(ctx context.Context, arg ActiveBookedReservationsParams) ([]ActiveBookedReservationsRow, error)
+	ActiveOwnerIDs(ctx context.Context) ([]uuid.UUID, error)
 	// Adds delta to the on-hand cache (and locks the row) and returns the item after.
 	AddOnHand(ctx context.Context, arg AddOnHandParams) (InventoryItem, error)
 	AddOrderGuestCount(ctx context.Context, arg AddOrderGuestCountParams) error
@@ -126,6 +127,7 @@ type Querier interface {
 	// Payments of a cancelled bill that need an adjustment but have no canceller
 	// shift to land in (the canceller had no shift open at the time).
 	CountUnplacedCancelAdjustments(ctx context.Context, id uuid.UUID) (int32, error)
+	CountUserPushSubscriptions(ctx context.Context, userID uuid.UUID) (int32, error)
 	CreateArea(ctx context.Context, arg CreateAreaParams) (Area, error)
 	CreateCalendarEvent(ctx context.Context, arg CreateCalendarEventParams) (CalendarEvent, error)
 	CreateCategory(ctx context.Context, arg CreateCategoryParams) (MenuCategory, error)
@@ -193,7 +195,9 @@ type Querier interface {
 	DeleteMenuItemRecipe(ctx context.Context, menuItemID uuid.UUID) error
 	DeleteModifierGroup(ctx context.Context, id uuid.UUID) error
 	DeleteModifierRecipe(ctx context.Context, modifierID uuid.UUID) error
+	DeletePushSubscriptionByEndpoint(ctx context.Context, endpoint string) error
 	DeleteStation(ctx context.Context, id uuid.UUID) error
+	DeleteUserPushSubscription(ctx context.Context, arg DeleteUserPushSubscriptionParams) (int64, error)
 	DeleteVariantRecipe(ctx context.Context, variantID uuid.UUID) error
 	DeleteVariantRecipeLines(ctx context.Context, variantID uuid.UUID) error
 	DiscardStockCount(ctx context.Context, arg DiscardStockCountParams) error
@@ -206,6 +210,8 @@ type Querier interface {
 	GetAlert(ctx context.Context, id uuid.UUID) (Alert, error)
 	// --- config ---
 	GetAlertConfig(ctx context.Context) (AlertConfig, error)
+	// --- Web Push ---
+	GetAlertPush(ctx context.Context, id uuid.UUID) (AlertPush, error)
 	// Settings --------------------------------------------------------------------
 	GetAnalyticsSettings(ctx context.Context) (GetAnalyticsSettingsRow, error)
 	GetArea(ctx context.Context, id uuid.UUID) (Area, error)
@@ -264,8 +270,9 @@ type Querier interface {
 	HandleGuestRequest(ctx context.Context, arg HandleGuestRequestParams) (GuestRequest, error)
 	IncrementPinFailure(ctx context.Context, id uuid.UUID) (User, error)
 	IncrementPrintCount(ctx context.Context, id uuid.UUID) (int32, error)
-	// MORE and SUMMARY are once per business day (unique index): a repeat is a no-op.
-	InsertAlertPush(ctx context.Context, arg InsertAlertPushParams) error
+	// MORE and SUMMARY are once per business day (unique index): a repeat is a no-op
+	// (no row returned). The returned row is handed to the Web Push sender.
+	InsertAlertPush(ctx context.Context, arg InsertAlertPushParams) ([]AlertPush, error)
 	InsertAudit(ctx context.Context, arg InsertAuditParams) error
 	// Suspicious activity alerts (internal/alerts). Rules run inside the transaction
 	// that wrote the audit row, so every query here takes that transaction's Queries.
@@ -369,6 +376,8 @@ type Querier interface {
 	ListPurchaseReturnsFor(ctx context.Context, ids []uuid.UUID) ([]ListPurchaseReturnsForRow, error)
 	// Bill date window (AD, inclusive), newest first; NULL filters = any.
 	ListPurchaseRows(ctx context.Context, arg ListPurchaseRowsParams) ([]ListPurchaseRowsRow, error)
+	// Subscriptions of active users with one of the given ids, with their language.
+	ListPushTargets(ctx context.Context, userIds []uuid.UUID) ([]ListPushTargetsRow, error)
 	// Newest first, voided included.
 	ListRepaymentDetails(ctx context.Context, customerID uuid.UUID) ([]ListRepaymentDetailsRow, error)
 	ListReservationsBetween(ctx context.Context, arg ListReservationsBetweenParams) ([]ListReservationsBetweenRow, error)
@@ -421,6 +430,9 @@ type Querier interface {
 	Live86Items(ctx context.Context) ([]Live86ItemsRow, error)
 	// Guests of dine-in orders opened since $1 (not cancelled).
 	LiveCoversSince(ctx context.Context, createdAt time.Time) (int32, error)
+	// The newest alert each of the given audit entries fed (alerts.audit_ids), minus
+	// alerts about hide_for (a manager never sees alerts involving themselves).
+	LiveExceptionAlerts(ctx context.Context, arg LiveExceptionAlertsParams) ([]LiveExceptionAlertsRow, error)
 	// Today's exceptions: voids, bill cancellations, reprints, 86s, shift closes, and
 	// issued bills that carry a discount. Newest first, at most 50.
 	LiveExceptions(ctx context.Context, since time.Time) ([]LiveExceptionsRow, error)
@@ -499,6 +511,9 @@ type Querier interface {
 	OpenOrdersOfTable(ctx context.Context, tableID pgtype.UUID) ([]Order, error)
 	OpenOrdersOnTables(ctx context.Context, tableIds []uuid.UUID) ([]OpenOrdersOnTablesRow, error)
 	OpenShift(ctx context.Context, arg OpenShiftParams) (Shift, error)
+	// Item-level commands accept a line's server id or its client_id: maps the client
+	// ids among @ids to server ids (ids that are no line's client_id are not returned).
+	OrderItemIDsByClientIDs(ctx context.Context, ids []uuid.UUID) ([]OrderItemIDsByClientIDsRow, error)
 	OwedToSuppliers(ctx context.Context) (int64, error)
 	PostStockCount(ctx context.Context, arg PostStockCountParams) error
 	QueryAuditLog(ctx context.Context, arg QueryAuditLogParams) ([]AuditLog, error)
@@ -595,6 +610,8 @@ type Querier interface {
 	TillPaidBetween(ctx context.Context, arg TillPaidBetweenParams) (int64, error)
 	TodayCancelled(ctx context.Context, cancelledAt pgtype.Timestamptz) (TodayCancelledRow, error)
 	TodayDiscountTotal(ctx context.Context, adDatetime time.Time) (int64, error)
+	// Loyalty rewards on bills issued since $1 (still issued).
+	TodayRewards(ctx context.Context, adDatetime time.Time) (TodayRewardsRow, error)
 	TodaySalesByMethod(ctx context.Context, adDatetime time.Time) ([]TodaySalesByMethodRow, error)
 	TodaySalesTotal(ctx context.Context, adDatetime time.Time) (TodaySalesTotalRow, error)
 	// Items voided since $1 and their value (the order line's unit price already
@@ -633,6 +650,8 @@ type Querier interface {
 	UpsertAlert(ctx context.Context, arg UpsertAlertParams) (Alert, error)
 	UpsertAnalyticsDay(ctx context.Context, arg UpsertAnalyticsDayParams) error
 	UpsertItemPurchaseSettings(ctx context.Context, arg UpsertItemPurchaseSettingsParams) (ItemPurchaseSetting, error)
+	// A device re-subscribing (or now used by another user) replaces its row.
+	UpsertPushSubscription(ctx context.Context, arg UpsertPushSubscriptionParams) (PushSubscription, error)
 	VariantHasOwnRecipe(ctx context.Context, variantID uuid.UUID) (bool, error)
 	VoidOrderItem(ctx context.Context, arg VoidOrderItemParams) error
 	VoidPurchase(ctx context.Context, arg VoidPurchaseParams) error

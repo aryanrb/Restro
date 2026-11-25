@@ -187,6 +187,8 @@ message SendItemsRequest {
   optional string user_id = 4; // see WRONG USER above
 }
 
+// item_id (VoidItem) and item_ids (MarkServed, SendItems) accept a line's server id
+// or its client_id (OrderItem.client_id).
 message VoidItemRequest {
   string command_id = 1 [(buf.validate.field).string.min_len = 1];
   string order_client_id = 2 [(buf.validate.field).string.min_len = 1];

@@ -136,8 +136,12 @@ type DashboardResponse struct {
 	CreditGivenTodayPaisa int64 `protobuf:"varint,13,opt,name=credit_given_today_paisa,json=creditGivenTodayPaisa,proto3" json:"credit_given_today_paisa,omitempty"`
 	RepaymentsTodayPaisa  int64 `protobuf:"varint,14,opt,name=repayments_today_paisa,json=repaymentsTodayPaisa,proto3" json:"repayments_today_paisa,omitempty"`
 	CreditOwedPaisa       int64 `protobuf:"varint,15,opt,name=credit_owed_paisa,json=creditOwedPaisa,proto3" json:"credit_owed_paisa,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// Loyalty: today's issued bills that used a reward, and the rewards' sum
+	// (apart from discount_paisa).
+	RewardCount   int32 `protobuf:"varint,16,opt,name=reward_count,json=rewardCount,proto3" json:"reward_count,omitempty"`
+	RewardPaisa   int64 `protobuf:"varint,17,opt,name=reward_paisa,json=rewardPaisa,proto3" json:"reward_paisa,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DashboardResponse) Reset() {
@@ -275,6 +279,20 @@ func (x *DashboardResponse) GetCreditOwedPaisa() int64 {
 	return 0
 }
 
+func (x *DashboardResponse) GetRewardCount() int32 {
+	if x != nil {
+		return x.RewardCount
+	}
+	return 0
+}
+
+func (x *DashboardResponse) GetRewardPaisa() int64 {
+	if x != nil {
+		return x.RewardPaisa
+	}
+	return 0
+}
+
 type RangeRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	FromUnix int64                  `protobuf:"varint,1,opt,name=from_unix,json=fromUnix,proto3" json:"from_unix,omitempty"`
@@ -359,6 +377,7 @@ type SalesBookRow struct {
 	// 0 / "" when it was never printed.
 	LastPrintedAtUnix int64  `protobuf:"varint,18,opt,name=last_printed_at_unix,json=lastPrintedAtUnix,proto3" json:"last_printed_at_unix,omitempty"`
 	LastPrintedByName string `protobuf:"bytes,19,opt,name=last_printed_by_name,json=lastPrintedByName,proto3" json:"last_printed_by_name,omitempty"`
+	RewardPaisa       int64  `protobuf:"varint,20,opt,name=reward_paisa,json=rewardPaisa,proto3" json:"reward_paisa,omitempty"` // loyalty reward (a discount before VAT, apart from discount_paisa)
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -526,6 +545,13 @@ func (x *SalesBookRow) GetLastPrintedByName() string {
 	return ""
 }
 
+func (x *SalesBookRow) GetRewardPaisa() int64 {
+	if x != nil {
+		return x.RewardPaisa
+	}
+	return 0
+}
+
 type SalesBookResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Rows          []*SalesBookRow        `protobuf:"bytes,1,rep,name=rows,proto3" json:"rows,omitempty"`
@@ -582,6 +608,7 @@ type DailySalesRow struct {
 	ServiceChargePaisa int64                  `protobuf:"varint,8,opt,name=service_charge_paisa,json=serviceChargePaisa,proto3" json:"service_charge_paisa,omitempty"`
 	ByMethod           []*MethodTotal         `protobuf:"bytes,9,rep,name=by_method,json=byMethod,proto3" json:"by_method,omitempty"`                     // confirmed payments on the day's issued bills
 	CancelledCount     int32                  `protobuf:"varint,10,opt,name=cancelled_count,json=cancelledCount,proto3" json:"cancelled_count,omitempty"` // bills issued that day and since cancelled
+	RewardPaisa        int64                  `protobuf:"varint,11,opt,name=reward_paisa,json=rewardPaisa,proto3" json:"reward_paisa,omitempty"`          // loyalty rewards on the day's issued bills (apart from discount_paisa)
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -682,6 +709,13 @@ func (x *DailySalesRow) GetByMethod() []*MethodTotal {
 func (x *DailySalesRow) GetCancelledCount() int32 {
 	if x != nil {
 		return x.CancelledCount
+	}
+	return 0
+}
+
+func (x *DailySalesRow) GetRewardPaisa() int64 {
+	if x != nil {
+		return x.RewardPaisa
 	}
 	return 0
 }
@@ -1425,7 +1459,7 @@ const file_restaurant_v1_report_proto_rawDesc = "" +
 	"\aTopItem\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\bquantity\x18\x02 \x01(\x05R\bquantity\x12!\n" +
-	"\famount_paisa\x18\x03 \x01(\x03R\vamountPaisa\"\xae\x05\n" +
+	"\famount_paisa\x18\x03 \x01(\x03R\vamountPaisa\"\xf4\x05\n" +
 	"\x11DashboardResponse\x12*\n" +
 	"\x11today_sales_paisa\x18\x01 \x01(\x03R\x0ftodaySalesPaisa\x12.\n" +
 	"\x13today_invoice_count\x18\x02 \x01(\x05R\x11todayInvoiceCount\x12\x1f\n" +
@@ -1445,11 +1479,13 @@ const file_restaurant_v1_report_proto_rawDesc = "" +
 	"\x15cancelled_value_paisa\x18\f \x01(\x03R\x13cancelledValuePaisa\x127\n" +
 	"\x18credit_given_today_paisa\x18\r \x01(\x03R\x15creditGivenTodayPaisa\x124\n" +
 	"\x16repayments_today_paisa\x18\x0e \x01(\x03R\x14repaymentsTodayPaisa\x12*\n" +
-	"\x11credit_owed_paisa\x18\x0f \x01(\x03R\x0fcreditOwedPaisa\"q\n" +
+	"\x11credit_owed_paisa\x18\x0f \x01(\x03R\x0fcreditOwedPaisa\x12!\n" +
+	"\freward_count\x18\x10 \x01(\x05R\vrewardCount\x12!\n" +
+	"\freward_paisa\x18\x11 \x01(\x03R\vrewardPaisa\"q\n" +
 	"\fRangeRequest\x12\x1b\n" +
 	"\tfrom_unix\x18\x01 \x01(\x03R\bfromUnix\x12\x17\n" +
 	"\ato_unix\x18\x02 \x01(\x03R\x06toUnix\x12+\n" +
-	"\x11include_estimates\x18\x03 \x01(\bR\x10includeEstimates\"\x94\x05\n" +
+	"\x11include_estimates\x18\x03 \x01(\bR\x10includeEstimates\"\xb7\x05\n" +
 	"\fSalesBookRow\x12\x1f\n" +
 	"\vfiscal_year\x18\x01 \x01(\tR\n" +
 	"fiscalYear\x12\x16\n" +
@@ -1475,9 +1511,10 @@ const file_restaurant_v1_report_proto_rawDesc = "" +
 	"printCount\x12(\n" +
 	"\x10ad_datetime_unix\x18\x11 \x01(\x03R\x0eadDatetimeUnix\x12/\n" +
 	"\x14last_printed_at_unix\x18\x12 \x01(\x03R\x11lastPrintedAtUnix\x12/\n" +
-	"\x14last_printed_by_name\x18\x13 \x01(\tR\x11lastPrintedByName\"D\n" +
+	"\x14last_printed_by_name\x18\x13 \x01(\tR\x11lastPrintedByName\x12!\n" +
+	"\freward_paisa\x18\x14 \x01(\x03R\vrewardPaisa\"D\n" +
 	"\x11SalesBookResponse\x12/\n" +
-	"\x04rows\x18\x01 \x03(\v2\x1b.restaurant.v1.SalesBookRowR\x04rows\"\x84\x03\n" +
+	"\x04rows\x18\x01 \x03(\v2\x1b.restaurant.v1.SalesBookRowR\x04rows\"\xa7\x03\n" +
 	"\rDailySalesRow\x12\x17\n" +
 	"\abs_date\x18\x01 \x01(\tR\x06bsDate\x12#\n" +
 	"\rinvoice_count\x18\x02 \x01(\x05R\finvoiceCount\x12\x1f\n" +
@@ -1490,7 +1527,8 @@ const file_restaurant_v1_report_proto_rawDesc = "" +
 	"\x14service_charge_paisa\x18\b \x01(\x03R\x12serviceChargePaisa\x127\n" +
 	"\tby_method\x18\t \x03(\v2\x1a.restaurant.v1.MethodTotalR\bbyMethod\x12'\n" +
 	"\x0fcancelled_count\x18\n" +
-	" \x01(\x05R\x0ecancelledCount\"F\n" +
+	" \x01(\x05R\x0ecancelledCount\x12!\n" +
+	"\freward_paisa\x18\v \x01(\x03R\vrewardPaisa\"F\n" +
 	"\x12DailySalesResponse\x120\n" +
 	"\x04rows\x18\x01 \x03(\v2\x1c.restaurant.v1.DailySalesRowR\x04rows\"\x99\x04\n" +
 	"\x13CancelledInvoiceRow\x12\x16\n" +

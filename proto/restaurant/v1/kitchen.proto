@@ -38,6 +38,8 @@ message ListStationTicketsResponse {
   repeated Ticket tickets = 1;
 }
 
+// Item ids may be a line's server id or its client_id (OrderItem.client_id).
+// StartItems moves SENT and READY lines (READY -> PREPARING is an "undo ready").
 message StartItemsRequest {
   repeated string item_ids = 1 [(buf.validate.field).repeated.min_items = 1];
 }

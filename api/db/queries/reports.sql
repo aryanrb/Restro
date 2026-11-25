@@ -32,6 +32,12 @@ GROUP BY p.method ORDER BY p.method;
 -- name: TodayDiscountTotal :one
 SELECT COALESCE(sum(discount_paisa), 0)::bigint FROM invoices WHERE ad_datetime >= $1 AND status = 'ISSUED';
 
+-- Loyalty rewards on bills issued since $1 (still issued).
+-- name: TodayRewards :one
+SELECT count(*) FILTER (WHERE reward_paisa > 0)::int AS reward_count,
+       COALESCE(sum(reward_paisa), 0)::bigint AS reward_paisa
+FROM invoices WHERE ad_datetime >= $1 AND status = 'ISSUED';
+
 -- Items voided since $1 and their value (the order line's unit price already
 -- includes its modifiers).
 -- name: TodayVoids :one
@@ -56,7 +62,8 @@ SELECT to_char(ad_datetime AT TIME ZONE 'Asia/Kathmandu', 'YYYY-MM-DD')::text AS
        (COALESCE(sum(taxable_paisa) FILTER (WHERE status = 'ISSUED'), 0))::bigint AS taxable_paisa,
        (COALESCE(sum(discount_paisa) FILTER (WHERE status = 'ISSUED'), 0))::bigint AS discount_paisa,
        (COALESCE(sum(service_charge_paisa) FILTER (WHERE status = 'ISSUED'), 0))::bigint AS service_charge_paisa,
-       (count(*) FILTER (WHERE status = 'CANCELLED'))::int AS cancelled_count
+       (count(*) FILTER (WHERE status = 'CANCELLED'))::int AS cancelled_count,
+       (COALESCE(sum(reward_paisa) FILTER (WHERE status = 'ISSUED'), 0))::bigint AS reward_paisa
 FROM invoices
 WHERE ad_datetime BETWEEN @from_ts AND @to_ts
 GROUP BY 1 ORDER BY 1;
@@ -73,6 +80,7 @@ GROUP BY 1, 2 ORDER BY 1, 2;
 -- name: SalesBookDetail :many
 SELECT i.id, i.fiscal_year, i.number, i.mode, i.bs_date, i.ad_datetime, i.buyer_name, i.buyer_pan,
        i.subtotal_paisa, i.discount_paisa, i.taxable_paisa, i.vat_paisa, i.total_paisa, i.status, i.print_count,
+       i.reward_paisa,
        COALESCE(u.name, '')::text AS entered_by_name,
        COALESCE(floor(extract(epoch FROM lp.printed_at)), 0)::bigint AS last_printed_at_unix,
        COALESCE(lp.printed_by_name, '')::text AS last_printed_by_name

@@ -1198,6 +1198,8 @@ func (x *SendItemsRequest) GetUserId() string {
 	return ""
 }
 
+// item_id (VoidItem) and item_ids (MarkServed, SendItems) accept a line's server id
+// or its client_id (OrderItem.client_id).
 type VoidItemRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`

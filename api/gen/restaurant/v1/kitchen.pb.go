@@ -286,6 +286,8 @@ func (x *ListStationTicketsResponse) GetTickets() []*Ticket {
 	return nil
 }
 
+// Item ids may be a line's server id or its client_id (OrderItem.client_id).
+// StartItems moves SENT and READY lines (READY -> PREPARING is an "undo ready").
 type StartItemsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ItemIds       []string               `protobuf:"bytes,1,rep,name=item_ids,json=itemIds,proto3" json:"item_ids,omitempty"`

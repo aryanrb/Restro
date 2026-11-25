@@ -72,6 +72,7 @@ request's transaction committed (server-side `inventory.EventsInterceptor`).
 |-----------------|-----------|----------------------------------------------------------------------|-------------|
 | `alert.created` | alert id  | an audited write fired a rule and opened a new alert (`version` = alert version) | owner, manager recipients |
 | `alert.updated` | alert id  | a repeat firing grouped into the open alert, or it was resolved      | owner, manager recipients |
+| `audit.created` | audit_log id | any audit_log row was written (voids, discounts, cancels, reprints, 86s, logins, settings…); sent after the request like the alert events | owner, manager (live view) |
 
 `settings.updated` with id `alerts` when the alert config changes. Like every event
 these are broadcast to all sessions (see Scoping); the alert RPCs enforce who may read.
