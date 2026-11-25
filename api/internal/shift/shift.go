@@ -231,6 +231,33 @@ func (s *Service) GetShiftReport(ctx context.Context, shiftID string) (*restaura
 
 // buildReport assembles a shift's close-out view. names caches user names across
 // calls (nil = no cache).
+// ExpectedCash is the cash a shift's drawer should hold: the opening float plus
+// its cash takings (payments and repayments, less cancelled bills and the cash
+// adjustments counted back into it). Runs on q, so a caller's transaction sees
+// its own writes (the alert rules use it on shift close).
+func ExpectedCash(ctx context.Context, q *sqlc.Queries, sh sqlc.Shift) (int64, error) {
+	totals, err := q.ShiftPaymentTotals(ctx, sh.ID)
+	if err != nil {
+		return 0, err
+	}
+	adjustments, err := q.ListShiftAdjustments(ctx, sh.ID)
+	if err != nil {
+		return 0, err
+	}
+	cash := sh.OpeningFloatPaisa
+	for _, t := range totals {
+		if t.Method == "CASH" {
+			cash += t.Total
+		}
+	}
+	for _, a := range adjustments {
+		if a.Method == "CASH" {
+			cash -= a.AmountPaisa
+		}
+	}
+	return cash, nil
+}
+
 func (s *Service) buildReport(ctx context.Context, sh sqlc.Shift, names map[uuid.UUID]string) (*restaurantv1.ShiftReport, error) {
 	totals, err := s.q.ShiftPaymentTotals(ctx, sh.ID)
 	if err != nil {

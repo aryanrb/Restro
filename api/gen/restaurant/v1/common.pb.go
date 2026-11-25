@@ -222,6 +222,8 @@ const (
 	ErrorReason_ERROR_REASON_UNIT_LOCKED          ErrorReason = 18
 	ErrorReason_ERROR_REASON_ITEM_UNTRACKED       ErrorReason = 19
 	ErrorReason_ERROR_REASON_COUNT_ALREADY_POSTED ErrorReason = 20
+	// Analytics: a range over 3 fiscal years (3 × 366 days) -> invalid_argument.
+	ErrorReason_ERROR_REASON_RANGE_TOO_LARGE ErrorReason = 23
 )
 
 // Enum value maps for ErrorReason.
@@ -248,6 +250,7 @@ var (
 		18: "ERROR_REASON_UNIT_LOCKED",
 		19: "ERROR_REASON_ITEM_UNTRACKED",
 		20: "ERROR_REASON_COUNT_ALREADY_POSTED",
+		23: "ERROR_REASON_RANGE_TOO_LARGE",
 	}
 	ErrorReason_value = map[string]int32{
 		"ERROR_REASON_UNSPECIFIED":               0,
@@ -271,6 +274,7 @@ var (
 		"ERROR_REASON_UNIT_LOCKED":               18,
 		"ERROR_REASON_ITEM_UNTRACKED":            19,
 		"ERROR_REASON_COUNT_ALREADY_POSTED":      20,
+		"ERROR_REASON_RANGE_TOO_LARGE":           23,
 	}
 )
 
@@ -502,7 +506,7 @@ const file_restaurant_v1_common_proto_rawDesc = "" +
 	"\x04Move\x12\x14\n" +
 	"\x10MOVE_UNSPECIFIED\x10\x00\x12\v\n" +
 	"\aMOVE_UP\x10\x01\x12\r\n" +
-	"\tMOVE_DOWN\x10\x02*\xc4\x05\n" +
+	"\tMOVE_DOWN\x10\x02*\xe6\x05\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12$\n" +
 	" ERROR_REASON_INVALID_CREDENTIALS\x10\x01\x12\x1b\n" +
@@ -525,7 +529,8 @@ const file_restaurant_v1_common_proto_rawDesc = "" +
 	"\x1fERROR_REASON_REPAYMENT_TOO_HIGH\x10\x11\x12\x1c\n" +
 	"\x18ERROR_REASON_UNIT_LOCKED\x10\x12\x12\x1f\n" +
 	"\x1bERROR_REASON_ITEM_UNTRACKED\x10\x13\x12%\n" +
-	"!ERROR_REASON_COUNT_ALREADY_POSTED\x10\x14B\xb5\x01\n" +
+	"!ERROR_REASON_COUNT_ALREADY_POSTED\x10\x14\x12 \n" +
+	"\x1cERROR_REASON_RANGE_TOO_LARGE\x10\x17B\xb5\x01\n" +
 	"\x11com.restaurant.v1B\vCommonProtoP\x01Z>github.com/oneaccord/restro/api/gen/restaurant/v1;restaurantv1\xa2\x02\x03RXX\xaa\x02\rRestaurant.V1\xca\x02\rRestaurant\\V1\xe2\x02\x19Restaurant\\V1\\GPBMetadata\xea\x02\x0eRestaurant::V1b\x06proto3"
 
 var (

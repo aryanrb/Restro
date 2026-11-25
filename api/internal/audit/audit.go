@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/oneaccord/restro/api/internal/audit/hook"
 	"github.com/oneaccord/restro/api/internal/auth"
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
 	"github.com/oneaccord/restro/api/internal/dbx"
@@ -34,11 +35,13 @@ type Entry struct {
 	DeviceLabel string    // "" = the request's enrolled device (auth.DeviceLabel), if any
 }
 
+// Write inserts the row and runs the alert rules on it (hook.Insert), all with q:
+// pass the transaction's Queries so the row and any alert commit with the change.
 func Write(ctx context.Context, q *sqlc.Queries, e Entry) error {
 	if e.DeviceLabel == "" {
 		e.DeviceLabel = auth.DeviceLabel(ctx)
 	}
-	return q.InsertAudit(ctx, sqlc.InsertAuditParams{
+	return hook.Insert(ctx, q, sqlc.InsertAuditParams{
 		ActorUserID:    dbx.UUIDOpt(e.ActorID),
 		Action:         e.Action,
 		Entity:         e.Entity,

@@ -16,21 +16,86 @@ type Querier interface {
 	// Adds delta to the on-hand cache (and locks the row) and returns the item after.
 	AddOnHand(ctx context.Context, arg AddOnHandParams) (InventoryItem, error)
 	AddOrderGuestCount(ctx context.Context, arg AddOrderGuestCountParams) error
+	AlertAuditEntries(ctx context.Context, ids []int64) ([]AlertAuditEntriesRow, error)
+	AlertClosedShiftsSince(ctx context.Context, arg AlertClosedShiftsSinceParams) ([]Shift, error)
+	AlertCountLoss(ctx context.Context, countID uuid.UUID) (int64, error)
+	AlertCountOpenShifts(ctx context.Context) (int32, error)
+	// One person's voids of items that had been sent to the kitchen, since a time.
+	AlertCountSentVoidsSince(ctx context.Context, arg AlertCountSentVoidsSinceParams) (int32, error)
+	AlertCounts(ctx context.Context, hideFor pgtype.UUID) (AlertCountsRow, error)
+	AlertCustomer(ctx context.Context, id uuid.UUID) (AlertCustomerRow, error)
+	AlertDayByMethod(ctx context.Context, arg AlertDayByMethodParams) ([]AlertDayByMethodRow, error)
+	AlertDayCancelled(ctx context.Context, arg AlertDayCancelledParams) (AlertDayCancelledRow, error)
+	// --- day summary ---
+	AlertDaySales(ctx context.Context, arg AlertDaySalesParams) (AlertDaySalesRow, error)
+	AlertDayShifts(ctx context.Context, arg AlertDayShiftsParams) ([]AlertDayShiftsRow, error)
+	AlertDayVoids(ctx context.Context, arg AlertDayVoidsParams) (AlertDayVoidsRow, error)
+	// --- alerts ---
+	AlertDedupExists(ctx context.Context, arg AlertDedupExistsParams) (bool, error)
+	AlertDiscountTotal(ctx context.Context, arg AlertDiscountTotalParams) (int64, error)
+	// The audit rows of one entity and action up to (and including) @up_to_id, oldest first.
+	AlertEntityAudit(ctx context.Context, arg AlertEntityAuditParams) ([]AlertEntityAuditRow, error)
+	// --- rule look-backs ---
+	AlertOpenShiftOf(ctx context.Context, cashierUserID uuid.UUID) (Shift, error)
+	AlertPushExists(ctx context.Context, arg AlertPushExistsParams) (bool, error)
+	// The latest bill of the same order, cancelled since @since, that had some of the
+	// new bill's items and a higher total.
+	AlertRebillSource(ctx context.Context, arg AlertRebillSourceParams) (Invoice, error)
+	AlertReleaseSavepoint(ctx context.Context) error
+	AlertRollbackSavepoint(ctx context.Context) error
+	AlertSavepoint(ctx context.Context) error
+	// Open orders with SERVED items on no issued bill: place, waiter, item count and value.
+	AlertServedUnbilled(ctx context.Context) ([]AlertServedUnbilledRow, error)
+	AlertSoldBetween(ctx context.Context, arg AlertSoldBetweenParams) (int32, error)
+	AlertUserNames(ctx context.Context, ids []uuid.UUID) ([]AlertUserNamesRow, error)
+	AlertWasteTotal(ctx context.Context, arg AlertWasteTotalParams) (int64, error)
 	// Gap-free number allocation: the ON CONFLICT ... DO UPDATE locks the counter row.
 	AllocateInvoiceNumber(ctx context.Context, arg AllocateInvoiceNumberParams) (int32, error)
 	// Gap-free repayment receipt numbers: the upsert locks the single counter row.
 	AllocateRepaymentNumber(ctx context.Context) (int32, error)
+	AnalyticsCancelledInvoices(ctx context.Context, arg AnalyticsCancelledInvoicesParams) ([]AnalyticsCancelledInvoicesRow, error)
+	// Shifts closed in the range and their counted − expected cash. Expected = float +
+	// cash takings − cash adjustments, by the same rules as ShiftPaymentTotals.
+	AnalyticsClosedShifts(ctx context.Context, arg AnalyticsClosedShiftsParams) ([]AnalyticsClosedShiftsRow, error)
+	// Summary store ---------------------------------------------------------------
+	AnalyticsDaysIn(ctx context.Context, arg AnalyticsDaysInParams) ([]AnalyticsDay, error)
+	AnalyticsDirtyDaysIn(ctx context.Context, arg AnalyticsDirtyDaysInParams) ([]pgtype.Date, error)
+	// First instant with any bill or order; 0 when there is none.
+	AnalyticsFirstActivityUnix(ctx context.Context) (int64, error)
+	AnalyticsHasRecipes(ctx context.Context) (bool, error)
+	// ISSUED bills in the range and the credit customer on their on-account payment.
+	AnalyticsIdentifiedBills(ctx context.Context, arg AnalyticsIdentifiedBillsParams) ([]AnalyticsIdentifiedBillsRow, error)
+	// Analytics: raw reads for building daily summaries over [from_ts, to_ts), the
+	// summary store, the festival calendar and analytics settings.
+	// ISSUED bills in the range with their order's type and waiter.
+	AnalyticsInvoices(ctx context.Context, arg AnalyticsInvoicesParams) ([]AnalyticsInvoicesRow, error)
+	AnalyticsLastBuildUnix(ctx context.Context) (int64, error)
+	// Lines of those bills, with the menu item and category they came from and their
+	// actual cost from the SALE stock movements of the order item (unit cost
+	// snapshot; has_cost = some movement exists).
+	AnalyticsLines(ctx context.Context, arg AnalyticsLinesParams) ([]AnalyticsLinesRow, error)
+	AnalyticsMenuItems(ctx context.Context) ([]AnalyticsMenuItemsRow, error)
+	// Orders opened in the range (not cancelled), with their last issued bill.
+	AnalyticsOrders(ctx context.Context, arg AnalyticsOrdersParams) ([]AnalyticsOrdersRow, error)
+	// Confirmed payments of those bills (the daily sales report's rule).
+	AnalyticsPayments(ctx context.Context, arg AnalyticsPaymentsParams) ([]AnalyticsPaymentsRow, error)
+	// Lines sent in the range (a void belongs to the day of its send).
+	AnalyticsSentItems(ctx context.Context, arg AnalyticsSentItemsParams) ([]AnalyticsSentItemsRow, error)
+	AnalyticsUsers(ctx context.Context) ([]AnalyticsUsersRow, error)
 	BumpMenuItemVersion(ctx context.Context, arg BumpMenuItemVersionParams) (int64, error)
 	BumpOrderVersion(ctx context.Context, id uuid.UUID) (int64, error)
 	BumpStationTicket(ctx context.Context, arg BumpStationTicketParams) ([]uuid.UUID, error)
 	CancelInvoice(ctx context.Context, arg CancelInvoiceParams) (Invoice, error)
 	CancelledInvoicesDetail(ctx context.Context, arg CancelledInvoicesDetailParams) ([]CancelledInvoicesDetailRow, error)
 	CheckBumpOrderVersion(ctx context.Context, arg CheckBumpOrderVersionParams) (int64, error)
+	ClearAnalyticsDirtyDays(ctx context.Context, days []pgtype.Date) error
 	ClearCountLine(ctx context.Context, arg ClearCountLineParams) (int64, error)
 	CloseOrder(ctx context.Context, id uuid.UUID) (int64, error)
 	// The opening note is kept; the close-out note goes in closing_note.
 	CloseShift(ctx context.Context, arg CloseShiftParams) (Shift, error)
 	CountActiveOwners(ctx context.Context) (int64, error)
+	// --- pushes ---
+	CountDayAlertPushes(ctx context.Context, arg CountDayAlertPushesParams) (int32, error)
 	CountItemsInCategory(ctx context.Context, categoryID uuid.UUID) (int64, error)
 	CountItemsUsingModifierGroup(ctx context.Context, groupID uuid.UUID) (int64, error)
 	CountItemsUsingStation(ctx context.Context, stationID uuid.UUID) (int64, error)
@@ -43,6 +108,7 @@ type Querier interface {
 	// shift to land in (the canceller had no shift open at the time).
 	CountUnplacedCancelAdjustments(ctx context.Context, id uuid.UUID) (int32, error)
 	CreateArea(ctx context.Context, arg CreateAreaParams) (Area, error)
+	CreateCalendarEvent(ctx context.Context, arg CreateCalendarEventParams) (CalendarEvent, error)
 	CreateCategory(ctx context.Context, arg CreateCategoryParams) (MenuCategory, error)
 	CreateCbmsOutbox(ctx context.Context, arg CreateCbmsOutboxParams) error
 	// Stock counts ---------------------------------------------------------------
@@ -88,7 +154,10 @@ type Querier interface {
 	// Daily totals by Kathmandu AD day. Money columns count issued bills only;
 	// cancelled_count is bills issued that day and since cancelled.
 	DailySalesDetail(ctx context.Context, arg DailySalesDetailParams) ([]DailySalesDetailRow, error)
+	DayAlertsByRule(ctx context.Context, arg DayAlertsByRuleParams) ([]DayAlertsByRuleRow, error)
+	DeleteAnalyticsDaysIn(ctx context.Context, arg DeleteAnalyticsDaysInParams) error
 	DeleteArea(ctx context.Context, id uuid.UUID) error
+	DeleteCalendarEvent(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteCategory(ctx context.Context, id uuid.UUID) error
 	DeleteGroupModifiers(ctx context.Context, groupID uuid.UUID) error
 	// Removes the group's modifiers that are not in keep (upsert-by-id saves).
@@ -105,7 +174,13 @@ type Querier interface {
 	DeleteVariantRecipeLines(ctx context.Context, variantID uuid.UUID) error
 	DiscardStockCount(ctx context.Context, arg DiscardStockCountParams) error
 	GetActiveSessionByTokenHash(ctx context.Context, tokenHash string) (GetActiveSessionByTokenHashRow, error)
+	GetAlert(ctx context.Context, id uuid.UUID) (Alert, error)
+	// --- config ---
+	GetAlertConfig(ctx context.Context) (AlertConfig, error)
+	// Settings --------------------------------------------------------------------
+	GetAnalyticsSettings(ctx context.Context) (GetAnalyticsSettingsRow, error)
 	GetArea(ctx context.Context, id uuid.UUID) (Area, error)
+	GetCalendarEvent(ctx context.Context, id uuid.UUID) (CalendarEvent, error)
 	GetCategory(ctx context.Context, id uuid.UUID) (MenuCategory, error)
 	GetCountList(ctx context.Context, id uuid.UUID) (CountList, error)
 	GetCustomerWithBalance(ctx context.Context, id uuid.UUID) (GetCustomerWithBalanceRow, error)
@@ -144,7 +219,13 @@ type Querier interface {
 	GetWasteByRequestID(ctx context.Context, requestID uuid.UUID) (WasteEntry, error)
 	IncrementPinFailure(ctx context.Context, id uuid.UUID) (User, error)
 	IncrementPrintCount(ctx context.Context, id uuid.UUID) (int32, error)
+	// MORE and SUMMARY are once per business day (unique index): a repeat is a no-op.
+	InsertAlertPush(ctx context.Context, arg InsertAlertPushParams) error
 	InsertAudit(ctx context.Context, arg InsertAuditParams) error
+	// Suspicious activity alerts (internal/alerts). Rules run inside the transaction
+	// that wrote the audit row, so every query here takes that transaction's Queries.
+	// audit.Write's insert: returns the row so the alert rules can run on it.
+	InsertAuditReturning(ctx context.Context, arg InsertAuditReturningParams) (AuditLog, error)
 	InsertCountLine(ctx context.Context, arg InsertCountLineParams) error
 	InsertMenuItemRecipeLine(ctx context.Context, arg InsertMenuItemRecipeLineParams) error
 	InsertModifierRecipeLine(ctx context.Context, arg InsertModifierRecipeLineParams) error
@@ -157,11 +238,17 @@ type Querier interface {
 	InventoryItemIDsWithMovements(ctx context.Context) ([]uuid.UUID, error)
 	KdsSetItemsStatus(ctx context.Context, arg KdsSetItemsStatusParams) error
 	ListActiveUsers(ctx context.Context) ([]User, error)
+	// The latest 30 for a viewer (null = owner: everything), oldest first.
+	ListAlertPushes(ctx context.Context, viewer pgtype.UUID) ([]AlertPush, error)
+	// hide_for: a manager recipient (never sees alerts they are involved in); null = owner.
+	ListAlerts(ctx context.Context, arg ListAlertsParams) ([]Alert, error)
 	ListAllCountLines(ctx context.Context) ([]StockCountLine, error)
 	ListAllMenuItemRecipeLines(ctx context.Context) ([]MenuItemRecipeLine, error)
 	ListAllModifierRecipeLines(ctx context.Context) ([]ModifierRecipeLine, error)
 	ListAllVariantRecipeLines(ctx context.Context) ([]VariantRecipeLine, error)
 	ListAreas(ctx context.Context) ([]Area, error)
+	// Calendar --------------------------------------------------------------------
+	ListCalendarEventsIn(ctx context.Context, arg ListCalendarEventsInParams) ([]CalendarEvent, error)
 	// Categories ---------------------------------------------------------------
 	ListCategories(ctx context.Context) ([]MenuCategory, error)
 	ListCountLines(ctx context.Context, countID uuid.UUID) ([]StockCountLine, error)
@@ -240,6 +327,18 @@ type Querier interface {
 	// Order lines voided after cooking with a SALE movement in (since, until].
 	ListVoidedAfterCookingSales(ctx context.Context, arg ListVoidedAfterCookingSalesParams) ([]StockMovement, error)
 	ListWasteInRange(ctx context.Context, arg ListWasteInRangeParams) ([]ListWasteInRangeRow, error)
+	Live86Items(ctx context.Context) ([]Live86ItemsRow, error)
+	// Guests of dine-in orders opened since $1 (not cancelled).
+	LiveCoversSince(ctx context.Context, createdAt time.Time) (int32, error)
+	// Today's exceptions: voids, bill cancellations, reprints, 86s, shift closes, and
+	// issued bills that carry a discount. Newest first, at most 50.
+	LiveExceptions(ctx context.Context, since time.Time) ([]LiveExceptionsRow, error)
+	// Sent lines (not DRAFT) of the given orders; billed = on an ISSUED bill.
+	LiveItemsOfOrders(ctx context.Context, orderIds []uuid.UUID) ([]LiveItemsOfOrdersRow, error)
+	// Live view (owner/manager, read-only). Open = OPEN or BILLED (not closed yet).
+	LiveOpenOrders(ctx context.Context) ([]LiveOpenOrdersRow, error)
+	LiveOrderByID(ctx context.Context, id uuid.UUID) (LiveOrderByIDRow, error)
+	LockAlerts(ctx context.Context, ids []uuid.UUID) ([]Alert, error)
 	// Locks the account for the billing / repayment transaction, so two tills can't
 	// both use the last of a limit (or repay the same balance twice).
 	LockCustomer(ctx context.Context, id uuid.UUID) (Customer, error)
@@ -289,10 +388,12 @@ type Querier interface {
 	// A correct PIN (or a full login) clears the failure counter, any lock and the
 	// lockout escalation.
 	ResetPinFailures(ctx context.Context, id uuid.UUID) error
+	ResolveAlert(ctx context.Context, arg ResolveAlertParams) (Alert, error)
 	RevokeSession(ctx context.Context, tokenHash string) error
 	// Sales book rows with the issuer's name and the bill's last print (time + who;
 	// 0 / '' when never printed). Tax invoices only unless include_estimates.
 	SalesBookDetail(ctx context.Context, arg SalesBookDetailParams) ([]SalesBookDetailRow, error)
+	SaveAnalyticsSettings(ctx context.Context, arg SaveAnalyticsSettingsParams) (SaveAnalyticsSettingsRow, error)
 	Set86(ctx context.Context, arg Set86Params) error
 	SetCountLine(ctx context.Context, arg SetCountLineParams) (int64, error)
 	SetCountLineResult(ctx context.Context, arg SetCountLineResultParams) error
@@ -341,8 +442,11 @@ type Querier interface {
 	// Dashboard: everything owed now (positive balances only).
 	TotalCreditOwed(ctx context.Context) (int64, error)
 	UnlinkInvoiceItems(ctx context.Context, invoiceID pgtype.UUID) ([]uuid.UUID, error)
+	UpdateAlertConfig(ctx context.Context, arg UpdateAlertConfigParams) (AlertConfig, error)
 	UpdateArea(ctx context.Context, arg UpdateAreaParams) (Area, error)
 	UpdateAreaSort(ctx context.Context, arg UpdateAreaSortParams) error
+	// Saved by the owner: the date is now theirs, no longer "to check".
+	UpdateCalendarEvent(ctx context.Context, arg UpdateCalendarEventParams) (CalendarEvent, error)
 	UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (MenuCategory, error)
 	UpdateCategorySort(ctx context.Context, arg UpdateCategorySortParams) error
 	UpdateCountList(ctx context.Context, arg UpdateCountListParams) (CountList, error)
@@ -358,6 +462,11 @@ type Querier interface {
 	UpdateTableSort(ctx context.Context, arg UpdateTableSortParams) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
 	UpdateVariant(ctx context.Context, arg UpdateVariantParams) (ItemVariant, error)
+	// A new alert, or a repeat firing grouped into the open alert of the same rule +
+	// group (count + 1, params replaced, subject/approvers/involved/audit ids added).
+	// count = 1 in the result means it was created.
+	UpsertAlert(ctx context.Context, arg UpsertAlertParams) (Alert, error)
+	UpsertAnalyticsDay(ctx context.Context, arg UpsertAnalyticsDayParams) error
 	VariantHasOwnRecipe(ctx context.Context, variantID uuid.UUID) (bool, error)
 	VoidOrderItem(ctx context.Context, arg VoidOrderItemParams) error
 	VoidRepayment(ctx context.Context, arg VoidRepaymentParams) error

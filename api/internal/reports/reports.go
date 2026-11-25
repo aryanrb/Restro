@@ -231,6 +231,9 @@ func (s *Service) AuditLog(ctx context.Context, req *restaurantv1.AuditLogReques
 	return out, nil
 }
 
+// AuditDetail is auditDetail for other packages (the alerts' linked audit entries).
+func AuditDetail(reason string, after []byte) string { return auditDetail(reason, after) }
+
 // auditDetail renders an audit row's reason and the well-known fields of its
 // "after" JSON as one readable line, e.g. "CASH · Rs 150.50 · wrong table".
 func auditDetail(reason string, after []byte) string {

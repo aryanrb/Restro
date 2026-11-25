@@ -65,6 +65,16 @@ query via Connect; a missed or out-of-order event can only delay state, never co
 Stock events from order commands and counter sales are sent only after the
 request's transaction committed (server-side `inventory.EventsInterceptor`).
 
+### Alerts (AlertService)
+
+| `type`          | `id` is…  | When                                                                 | Who listens |
+|-----------------|-----------|----------------------------------------------------------------------|-------------|
+| `alert.created` | alert id  | an audited write fired a rule and opened a new alert (`version` = alert version) | owner, manager recipients |
+| `alert.updated` | alert id  | a repeat firing grouped into the open alert, or it was resolved      | owner, manager recipients |
+
+`settings.updated` with id `alerts` when the alert config changes. Like every event
+these are broadcast to all sessions (see Scoping); the alert RPCs enforce who may read.
+
 ### Later plans (reserved names — do not reuse)
 
 | `type`             | `id` is…   | Plan        |

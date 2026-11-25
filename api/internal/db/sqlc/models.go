@@ -11,6 +11,75 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Alert struct {
+	ID               uuid.UUID          `json:"id"`
+	Seq              int64              `json:"seq"`
+	Rule             string             `json:"rule"`
+	Severity         string             `json:"severity"`
+	Status           string             `json:"status"`
+	SubjectUserID    pgtype.UUID        `json:"subject_user_id"`
+	ApproverIds      []uuid.UUID        `json:"approver_ids"`
+	InvolvedIds      []uuid.UUID        `json:"involved_ids"`
+	Subject          string             `json:"subject"`
+	NumParams        []byte             `json:"num_params"`
+	TextParams       []byte             `json:"text_params"`
+	Count            int32              `json:"count"`
+	BusinessDate     pgtype.Date        `json:"business_date"`
+	FirstAt          time.Time          `json:"first_at"`
+	LastAt           time.Time          `json:"last_at"`
+	ShiftID          pgtype.UUID        `json:"shift_id"`
+	InvoiceID        pgtype.UUID        `json:"invoice_id"`
+	AuditIds         []int64            `json:"audit_ids"`
+	GroupKey         string             `json:"group_key"`
+	DedupKey         pgtype.Text        `json:"dedup_key"`
+	ResolvedByUserID pgtype.UUID        `json:"resolved_by_user_id"`
+	ResolvedAt       pgtype.Timestamptz `json:"resolved_at"`
+	Note             string             `json:"note"`
+	Version          int64              `json:"version"`
+}
+
+type AlertConfig struct {
+	ID                     int32       `json:"id"`
+	Overrides              []byte      `json:"overrides"`
+	OpeningHours           []byte      `json:"opening_hours"`
+	AfterHoursGraceMinutes int32       `json:"after_hours_grace_minutes"`
+	QuietFrom              pgtype.Text `json:"quiet_from"`
+	QuietTo                pgtype.Text `json:"quiet_to"`
+	DailyPushCap           int32       `json:"daily_push_cap"`
+	RecipientIds           []uuid.UUID `json:"recipient_ids"`
+	UpdatedAt              time.Time   `json:"updated_at"`
+}
+
+type AlertPush struct {
+	ID           uuid.UUID   `json:"id"`
+	At           time.Time   `json:"at"`
+	BusinessDate pgtype.Date `json:"business_date"`
+	Kind         string      `json:"kind"`
+	Rule         string      `json:"rule"`
+	AmountPaisa  pgtype.Int8 `json:"amount_paisa"`
+	Count        pgtype.Int4 `json:"count"`
+	AlertID      pgtype.UUID `json:"alert_id"`
+	ExcludeIds   []uuid.UUID `json:"exclude_ids"`
+}
+
+type AnalyticsDay struct {
+	Day     pgtype.Date `json:"day"`
+	Summary []byte      `json:"summary"`
+	BuiltAt time.Time   `json:"built_at"`
+}
+
+type AnalyticsDirtyDay struct {
+	Day      pgtype.Date `json:"day"`
+	MarkedAt time.Time   `json:"marked_at"`
+}
+
+type AnalyticsSetting struct {
+	ID               bool        `json:"id"`
+	ManagersSeeStaff []uuid.UUID `json:"managers_see_staff"`
+	HighlightRules   bool        `json:"highlight_rules"`
+	UpdatedAt        time.Time   `json:"updated_at"`
+}
+
 type Area struct {
 	ID     uuid.UUID `json:"id"`
 	NameEn string    `json:"name_en"`
@@ -30,6 +99,21 @@ type AuditLog struct {
 	ApproverUserID pgtype.UUID `json:"approver_user_id"`
 	DeviceLabel    pgtype.Text `json:"device_label"`
 	CreatedAt      time.Time   `json:"created_at"`
+}
+
+type CalendarEvent struct {
+	ID              uuid.UUID   `json:"id"`
+	NameEn          string      `json:"name_en"`
+	NameNe          string      `json:"name_ne"`
+	FromDate        pgtype.Date `json:"from_date"`
+	ToDate          pgtype.Date `json:"to_date"`
+	Kind            string      `json:"kind"`
+	BuiltIn         bool        `json:"built_in"`
+	CreatedByUserID pgtype.UUID `json:"created_by_user_id"`
+	Key             pgtype.Text `json:"key"`
+	Approximate     bool        `json:"approximate"`
+	CreatedAt       time.Time   `json:"created_at"`
+	UpdatedAt       time.Time   `json:"updated_at"`
 }
 
 type CbmsOutbox struct {

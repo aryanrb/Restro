@@ -17,6 +17,8 @@ import (
 
 	restaurantv1 "github.com/oneaccord/restro/api/gen/restaurant/v1"
 	"github.com/oneaccord/restro/api/gen/restaurant/v1/restaurantv1connect"
+	"github.com/oneaccord/restro/api/internal/alerts"
+	"github.com/oneaccord/restro/api/internal/analytics"
 	"github.com/oneaccord/restro/api/internal/auth"
 	"github.com/oneaccord/restro/api/internal/billing"
 	"github.com/oneaccord/restro/api/internal/catalog"
@@ -25,6 +27,7 @@ import (
 	"github.com/oneaccord/restro/api/internal/credit"
 	"github.com/oneaccord/restro/api/internal/inventory"
 	"github.com/oneaccord/restro/api/internal/kitchen"
+	"github.com/oneaccord/restro/api/internal/live"
 	"github.com/oneaccord/restro/api/internal/orders"
 	"github.com/oneaccord/restro/api/internal/realtime"
 	"github.com/oneaccord/restro/api/internal/reports"
@@ -51,6 +54,8 @@ func New(d Deps) *echo.Echo {
 	})
 	// Shared interceptor chain for every Connect service: load the session (outer),
 	// validate the request (protovalidate), map service errors to ErrorInfo (inner).
+	// Suspicious-activity rules run on every audit_log write (audit/hook).
+	alerts.Install(d.Log)
 	authSvc := auth.NewService(d.Pool, d.Log)
 	e.Any("/api/ws", echo.WrapHandler(wsAuth(authSvc, d.Hub)))
 
@@ -62,6 +67,9 @@ func New(d Deps) *echo.Echo {
 		// request — order sends, voids, counter sales, waste, counts — are broadcast
 		// only once the handler succeeded (its transaction committed).
 		inventory.EventsInterceptor(d.Hub),
+		// alert.created / alert.updated written by the alert rules (which run on
+		// every audited write, in its transaction) go out once the request finished.
+		alerts.EventsInterceptor(d.Hub),
 	)
 
 	authHandler := auth.NewHandler(authSvc, d.Cfg.Env == "prod")
@@ -109,6 +117,20 @@ func New(d Deps) *echo.Echo {
 	inventoryH := inventory.NewHandler(inventory.NewService(d.Pool, d.Hub, authSvc, d.Log))
 	inventoryPath, inventoryHH := restaurantv1connect.NewInventoryServiceHandler(inventoryH, ic)
 	mount(e, inventoryPath, inventoryHH)
+
+	// Read-only live view (owner/manager): its own handler group with no write routes.
+	livePath, liveHH := restaurantv1connect.NewLiveServiceHandler(live.NewHandler(live.NewService(d.Pool, d.Log)), ic)
+	mount(e, livePath, liveHH)
+
+	analyticsH := analytics.NewHandler(analytics.NewService(d.Pool, d.Log))
+	analyticsPath, analyticsHH := restaurantv1connect.NewAnalyticsServiceHandler(analyticsH, ic)
+	mount(e, analyticsPath, analyticsHH)
+	calendarPath, calendarHH := restaurantv1connect.NewCalendarServiceHandler(analyticsH, ic)
+	mount(e, calendarPath, calendarHH)
+
+	alertH := alerts.NewHandler(alerts.NewService(d.Pool, d.Hub, d.Log))
+	alertPath, alertHH := restaurantv1connect.NewAlertServiceHandler(alertH, ic)
+	mount(e, alertPath, alertHH)
 
 	return e
 }

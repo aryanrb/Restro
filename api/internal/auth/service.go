@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 
+	"github.com/oneaccord/restro/api/internal/audit/hook"
 	"github.com/oneaccord/restro/api/internal/connecterr"
 	"github.com/oneaccord/restro/api/internal/db/sqlc"
 )
@@ -142,7 +143,7 @@ func (s *Service) issueSession(ctx context.Context, userID uuid.UUID, deviceID p
 	if err := q.ResetPinFailures(ctx, userID); err != nil {
 		return "", s.internal("reset pin failures", err)
 	}
-	if err := q.InsertAudit(ctx, sqlc.InsertAuditParams{
+	if err := hook.Insert(ctx, q, sqlc.InsertAuditParams{
 		ActorUserID: puuid(userID), Action: "login", Entity: "user", EntityID: ptext(userID.String()), DeviceLabel: ptextOpt(DeviceLabel(ctx)),
 	}); err != nil {
 		return "", s.internal("audit login", err)
@@ -237,6 +238,8 @@ func (s *Service) checkPin(ctx context.Context, u sqlc.User, pin string, wrongPi
 	}
 	if !ok {
 		if pinLocked(reserved, now) {
+			// This attempt set the lock (an already-locked PIN gets ErrNoRows above).
+			s.auditPinLocked(ctx, reserved)
 			return pinLockedErr(reserved, now)
 		}
 		return wrongPin
@@ -245,6 +248,26 @@ func (s *Service) checkPin(ctx context.Context, u sqlc.User, pin string, wrongPi
 		return s.internal("reset pin failures", err)
 	}
 	return nil
+}
+
+// auditPinLocked records an owner's or manager's PIN getting locked out
+// ("manager_pin.locked": actor = whoever was trying, "" on a PIN-login screen;
+// entity = the locked user). It runs on the pool like the attempt counter, so it
+// stays even though the request fails. Best-effort: a failure is only logged.
+func (s *Service) auditPinLocked(ctx context.Context, u sqlc.User) {
+	if !isPrivileged(u.Role) {
+		return
+	}
+	var actor pgtype.UUID
+	if a := ActorFrom(ctx); a.LoggedIn() {
+		actor = puuid(a.User.ID)
+	}
+	if err := hook.Insert(ctx, s.q, sqlc.InsertAuditParams{
+		ActorUserID: actor, Action: "manager_pin.locked", Entity: "user", EntityID: ptext(u.ID.String()),
+		DeviceLabel: ptextOpt(DeviceLabel(ctx)),
+	}); err != nil {
+		s.log.Error("audit pin lock", zap.Error(err))
+	}
 }
 
 // EnrollDevice marks the caller's device as a shared PIN-login device.
@@ -270,7 +293,7 @@ func (s *Service) EnrollDevice(ctx context.Context, actor *Actor, label string) 
 	if err != nil {
 		return sqlc.Device{}, "", s.internal("create device", err)
 	}
-	if err := q.InsertAudit(ctx, sqlc.InsertAuditParams{
+	if err := hook.Insert(ctx, q, sqlc.InsertAuditParams{
 		ActorUserID: puuid(actor.User.ID), Action: "device.enroll", Entity: "device",
 		EntityID: ptext(d.ID.String()), After: auditJSON(map[string]any{"label": label}), DeviceLabel: ptext(label),
 	}); err != nil {
@@ -296,7 +319,7 @@ func (s *Service) Logout(ctx context.Context, actor *Actor) error {
 	if err := q.RevokeSession(ctx, hashToken(actor.Token)); err != nil {
 		return s.internal("revoke session", err)
 	}
-	if err := q.InsertAudit(ctx, sqlc.InsertAuditParams{
+	if err := hook.Insert(ctx, q, sqlc.InsertAuditParams{
 		ActorUserID: puuid(actor.User.ID), Action: "logout", Entity: "user", EntityID: ptext(actor.User.ID.String()), DeviceLabel: ptextOpt(DeviceLabel(ctx)),
 	}); err != nil {
 		return s.internal("audit logout", err)
@@ -456,7 +479,7 @@ func (s *Service) SaveStaff(ctx context.Context, actor *Actor, in StaffInput) (s
 	if editing {
 		before = auditJSON(map[string]any{"name": existing.Name, "role": existing.Role, "active": existing.Active})
 	}
-	if err := q.InsertAudit(ctx, sqlc.InsertAuditParams{
+	if err := hook.Insert(ctx, q, sqlc.InsertAuditParams{
 		ActorUserID: puuid(actor.User.ID), Action: action, Entity: "user", EntityID: ptext(saved.ID.String()),
 		Before: before, After: auditJSON(map[string]any{"name": saved.Name, "role": saved.Role, "active": saved.Active}), DeviceLabel: ptextOpt(DeviceLabel(ctx)),
 	}); err != nil {
@@ -503,7 +526,7 @@ func (s *Service) ResetPin(ctx context.Context, actor *Actor, userID uuid.UUID, 
 	if err := q.SetUserPin(ctx, sqlc.SetUserPinParams{ID: target.ID, PinHash: ptext(h)}); err != nil {
 		return s.internal("set pin", err)
 	}
-	if err := q.InsertAudit(ctx, sqlc.InsertAuditParams{
+	if err := hook.Insert(ctx, q, sqlc.InsertAuditParams{
 		ActorUserID: puuid(actor.User.ID), Action: "staff.reset_pin", Entity: "user", EntityID: ptext(userID.String()), DeviceLabel: ptextOpt(DeviceLabel(ctx)),
 	}); err != nil {
 		return s.internal("audit reset pin", err)

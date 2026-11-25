@@ -78,6 +78,8 @@ enum ErrorReason {
   ERROR_REASON_UNIT_LOCKED = 18;
   ERROR_REASON_ITEM_UNTRACKED = 19;
   ERROR_REASON_COUNT_ALREADY_POSTED = 20;
+  // Analytics: a range over 3 fiscal years (3 × 366 days) -> invalid_argument.
+  ERROR_REASON_RANGE_TOO_LARGE = 23;
 }
 
 // Carried as a google.rpc-style error detail on every non-OK response.

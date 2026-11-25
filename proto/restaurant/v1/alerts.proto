@@ -1,0 +1,247 @@
+syntax = "proto3";
+
+package restaurant.v1;
+
+import "buf/validate/validate.proto";
+import "restaurant/v1/report.proto";
+import "restaurant/v1/shift.proto";
+
+// ---------------------------------------------------------------------------
+// AlertService — suspicious activity alerts (spec: suspicious-activity-alerts-design).
+//
+// The server evaluates a registry of rules whenever an audit_log row is written,
+// in the same transaction as that row (a failing rule is logged and skipped; it
+// never fails the sale/void/close). A repeat firing of a rule for the same person
+// and shift (or day/order/count, per rule) updates the open alert (count + 1)
+// instead of adding one. Alerts are never deleted.
+//
+// Readers: the owner, and managers the owner listed in AlertConfig.recipient_ids.
+// A manager recipient never sees, reads or resolves an alert about their own
+// actions or approvals (NOT_ALLOWED). Anyone else: NOT_ALLOWED. Only the owner
+// changes the config (NOT_ALLOWED) or changes an already-resolved alert.
+//
+// Time: business day = opening time to the next opening time in Kathmandu time
+// (calendar day while no opening hours are set). Dates are "YYYY-MM-DD".
+//
+// Realtime: `alert.created` / `alert.updated` (id = alert id, version = alert
+// version); `settings.updated` (id "alerts") when the config changes.
+//
+// Real Web Push (VAPID subscriptions, sending) is not built: ListNotifications is
+// the in-app stand-in the app polls. TODO(web-push): PushSubscription storage +
+// sender once the owner turns it on.
+// ---------------------------------------------------------------------------
+
+// Rules built so far. Loyalty (4) and LARGE_PAID_OUT come with their features.
+enum AlertRule {
+  ALERT_RULE_UNSPECIFIED = 0;
+  ALERT_RULE_VOID_AFTER_KITCHEN = 1;  // item voided after the kitchen started, value >= min_value
+  ALERT_RULE_REPEATED_VOIDS = 2;      // one person's post-send voids in their shift (or business day) >= count
+  ALERT_RULE_SELF_APPROVED = 3;       // a manager approved their own void/cancel/discount/credit with their own PIN
+  ALERT_RULE_HIGH_DISCOUNT = 4;       // one bill's discount >= percent_bp of the subtotal or >= amount
+  ALERT_RULE_DISCOUNT_TOTAL = 5;      // one person's discounts in a business day >= amount
+  ALERT_RULE_CANCEL_REBILL_LOWER = 6; // bill cancelled, same items re-billed for less within window_minutes
+  ALERT_RULE_LATE_CANCELLATION = 7;   // bill cancelled more than `minutes` after issue
+  ALERT_RULE_OLD_REPRINT = 8;         // reprint of a bill older than age_minutes, or copy number >= copy
+  ALERT_RULE_CASH_SHORT = 9;          // shift closed with difference <= -amount
+  ALERT_RULE_CASH_OVER = 10;          // shift closed with difference >= amount
+  ALERT_RULE_REPEATED_SHORTAGES = 11; // same cashier short by >= min_short in >= count shifts in 7 days
+  ALERT_RULE_SERVED_NOT_BILLED = 12;  // last open shift closed while an open order has served, unbilled items
+  ALERT_RULE_AFTER_HOURS_LOGIN = 13;  // login outside opening hours +- grace
+  ALERT_RULE_MANAGER_PIN_LOCKED = 14; // an owner/manager PIN got locked out after failed attempts
+  ALERT_RULE_PRICE_DIP = 15;          // item price lowered then raised back the same business day, with sales between
+  ALERT_RULE_CREDIT_OVER_LIMIT = 16;  // on-account bill over the available credit, approved by a manager
+  ALERT_RULE_CREDIT_NEW_ACCOUNT = 17; // credit to an account the same person created that business day
+  ALERT_RULE_HIGH_WASTE = 18;         // day's waste >= day_waste, or one posted count's loss >= count_loss
+}
+
+enum AlertSeverity {
+  ALERT_SEVERITY_UNSPECIFIED = 0;
+  ALERT_SEVERITY_HIGH = 1;   // pushes immediately (cap + quiet hours permitting)
+  ALERT_SEVERITY_NORMAL = 2; // waits for the day summary
+}
+
+enum AlertStatus {
+  ALERT_STATUS_UNSPECIFIED = 0;
+  ALERT_STATUS_OPEN = 1;    // to check
+  ALERT_STATUS_OK = 2;      // checked — OK
+  ALERT_STATUS_PROBLEM = 3; // checked — problem (note required)
+}
+
+message Alert {
+  string id = 1;
+  AlertRule rule = 2;
+  AlertSeverity severity = 3;
+  AlertStatus status = 4;
+  string subject_user_id = 5;          // the person the alert is about; "" = none
+  string subject_name = 6;
+  repeated string approver_ids = 7;    // managers who approved the action(s)
+  repeated string approver_names = 8;
+  string subject = 9;                  // bill number(s), item name, staff name...
+  // Values for the rule's message. Money is paisa. Keys per rule, e.g. CASH_SHORT:
+  // short/expected/counted; HIGH_DISCOUNT: discount/percent + text bill.
+  map<string, int64> num_params = 10;
+  map<string, string> text_params = 11;
+  int32 count = 12;                    // firings grouped into this alert
+  string business_date = 13;
+  int64 first_at_unix = 14;
+  int64 last_at_unix = 15;
+  string shift_id = 16;
+  string invoice_id = 17;
+  repeated int64 audit_entry_ids = 18;
+  string resolved_by_id = 19;
+  string resolved_by_name = 20;
+  int64 resolved_at_unix = 21;         // 0 = open
+  string note = 22;
+  int64 version = 23;
+}
+
+message ListAlertsRequest {
+  AlertStatus status = 1;   // UNSPECIFIED = any
+  AlertRule rule = 2;       // UNSPECIFIED = any
+  string user_id = 3;       // subject; "" = anyone
+  string from_date = 4;     // business date, inclusive; "" = open
+  string to_date = 5;
+}
+// Newest activity (last_at) first.
+message ListAlertsResponse {
+  repeated Alert alerts = 1;
+}
+
+message GetAlertRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+message GetAlertResponse {
+  Alert alert = 1;
+  repeated AuditEntry audit_entries = 2; // the linked audit rows, oldest first
+}
+
+// Note required (non-blank) for PROBLEM (INVALID "note"); ids non-empty (INVALID
+// "ids"); unknown id NOT_FOUND. Every resolution writes an `alert.resolve` audit row.
+message ResolveAlertsRequest {
+  repeated string ids = 1;
+  AlertStatus status = 2 [(buf.validate.field).enum = {in: [2, 3]}];
+  string note = 3;
+}
+message ResolveAlertsResponse {
+  repeated Alert alerts = 1;
+}
+
+message GetAlertCountsRequest {}
+// Open alerts the caller can see, and how many of them are High.
+message GetAlertCountsResponse {
+  int32 high = 1;
+  int32 open = 2;
+}
+
+message AlertRuleSetting {
+  AlertRule rule = 1;
+  bool enabled = 2;
+  AlertSeverity severity = 3;
+  // Rule-specific numbers (paisa, basis points, counts, minutes). Keys as in the
+  // web's ALERT_RULES (amount, count, min_short → "minShort", ...): camelCase.
+  map<string, int64> thresholds = 4;
+}
+
+// "HH:MM" Kathmandu time; close earlier than open = past midnight. Both "" = closed that day.
+message DayHours {
+  string open = 1;
+  string close = 2;
+}
+// Seven days, 0 = Sunday.
+message WeekHours {
+  repeated DayHours days = 1;
+}
+message QuietHours {
+  string from = 1;
+  string to = 2;
+}
+
+message AlertConfig {
+  repeated AlertRuleSetting rules = 1;  // every built rule, in screen order
+  WeekHours opening_hours = 2;          // unset until entered: no after-hours alerts, business day = calendar day
+  int32 after_hours_grace_minutes = 3;  // 0..240
+  QuietHours quiet_hours = 4;           // unset = none (push only; alerts still collect)
+  int32 daily_push_cap = 5;             // 0..50 immediate pushes per business day, then one "more waiting"
+  repeated string recipient_ids = 6;    // active managers who also receive alerts (owner always does)
+}
+
+message GetAlertConfigRequest {}
+// Owner only. A rule not listed keeps its setting. Writes `alert.rules_change`
+// and/or `alert.notifications_change` audit rows.
+message UpdateAlertConfigRequest {
+  AlertConfig config = 1 [(buf.validate.field).required = true];
+}
+
+message GetDaySummaryRequest {
+  string date = 1 [(buf.validate.field).string.pattern = "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"];
+}
+message DaySummaryShift {
+  string id = 1;
+  string user_name = 2;
+  int64 opened_at_unix = 3;
+  int64 closed_at_unix = 4;           // 0 = still open
+  int64 expected_cash_paisa = 5;
+  optional int64 counted_cash_paisa = 6;
+  optional int64 difference_paisa = 7;
+}
+message DaySummaryRuleTotal {
+  AlertRule rule = 1;
+  AlertSeverity severity = 2;         // HIGH when any of the day's alerts of the rule is High
+  int32 total = 3;
+  int32 open = 4;
+}
+message DaySummary {
+  string business_date = 1;
+  int64 generated_at_unix = 2;
+  int64 sales_paisa = 3;              // ISSUED bills of the day
+  int32 bills = 4;
+  repeated MethodTotal by_method = 5; // money taken (no ON_ACCOUNT)
+  int64 discounts_paisa = 6;
+  int32 void_count = 7;
+  int64 void_value_paisa = 8;
+  int32 cancelled_count = 9;
+  int64 cancelled_value_paisa = 10;
+  repeated DaySummaryShift shifts = 11; // opened that business day
+  int32 served_not_billed = 12;       // open orders with served items on no issued bill (now)
+  repeated DaySummaryRuleTotal alerts = 13; // the caller's visible alerts of the day, High first
+  int32 open_alerts = 14;
+  int32 high_alerts = 15;             // open and High
+}
+
+enum AlertPushKind {
+  ALERT_PUSH_KIND_UNSPECIFIED = 0;
+  ALERT_PUSH_KIND_ALERT = 1;   // one High alert
+  ALERT_PUSH_KIND_MORE = 2;    // the day's cap was reached: more alerts waiting
+  ALERT_PUSH_KIND_SUMMARY = 3; // the day summary is ready
+}
+// An immediate notification. No staff names: the device builds the text from
+// rule + amount.
+message AlertPush {
+  string id = 1;
+  int64 at_unix = 2;
+  AlertPushKind kind = 3;
+  AlertRule rule = 4;
+  optional int64 amount_paisa = 5;
+  optional int32 count = 6;    // summary: open alerts of the day
+  string alert_id = 7;
+  string business_date = 8;
+}
+
+message ListNotificationsRequest {}
+// The caller's latest 30, oldest first. A manager who isn't a recipient gets an
+// empty list (the app polls); other non-readers NOT_ALLOWED.
+message ListNotificationsResponse {
+  repeated AlertPush pushes = 1;
+}
+
+service AlertService {
+  rpc ListAlerts(ListAlertsRequest) returns (ListAlertsResponse);
+  rpc GetAlert(GetAlertRequest) returns (GetAlertResponse);
+  rpc ResolveAlerts(ResolveAlertsRequest) returns (ResolveAlertsResponse);
+  rpc GetAlertCounts(GetAlertCountsRequest) returns (GetAlertCountsResponse);
+  // Owner or manager.
+  rpc GetAlertConfig(GetAlertConfigRequest) returns (AlertConfig);
+  rpc UpdateAlertConfig(UpdateAlertConfigRequest) returns (AlertConfig);
+  rpc GetDaySummary(GetDaySummaryRequest) returns (DaySummary);
+  rpc ListNotifications(ListNotificationsRequest) returns (ListNotificationsResponse);
+}
