@@ -378,6 +378,12 @@ type OrderItemModifier struct {
 	PriceDeltaPaisa int64     `json:"price_delta_paisa"`
 }
 
+type Organisation struct {
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Payment struct {
 	ID                     uuid.UUID   `json:"id"`
 	InvoiceID              uuid.UUID   `json:"invoice_id"`
@@ -422,6 +428,20 @@ type Repayment struct {
 type RepaymentCounter struct {
 	ID         bool  `json:"id"`
 	NextNumber int32 `json:"next_number"`
+}
+
+type Restaurant struct {
+	ID             uuid.UUID `json:"id"`
+	OrganisationID uuid.UUID `json:"organisation_id"`
+	Name           string    `json:"name"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+type RestaurantStaff struct {
+	UserID       uuid.UUID `json:"user_id"`
+	RestaurantID uuid.UUID `json:"restaurant_id"`
+	Role         string    `json:"role"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 type SchemaBaseline struct {
@@ -557,6 +577,7 @@ type User struct {
 	PinLockedUntil    pgtype.Timestamptz `json:"pin_locked_until"`
 	PinLockoutCount   int32              `json:"pin_lockout_count"`
 	Phone             string             `json:"phone"`
+	OrganisationID    uuid.UUID          `json:"organisation_id"`
 }
 
 type VariantRecipe struct {

@@ -14,8 +14,8 @@ SELECT * FROM users ORDER BY role, name;
 SELECT count(*) FROM users WHERE role = 'OWNER' AND active = true;
 
 -- name: CreateUser :one
-INSERT INTO users (name, role, username, password_hash, pin_hash, language, active, phone)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO users (name, role, username, password_hash, pin_hash, language, active, phone, organisation_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING *;
 
 -- name: UpdateUser :one

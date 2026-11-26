@@ -61,7 +61,7 @@ func (f *fixture) as(role, name string) context.Context {
 	}
 	username := "u-" + uuid.NewString()[:8]
 	if _, err := sqlc.New(f.pool).CreateUser(ctx, sqlc.CreateUserParams{
-		Name: name, Role: role, Username: dbx.Text(username), PasswordHash: dbx.Text(hash), Language: "en", Active: true,
+		Name: name, Role: role, Username: dbx.Text(username), PasswordHash: dbx.Text(hash), Language: "en", Active: true, OrganisationID: dbx.BootstrapOrgID(ctx, sqlc.New(f.pool)),
 	}); err != nil {
 		f.t.Fatalf("create user: %v", err)
 	}

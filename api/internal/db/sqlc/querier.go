@@ -135,10 +135,12 @@ type Querier interface {
 	// sent_at is stamped when the line is created already SENT (one-step add+send).
 	CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) (OrderItem, error)
 	CreateOrderItemModifier(ctx context.Context, arg CreateOrderItemModifierParams) error
+	CreateOrganisation(ctx context.Context, name string) (Organisation, error)
 	CreatePayment(ctx context.Context, arg CreatePaymentParams) (Payment, error)
 	CreateRepayment(ctx context.Context, arg CreateRepaymentParams) (uuid.UUID, error)
 	// A voided repayment from a closed shift, counted back in the voider's open shift.
 	CreateRepaymentAdjustment(ctx context.Context, arg CreateRepaymentAdjustmentParams) error
+	CreateRestaurant(ctx context.Context, arg CreateRestaurantParams) (Restaurant, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateStation(ctx context.Context, arg CreateStationParams) (Station, error)
 	CreateStockCount(ctx context.Context, arg CreateStockCountParams) (StockCount, error)
@@ -173,6 +175,11 @@ type Querier interface {
 	DeleteVariantRecipe(ctx context.Context, variantID uuid.UUID) error
 	DeleteVariantRecipeLines(ctx context.Context, variantID uuid.UUID) error
 	DiscardStockCount(ctx context.Context, arg DiscardStockCountParams) error
+	// Organisation / restaurant hierarchy and staff grants (stage 4).
+	// The bootstrap organisation (one exists after migration 015).
+	FirstOrganisation(ctx context.Context) (Organisation, error)
+	// The bootstrap restaurant (one exists after migration 015).
+	FirstRestaurant(ctx context.Context) (Restaurant, error)
 	GetActiveSessionByTokenHash(ctx context.Context, tokenHash string) (GetActiveSessionByTokenHashRow, error)
 	GetAlert(ctx context.Context, id uuid.UUID) (Alert, error)
 	// --- config ---
@@ -207,6 +214,7 @@ type Querier interface {
 	GetRepaymentDetail(ctx context.Context, id uuid.UUID) (GetRepaymentDetailRow, error)
 	GetSettings(ctx context.Context) (Setting, error)
 	GetShift(ctx context.Context, id uuid.UUID) (Shift, error)
+	GetStaffGrant(ctx context.Context, arg GetStaffGrantParams) (RestaurantStaff, error)
 	GetStation(ctx context.Context, id uuid.UUID) (Station, error)
 	GetStockCount(ctx context.Context, id uuid.UUID) (StockCount, error)
 	GetStockCountForUpdate(ctx context.Context, id uuid.UUID) (StockCount, error)
@@ -298,6 +306,8 @@ type Querier interface {
 	ListPostedCountLinesForItem(ctx context.Context, inventoryItemID uuid.UUID) ([]StockCountLine, error)
 	// Newest first, voided included.
 	ListRepaymentDetails(ctx context.Context, customerID uuid.UUID) ([]ListRepaymentDetailsRow, error)
+	// Restaurants a user may work at, via their grants.
+	ListRestaurantsForUser(ctx context.Context, userID uuid.UUID) ([]Restaurant, error)
 	// A row is either a cancelled bill's payment (invoice fields set) or a voided
 	// repayment (repayment_id + repayment_number set).
 	ListShiftAdjustments(ctx context.Context, shiftID uuid.UUID) ([]ListShiftAdjustmentsRow, error)
@@ -467,6 +477,7 @@ type Querier interface {
 	// count = 1 in the result means it was created.
 	UpsertAlert(ctx context.Context, arg UpsertAlertParams) (Alert, error)
 	UpsertAnalyticsDay(ctx context.Context, arg UpsertAnalyticsDayParams) error
+	UpsertStaffGrant(ctx context.Context, arg UpsertStaffGrantParams) error
 	VariantHasOwnRecipe(ctx context.Context, variantID uuid.UUID) (bool, error)
 	VoidOrderItem(ctx context.Context, arg VoidOrderItemParams) error
 	VoidRepayment(ctx context.Context, arg VoidRepaymentParams) error

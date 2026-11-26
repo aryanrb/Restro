@@ -469,6 +469,7 @@ func (s *Service) SaveStaff(ctx context.Context, actor *Actor, in StaffInput) (s
 		saved, err = q.CreateUser(ctx, sqlc.CreateUserParams{
 			Name: in.Name, Role: in.Role, Username: ptextOpt(username),
 			PasswordHash: passwordHash, PinHash: pinHash, Language: "en", Active: in.Active, Phone: phone,
+			OrganisationID: actor.User.OrganisationID,
 		})
 	}
 	if err != nil {
@@ -581,10 +582,36 @@ func (s *Service) SeedOwner(ctx context.Context, name, username, password, pin s
 	if err != nil {
 		return false, err
 	}
-	if _, err := s.q.CreateUser(ctx, sqlc.CreateUserParams{
+	// Attach the bootstrap owner to the org + restaurant seeded by migration 015,
+	// and grant them OWNER there. User + grant go in one tx.
+	org, err := s.q.FirstOrganisation(ctx)
+	if err != nil {
+		return false, err
+	}
+	rest, err := s.q.FirstRestaurant(ctx)
+	if err != nil {
+		return false, err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+	q := s.q.WithTx(tx)
+	owner, err := q.CreateUser(ctx, sqlc.CreateUserParams{
 		Name: name, Role: RoleOwner, Username: ptext(username),
 		PasswordHash: ptext(ph), PinHash: ptext(pinH), Language: "en", Active: true,
+		OrganisationID: org.ID,
+	})
+	if err != nil {
+		return false, err
+	}
+	if err := q.UpsertStaffGrant(ctx, sqlc.UpsertStaffGrantParams{
+		UserID: owner.ID, RestaurantID: rest.ID, Role: RoleOwner,
 	}); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return false, err
 	}
 	return true, nil

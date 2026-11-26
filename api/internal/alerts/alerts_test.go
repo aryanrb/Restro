@@ -157,7 +157,7 @@ func (f *fixture) newUser(name, role, pin string) uuid.UUID {
 	f.must(err)
 	username := "u-" + uuid.NewString()[:8]
 	u, err := f.q.CreateUser(context.Background(), sqlc.CreateUserParams{
-		Name: name, Role: role, Username: dbx.Text(username), PasswordHash: dbx.Text(hash), PinHash: dbx.Text(pinHash), Language: "en", Active: true,
+		Name: name, Role: role, Username: dbx.Text(username), PasswordHash: dbx.Text(hash), PinHash: dbx.Text(pinHash), Language: "en", Active: true, OrganisationID: dbx.BootstrapOrgID(context.Background(), f.q),
 	})
 	f.must(err)
 	f.pins[u.ID], f.usernames[u.ID] = pin, username

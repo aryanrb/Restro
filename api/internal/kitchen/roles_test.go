@@ -48,7 +48,7 @@ func TestKitchenRPCsRequireKitchenRole(t *testing.T) {
 	as := func(role string) context.Context {
 		username := "u-" + uuid.NewString()[:8]
 		if _, err := q.CreateUser(ctx, sqlc.CreateUserParams{
-			Name: role, Role: role, Username: dbx.Text(username), PasswordHash: dbx.Text(pwHash), Language: "en", Active: true,
+			Name: role, Role: role, Username: dbx.Text(username), PasswordHash: dbx.Text(pwHash), Language: "en", Active: true, OrganisationID: dbx.BootstrapOrgID(ctx, q),
 		}); err != nil {
 			t.Fatalf("create user: %v", err)
 		}

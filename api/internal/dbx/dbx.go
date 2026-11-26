@@ -23,6 +23,16 @@ func TextOpt(s string) pgtype.Text {
 	return Text(s)
 }
 
+// BootstrapOrgID returns the id of the organisation seeded by migration 015. It is
+// a convenience for test fixtures that create users directly and must satisfy
+// users.organisation_id; it returns uuid.Nil on error, which surfaces as a clear FK
+// violation at the CreateUser call. Not for production paths (those carry the org on
+// the actor/session).
+func BootstrapOrgID(ctx context.Context, q *sqlc.Queries) uuid.UUID {
+	org, _ := q.FirstOrganisation(ctx)
+	return org.ID
+}
+
 func UUID(id uuid.UUID) pgtype.UUID { return pgtype.UUID{Bytes: id, Valid: true} }
 
 // UUIDOpt is NULL when id is the zero UUID.

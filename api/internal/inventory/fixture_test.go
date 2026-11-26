@@ -153,7 +153,7 @@ func (f *fixture) user(name, role, pin string) (context.Context, uuid.UUID) {
 	pw, ph := hashed(f.t, "secret123"), hashed(f.t, pin)
 	username := "u-" + uuid.NewString()[:8]
 	u, err := f.q.CreateUser(ctx, sqlc.CreateUserParams{
-		Name: name, Role: role, Username: dbx.Text(username), PasswordHash: dbx.Text(pw), PinHash: dbx.Text(ph), Language: "en", Active: true,
+		Name: name, Role: role, Username: dbx.Text(username), PasswordHash: dbx.Text(pw), PinHash: dbx.Text(ph), Language: "en", Active: true, OrganisationID: dbx.BootstrapOrgID(ctx, f.q),
 	})
 	f.must(err)
 	_, token, err := f.authSvc.PasswordLogin(ctx, username, "secret123")

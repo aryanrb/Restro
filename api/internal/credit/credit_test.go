@@ -112,7 +112,7 @@ func (f *fixture) user(name, role, pin string) (context.Context, uuid.UUID) {
 	}
 	username := "u-" + uuid.NewString()[:8]
 	u, err := sqlc.New(f.pool).CreateUser(ctx, sqlc.CreateUserParams{
-		Name: name, Role: role, Username: dbx.Text(username), PasswordHash: dbx.Text(hash), PinHash: dbx.Text(pinHash), Language: "en", Active: true,
+		Name: name, Role: role, Username: dbx.Text(username), PasswordHash: dbx.Text(hash), PinHash: dbx.Text(pinHash), Language: "en", Active: true, OrganisationID: dbx.BootstrapOrgID(ctx, sqlc.New(f.pool)),
 	})
 	if err != nil {
 		f.t.Fatalf("create user: %v", err)
